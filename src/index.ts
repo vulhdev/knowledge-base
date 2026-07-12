@@ -6,6 +6,7 @@ import { createContent } from "./tools/create-content.js";
 import { getContent } from "./tools/get-content.js";
 import { listContents } from "./tools/list-contents.js";
 import { searchContent } from "./tools/search-content.js";
+import { updateContent } from "./tools/update-content.js";
 
 const db = openDb();
 
@@ -91,6 +92,24 @@ server.tool(
     try {
       const results = searchContent(db, query, workspace, type, limit);
       return { content: [{ type: "text", text: toText(results) }] };
+    } catch (err) {
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "update_content",
+  "Updates the body (and optionally the type) of an existing document by its numeric ID. Returns the full updated document.",
+  {
+    id: z.number().int().positive().describe("Document ID returned by create_content or search_content"),
+    body: z.string().min(1).describe("New document body text (replaces existing body)"),
+    type: contentTypeSchema.optional().describe("New document type: idea | spec | plan (omit to keep existing type)"),
+  },
+  async ({ id, body, type }) => {
+    try {
+      const result = updateContent(db, id, body, type);
+      return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       return errorContent(err);
     }
