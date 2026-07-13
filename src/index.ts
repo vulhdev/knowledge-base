@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
