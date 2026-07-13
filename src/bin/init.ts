@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { readFileSync, writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, cpSync, existsSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { openDb } from "../db/client.js";
 import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
@@ -9,7 +10,11 @@ import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
 process.env.DB_PATH ??= join(homedir(), ".claude", "knowledge-base.db");
 
 const CREATE_NEW = "__new__";
+const SKIP = "__skip__";
 const WORKSPACE_KEY = "KNOWLEDGE_BASE_WORKSPACE";
+
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const SKILLS_SRC = join(PACKAGE_ROOT, "skills");
 
 function writeWorkspaceToClaude(name: string): void {
   const claudeMdPath = join(process.cwd(), "CLAUDE.md");
@@ -31,6 +36,24 @@ function writeWorkspaceToClaude(name: string): void {
   }
 
   writeFileSync(claudeMdPath, content, "utf8");
+}
+
+function copySkills(destBase: string): string[] {
+  const copied: string[] = [];
+  if (!existsSync(SKILLS_SRC)) return copied;
+
+  const skills = readdirSync(SKILLS_SRC, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
+
+  for (const skill of skills) {
+    const dest = join(destBase, skill);
+    mkdirSync(dest, { recursive: true });
+    cpSync(join(SKILLS_SRC, skill), dest, { recursive: true });
+    copied.push(skill);
+  }
+
+  return copied;
 }
 
 async function main(): Promise<void> {
@@ -73,7 +96,39 @@ async function main(): Promise<void> {
   }
 
   writeWorkspaceToClaude(workspaceName);
-  p.outro(`Written ${WORKSPACE_KEY}=${workspaceName} to CLAUDE.md`);
+  p.log.success(`Written ${WORKSPACE_KEY}=${workspaceName} to CLAUDE.md`);
+
+  const skillsDest = await p.select<string>({
+    message: "Install Claude Code skills?",
+    options: [
+      {
+        value: join(homedir(), ".claude", "skills"),
+        label: "Global (~/.claude/skills/)",
+        hint: "available in all projects",
+      },
+      {
+        value: join(process.cwd(), ".claude", "skills"),
+        label: "This project (./.claude/skills/)",
+        hint: "current project only",
+      },
+      { value: SKIP, label: "Skip" },
+    ],
+  });
+
+  if (p.isCancel(skillsDest) || (skillsDest as string) === SKIP) {
+    p.outro("Done.");
+    process.exit(0);
+  }
+
+  const copied = copySkills(skillsDest as string);
+  if (copied.length > 0) {
+    p.log.success(`Installed ${copied.length} skills to ${skillsDest}`);
+    for (const skill of copied) p.log.info(`  /${skill}`);
+  } else {
+    p.log.warn("No skills found to install.");
+  }
+
+  p.outro("Done. Restart Claude Code to pick up the new skills.");
 }
 
 main().catch((err) => {

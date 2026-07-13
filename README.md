@@ -37,24 +37,27 @@ That's it. The server auto-creates a database at `~/.claude/knowledge-base.db` o
 
 ### 2. (Optional) Initialize a workspace
 
-To link a Claude Code project to a specific workspace, run the interactive setup:
+To link a Claude Code project to a specific workspace and install skills, run:
 
 ```bash
 npx @vulhdev/knowledge-base-init
 ```
 
-This prompts you to select or create a workspace and writes `KNOWLEDGE_BASE_WORKSPACE=<name>` to your `CLAUDE.md`.
+The wizard will:
+1. Prompt you to select or create a **workspace** — writes `KNOWLEDGE_BASE_WORKSPACE=<name>` to `CLAUDE.md`
+2. Ask where to install **Claude Code skills**:
+   - **Global** (`~/.claude/skills/`) — available in all projects
+   - **This project** (`./.claude/skills/`) — current project only
+   - **Skip**
 
-### 3. (Optional) Install Claude Code skills
-
-Copy the skills from the `skills/` directory into your project's `.claude/skills/` folder to unlock slash commands:
+After installing, restart Claude Code to pick up the new skills:
 
 | Skill | Command | Description |
 |---|---|---|
-| `knowledge-base-search` | `/knowledge-base-search` | Full-text search across all content |
-| `knowledge-base-import` | `/knowledge-base-import` | Import content from files |
-| `knowledge-base-export` | `/knowledge-base-export` | Export content to files |
-| `knowledge-base-digest` | `/knowledge-base-digest` | Summarize content into a digest |
+| `/knowledge-base-search` | Full-text search across all content |
+| `/knowledge-base-import` | Import content from files |
+| `/knowledge-base-export` | Export content to files |
+| `/knowledge-base-digest` | Summarize content into a digest |
 
 ## MCP Tools
 

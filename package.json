@@ -9,7 +9,8 @@
     "knowledge-base-init": "dist/bin/init.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "skills"
   ],
   "keywords": [
     "mcp",
