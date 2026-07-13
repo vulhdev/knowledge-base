@@ -21,6 +21,8 @@ export function listContents(
   if (type !== undefined) {
     conditions.push("c.type = ?");
     params.push(type);
+  } else {
+    conditions.push("c.type != 'digest'");
   }
 
   const sql = `

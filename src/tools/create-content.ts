@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ContentType, CreateContentResult } from "../types.js";
 
-const VALID_TYPES: readonly ContentType[] = ["idea", "spec", "plan"];
+const VALID_TYPES: readonly ContentType[] = ["idea", "spec", "plan", "digest"];
 
 export function createContent(
   db: DatabaseSync,

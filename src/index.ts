@@ -15,7 +15,7 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-const contentTypeSchema = z.enum(["idea", "spec", "plan"]);
+const contentTypeSchema = z.enum(["idea", "spec", "plan", "digest"]);
 
 function toText(value: unknown): string {
   return JSON.stringify(value, null, 2);
