@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "knowledge-base": "dist/index.js"
+    "knowledge-base": "dist/bin/init.js"
   },
   "scripts": {
     "build": "tsc",
