@@ -18,54 +18,32 @@ workspace → feature → content (idea | spec | plan | digest)
 
 - Node.js 22.5 or later
 
-## Installation
-
-### Option A: npx (no install)
-
-```bash
-npx @vulhdev/knowledge-base init
-```
-
-### Option B: Global install
-
-```bash
-npm install -g @vulhdev/knowledge-base
-knowledge-base init
-```
-
-### Option C: Manual
-
-```bash
-npm install @vulhdev/knowledge-base
-```
-
 ## Setup
 
-### 1. Initialize the database
+### 1. Add the MCP server
+
+Run this once in any terminal:
 
 ```bash
-npx @vulhdev/knowledge-base init
+claude mcp add knowledge-base -- npx -y @vulhdev/knowledge-base
 ```
 
-This creates a `knowledge-base.db` file in your current directory and prints the MCP config snippet to paste into your Claude Code settings.
+That's it. The server auto-creates a database at `~/.claude/knowledge-base.db` on first run.
 
-### 2. Register the MCP server
+> To use a custom database path, pass `DB_PATH` explicitly:
+> ```bash
+> claude mcp add knowledge-base -e DB_PATH=/your/path/knowledge-base.db -- npx -y @vulhdev/knowledge-base
+> ```
 
-Add to your Claude Code MCP config (`.claude/mcp.json` or global settings):
+### 2. (Optional) Initialize a workspace
 
-```json
-{
-  "mcpServers": {
-    "knowledge-base": {
-      "command": "node",
-      "args": ["/path/to/node_modules/@vulhdev/knowledge-base/dist/index.js"],
-      "env": {
-        "DB_PATH": "/path/to/knowledge-base.db"
-      }
-    }
-  }
-}
+To link a Claude Code project to a specific workspace, run the interactive setup:
+
+```bash
+npx @vulhdev/knowledge-base-init
 ```
+
+This prompts you to select or create a workspace and writes `KNOWLEDGE_BASE_WORKSPACE=<name>` to your `CLAUDE.md`.
 
 ### 3. (Optional) Install Claude Code skills
 

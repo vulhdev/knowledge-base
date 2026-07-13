@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "knowledge-base": "dist/bin/init.js"
+    "knowledge-base": "dist/index.js",
+    "knowledge-base-init": "dist/bin/init.js"
   },
   "files": [
     "dist"
