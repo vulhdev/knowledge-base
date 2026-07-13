@@ -25,22 +25,18 @@ find <path> -name "*.md" -type f | sort
 
 If no `.md` files are found, tell the user and stop.
 
-### 3. Read and infer metadata for each file
-
-For each file, read its content with the Read tool, then infer:
+### 3. Infer metadata from path — do NOT read file content yet
 
 **`feature`** — use the filename without the `.md` extension and without the directory path.
 Examples: `notes/auth.md` → `auth`, `docs/ideas/full-text-search.md` → `full-text-search`.
 
-**`type`** — infer from the content semantics:
+**`type`** — infer from the file path or filename pattern, in this order:
 
-| Type | Signals in content |
-|------|--------------------|
-| `idea` | Exploratory tone, "How Might We", brainstorming, open questions, divergent options, pros/cons lists |
-| `spec` | Requirements, design decisions, schema definitions, API contracts, acceptance criteria, "must/should/shall" language |
-| `plan` | Ordered task list, checkboxes (`- [ ]`), implementation steps, phased rollout, numbered steps |
+1. **Directory name** — if any path segment matches: `ideas` or `idea` → `idea`, `specs` or `spec` → `spec`, `plans` or `plan` → `plan`
+2. **Filename suffix** — if the filename ends with `-idea`, `-spec`, or `-plan` before `.md` → use that type
+3. **Default** — if no pattern matches, use `idea` and mark the row as `⚠ uncertain`
 
-When the content is ambiguous, default to `idea` and mark it as uncertain in the table.
+Do not read file content to infer type. Content is only read in step 6 when actually importing.
 
 ### 4. Present the mapping table
 
@@ -91,12 +87,14 @@ Accept the user's choice. If they want to decide per file, ask for each conflict
 
 ### 6. Execute imports
 
-Process each file according to the mapping and conflict decisions:
+For each file to import, read its content with the Read tool immediately before calling the DB tool — do not batch-read all files first.
+
+Then apply the mapping and conflict decisions:
 
 - **New entry** (no conflict) → call `create_content(workspace, feature, type, body)`
 - **Overwrite** → call `update_content(id=existingId, body=fileBody)`
 - **Create new** (despite conflict) → call `create_content(workspace, feature, type, body)`
-- **Skip** → no-op
+- **Skip** → no-op (do not read the file)
 
 ### 7. Report results
 
