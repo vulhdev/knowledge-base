@@ -19,11 +19,14 @@ export function applySchema(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS contents (
       id         INTEGER PRIMARY KEY,
       feature_id INTEGER NOT NULL REFERENCES features(id) ON DELETE CASCADE,
-      type       TEXT NOT NULL CHECK(type IN ('idea', 'spec', 'plan')),
+      type       TEXT NOT NULL CHECK(type IN ('idea', 'spec', 'plan', 'digest')),
       body       TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_feature_digest
+      ON contents(feature_id) WHERE type = 'digest';
 
     CREATE VIRTUAL TABLE IF NOT EXISTS contents_fts USING fts5(
       body,

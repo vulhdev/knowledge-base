@@ -1,4 +1,4 @@
-export type ContentType = "idea" | "spec" | "plan";
+export type ContentType = "idea" | "spec" | "plan" | "digest";
 
 export type Content = {
   id: number;
