@@ -1,5 +1,5 @@
 {
-  "name": "knowledge-base",
+  "name": "@vulhdev/knowledge-base",
   "version": "1.0.0",
   "description": "MCP server for persistent document storage with full-text search",
   "type": "module",
@@ -7,12 +7,32 @@
   "bin": {
     "knowledge-base": "dist/bin/init.js"
   },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "knowledge-base",
+    "sqlite",
+    "claude",
+    "claude-code"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vulhdev/knowledge-base.git"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run lint && npm test && npm run build"
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
