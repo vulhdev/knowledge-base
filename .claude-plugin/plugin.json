@@ -1,0 +1,14 @@
+{
+  "name": "knowledge-base",
+  "version": "1.0.0",
+  "description": "Persistent document storage for Claude Code",
+  "mcpServers": {
+    "knowledge-base": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"],
+      "env": {
+        "DB_PATH": "${HOME}/.claude/knowledge-base.db"
+      }
+    }
+  }
+}
