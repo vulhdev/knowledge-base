@@ -12,6 +12,7 @@ import { getContent } from "./tools/get-content.js";
 import { listContents } from "./tools/list-contents.js";
 import { searchContent } from "./tools/search-content.js";
 import { updateContent } from "./tools/update-content.js";
+import { deleteContent } from "./tools/delete-content.js";
 
 const db = openDb();
 
@@ -114,6 +115,22 @@ server.tool(
   async ({ id, body, type }) => {
     try {
       const result = updateContent(db, id, body, type);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "delete_content",
+  "Permanently deletes a document by its numeric ID. Returns the deleted document.",
+  {
+    id: z.number().int().positive().describe("Document ID to delete"),
+  },
+  async ({ id }) => {
+    try {
+      const result = deleteContent(db, id);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       return errorContent(err);
