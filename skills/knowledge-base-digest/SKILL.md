@@ -57,7 +57,7 @@ If no `digestRow` exists, treat all `sourceContents` as **changed**.
 Create a markdown table with one row per source content.
 
 - For **unchanged** contents: copy the existing table row verbatim from `digestRow.body`. Do not re-read or re-summarize.
-- For **changed** contents: read the `body` field (already present in `sourceContents`) and write a one-line summary (≤ 15 words).
+- For **changed** contents: read the `body` field (already present in `sourceContents`) and write a one-line summary (≤ 15 words). Use the `title` field as the summary when it is set and descriptive enough.
 
 Sort rows by content `id` ascending.
 
@@ -72,18 +72,21 @@ Always regenerate the TL;DR — it must reflect the full current state of the fe
 {one paragraph summary}
 
 ## Index
-| ID | Type | Summary |
-|----|------|---------|
-| 42 | spec | one-line summary |
-| 43 | idea | one-line summary |
+| ID | Type | Title | Summary |
+|----|------|-------|---------|
+| 42 | spec |       | one-line summary |
+| 43 | idea |       | one-line summary |
+| 44 | doc  | DB Schema | one-line summary |
 
-<!-- digest-meta: {"42":"2026-07-13T10:00:00","43":"2026-07-13T11:00:00"} -->
+<!-- digest-meta: {"42":"2026-07-13T10:00:00","43":"2026-07-13T11:00:00","44":"2026-07-14T09:00:00"} -->
 ```
 
 The `digest-meta` JSON must:
 - Use each content's current `updated_at` value (from `sourceContents`)
 - Use string keys (content IDs as strings)
 - Be placed on the last line of the body, inside an HTML comment — preserve this format exactly so future rebuilds can parse it
+
+Leave the `Title` cell empty (``) for contents without a title.
 
 ### 8. Save the digest
 
@@ -108,14 +111,16 @@ Report:
 
 ```markdown
 ## TL;DR
-The auth feature covers user login via email/password and OAuth. Key decisions include using JWT for session management and bcrypt for password hashing. The spec is finalized; implementation plan is in progress.
+The auth feature covers user login via email/password and OAuth. Key decisions include using JWT for session management and bcrypt for password hashing. The spec is finalized; implementation plan is in progress. DB schema and backend flow are documented in `doc` entries.
 
 ## Index
-| ID | Type | Summary |
-|----|------|---------|
-| 12 | idea | Initial brainstorm: support email, Google, and GitHub login |
-| 15 | spec | Finalized auth spec: JWT sessions, bcrypt hashing, refresh tokens |
-| 18 | plan | Implementation plan: 6 tasks, tasks 1-3 complete |
+| ID | Type | Title | Summary |
+|----|------|-------|---------|
+| 12 | idea |       | Initial brainstorm: support email, Google, and GitHub login |
+| 15 | spec |       | Finalized auth spec: JWT sessions, bcrypt hashing, refresh tokens |
+| 18 | plan |       | Implementation plan: 6 tasks, tasks 1-3 complete |
+| 21 | doc  | DB Schema | users table, sessions table, oauth_accounts table |
+| 22 | doc  | Backend Flow | login → validate → issue JWT → store refresh token |
 
-<!-- digest-meta: {"12":"2026-07-10T08:00:00","15":"2026-07-11T14:30:00","18":"2026-07-13T09:00:00"} -->
+<!-- digest-meta: {"12":"2026-07-10T08:00:00","15":"2026-07-11T14:30:00","18":"2026-07-13T09:00:00","21":"2026-07-14T10:00:00","22":"2026-07-14T10:05:00"} -->
 ```

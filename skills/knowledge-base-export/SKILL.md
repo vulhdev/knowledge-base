@@ -28,13 +28,21 @@ Filter out any content with `type=digest`. If nothing remains, tell the user and
 
 ### 4. Write files
 
-For each content entry, write a file:
+For each content entry, determine the output path:
 
 ```
 {outdir}/{type}/{feature}.md
 ```
 
-If two entries share the same type and feature, append the content ID to avoid collision: `{outdir}/{type}/{feature}-{id}.md`
+If a `doc` entry has a `title`, use a slugified version of the title as the filename to make docs distinguishable:
+```
+{outdir}/doc/{feature}-{slug(title)}.md
+```
+
+If two entries would produce the same filename, append the content ID to avoid collision:
+```
+{outdir}/{type}/{feature}-{id}.md
+```
 
 Use Bash to create directories as needed:
 
@@ -42,7 +50,15 @@ Use Bash to create directories as needed:
 mkdir -p <parent directory>
 ```
 
-Then write each file with the Write tool. Write the body as-is — no frontmatter or headers added.
+Write each file with the Write tool. If the entry has a title, prepend it as an H1 heading before the body:
+
+```markdown
+# {title}
+
+{body}
+```
+
+Otherwise write the body as-is.
 
 ### 5. Report results
 
@@ -50,6 +66,8 @@ Then write each file with the Write tool. Write the body as-is — no frontmatte
 Exported workspace: <WORKSPACE> → docs/
   ✓ docs/spec/auth.md (id 12)
   ✓ docs/idea/search.md (id 13)
+  ✓ docs/doc/auth-db-schema.md (id 21, "DB Schema")
+  ✓ docs/doc/auth-backend-flow.md (id 22, "Backend Flow")
 ```
 
 ## Example invocations

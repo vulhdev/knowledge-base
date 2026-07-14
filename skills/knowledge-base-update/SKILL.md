@@ -58,17 +58,18 @@ Synthesize the old body and the new content into a single updated document:
 - Keep the same structure and format as the original unless the new content dictates otherwise.
 - Do not add commentary like "Updated on..." or "Changes include..." — the body is the document, not a changelog.
 
-### 6. Optionally update the type
+### 6. Optionally update the type and title
 
-If the user explicitly mentions a new type (`spec`, `plan`, `idea`, `digest`), use it.
-Otherwise, keep the existing type.
+If the user explicitly mentions a new type (`spec`, `plan`, `idea`, `digest`, `doc`), use it. Otherwise, keep the existing type.
+
+If the user mentions a new title or the content's subject has changed significantly, propose an updated title. Otherwise, omit `title` from the call to preserve the existing value.
 
 ### 7. Confirm before writing
 
 Show the merged result to the user and ask for confirmation:
 
 ```
-Merged result (type: <type>):
+Merged result (type: <type>, title: <title or unchanged>):
 
 <merged body preview — full content>
 
@@ -84,8 +85,10 @@ If the user cancels, stop without writing.
 
 Call:
 ```
-update_content(id=<id>, body=<merged body>, type=<type if changed>)
+update_content(id=<id>, body=<merged body>, type=<type if changed>, title=<title if changed>)
 ```
+
+Omit `type` or `title` from the call when keeping the existing value — passing them preserves the existing value only for `type`; omitting `title` also preserves it.
 
 ### 9. Report
 
@@ -94,6 +97,7 @@ update_content(id=<id>, body=<merged body>, type=<type if changed>)
   Workspace : <WORKSPACE>
   Feature   : <feature>
   Type      : <type>
+  Title     : <title or (unchanged)>
   Updated   : <updated_at>
 ```
 

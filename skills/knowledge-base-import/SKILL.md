@@ -19,7 +19,7 @@ From the user's message, determine:
 
 - **file(s)** — a file path, a glob, or a directory. If not given, ask: "Which file or folder do you want to import?"
 - **feature** — the feature name to store the content under. If not given, use the filename without the `.md` extension.
-- **type** — `idea`, `spec`, or `plan`. If not given, ask the user before proceeding.
+- **type** — `idea`, `spec`, `plan`, or `doc`. If not given, ask the user before proceeding. Use `doc` for files that describe existing code (DB schema, flow diagrams, architecture notes).
 
 If the user specifies a directory, list all `.md` files under it:
 
@@ -29,10 +29,14 @@ find <path> -name "*.md" -type f | sort
 
 ### 3. Import each file
 
-For each file, read its content with the Read tool, then call:
+For each file, read its content with the Read tool.
+
+Extract a `title` from the file if it starts with a markdown H1 heading (`# Title text`). Use that heading text as the title and strip it from the body (the heading is redundant once stored with a title).
+
+Then call:
 
 ```
-create_content(workspace=WORKSPACE, feature=FEATURE, type=TYPE, body=<file content>)
+create_content(workspace=WORKSPACE, feature=FEATURE, type=TYPE, body=<file content>, title=<title if found>)
 ```
 
 Use the same type for all files unless the user specified different types per file.
@@ -42,7 +46,8 @@ Use the same type for all files unless the user specified different types per fi
 ```
 Imported into workspace: <WORKSPACE>
   ✓ auth (spec) — id 12
-  ✓ search (idea) — id 13
+  ✓ search (idea) "Full-text Search Plan" — id 13
+  ✓ auth (doc) "DB Schema" — id 14
 ```
 
 ## Example invocations
@@ -50,3 +55,4 @@ Imported into workspace: <WORKSPACE>
 - "import auth.md as spec" → feature=auth, type=spec
 - "import docs/search.md into the search feature as an idea" → feature=search, type=idea
 - "import all files in notes/ as ideas" → find all .md in notes/, type=idea for all
+- "import db-schema.md as doc for auth feature" → feature=auth, type=doc, infer title from H1

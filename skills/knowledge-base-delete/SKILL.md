@@ -28,14 +28,14 @@ Read `KNOWLEDGE_BASE_WORKSPACE` from `CLAUDE.md` (it is already in your context)
 
 **If exactly 1 result:** proceed directly to Step 4.
 
-**If multiple results:** present a concise list and ask the user to pick:
+**If multiple results:** present a concise list and ask the user to pick. Show title when available:
 
 ```
 Tìm thấy nhiều documents — bạn muốn xóa cái nào?
 
   1. [#12 · spec · auth] <first ~60 chars of body>
-  2. [#18 · plan · auth] <first ~60 chars of body>
-  3. [#31 · idea · auth] <first ~60 chars of body>
+  2. [#18 · doc · auth]  "DB Schema" — <first ~60 chars of body>
+  3. [#31 · doc · auth]  "Backend Flow" — <first ~60 chars of body>
 ```
 
 Use `AskUserQuestion` if interactive selection is needed.
@@ -53,6 +53,7 @@ Show it clearly:
 
 ```
 📄 #<id> · <type> · <workspace>/<feature>
+Title: <title>  (omit this line if title is null)
 
 <full body>
 

@@ -1,6 +1,6 @@
 ---
 name: knowledge-base-search
-description: Search the knowledge base for stored ideas, specs, or plans. Use when the user asks to find, recall, look up, or retrieve documents from the knowledge base. Reads KNOWLEDGE_BASE_WORKSPACE from CLAUDE.md to scope the search automatically.
+description: Search the knowledge base for stored ideas, specs, plans, or docs. Use when the user asks to find, recall, look up, or retrieve documents from the knowledge base. Reads KNOWLEDGE_BASE_WORKSPACE from CLAUDE.md to scope the search automatically.
 ---
 
 # knowledge-base:search
@@ -15,8 +15,10 @@ Search the knowledge base for documents stored under the current workspace.
 
 3. **Identify an optional type filter** if the user specifies one:
    - `idea` — raw ideas and explorations
-   - `spec` — specifications
+   - `spec` — specifications and requirements
    - `plan` — implementation plans
+   - `doc` — current-state documentation (DB schema, backend flow, frontend structure)
+   - `digest` — feature summaries
    If no type is mentioned, search across all types.
 
 4. **Call `search_content`** with:
@@ -25,7 +27,15 @@ Search the knowledge base for documents stored under the current workspace.
    - `type` (optional): the identified type filter
    - `limit`: 10 (default)
 
-5. **Present the results** clearly: show the feature name, type, a short excerpt of the body, and the document ID for follow-up actions (e.g. `get_content` to read the full body).
+5. **Present the results** clearly. Show title when available, fall back to a body excerpt:
+
+   ```
+   #12 · doc · auth — "DB Schema"
+   #18 · spec · auth — OAuth2 token refresh implementation...
+   #31 · idea · search — full text search plan with FTS5...
+   ```
+
+   Always include the document ID for follow-up actions (e.g. `get_content` to read the full body).
 
 6. If no results are found, suggest broadening the query or listing all contents with `list_contents`.
 
@@ -35,3 +45,4 @@ Search the knowledge base for documents stored under the current workspace.
 - "find the deployment plan" → query: `deployment`, type: `plan`
 - "what specs do we have for search?" → query: `search`, type: `spec`
 - "look up anything about caching" → query: `caching`, no type filter
+- "find the doc về DB schema của auth" → query: `auth DB schema`, type: `doc`
