@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ContentType, CreateContentResult } from "../types.js";
 
-const VALID_TYPES: readonly ContentType[] = ["idea", "spec", "plan", "digest"];
+const VALID_TYPES: readonly ContentType[] = ["idea", "spec", "plan", "digest", "doc"];
 
 export function createContent(
   db: DatabaseSync,
@@ -9,6 +9,7 @@ export function createContent(
   feature: string,
   type: ContentType,
   body: string,
+  title?: string,
 ): CreateContentResult {
   if (!VALID_TYPES.includes(type)) {
     throw new Error(`type must be one of: ${VALID_TYPES.join(", ")}`);
@@ -23,9 +24,13 @@ export function createContent(
   db.prepare("INSERT OR IGNORE INTO features (workspace_id, name) VALUES (?, ?)").run(ws.id, feature);
   const ft = db.prepare("SELECT id FROM features WHERE workspace_id = ? AND name = ?").get(ws.id, feature) as { id: number };
 
-  const { lastInsertRowid } = db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, ?, ?)").run(ft.id, type, body);
+  const { lastInsertRowid } = db
+    .prepare("INSERT INTO contents (feature_id, type, title, body) VALUES (?, ?, ?, ?)")
+    .run(ft.id, type, title ?? null, body);
 
-  const row = db.prepare("SELECT id, created_at FROM contents WHERE id = ?").get(Number(lastInsertRowid)) as { id: number; created_at: string };
+  const row = db
+    .prepare("SELECT id, title, created_at FROM contents WHERE id = ?")
+    .get(Number(lastInsertRowid)) as { id: number; title: string | null; created_at: string };
 
-  return { id: row.id, workspace, feature, type, created_at: row.created_at };
+  return { id: row.id, workspace, feature, type, title: row.title, created_at: row.created_at };
 }

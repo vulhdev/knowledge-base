@@ -1,5 +1,27 @@
 import type { DatabaseSync } from "node:sqlite";
 
+const FTS_AND_TRIGGERS = `
+  CREATE VIRTUAL TABLE IF NOT EXISTS contents_fts USING fts5(
+    body,
+    content=contents,
+    content_rowid=id,
+    tokenize='unicode61'
+  );
+
+  CREATE TRIGGER IF NOT EXISTS contents_ai AFTER INSERT ON contents BEGIN
+    INSERT INTO contents_fts(rowid, body) VALUES (new.id, new.body);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS contents_ad AFTER DELETE ON contents BEGIN
+    INSERT INTO contents_fts(contents_fts, rowid, body) VALUES ('delete', old.id, old.body);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS contents_au AFTER UPDATE ON contents BEGIN
+    INSERT INTO contents_fts(contents_fts, rowid, body) VALUES ('delete', old.id, old.body);
+    INSERT INTO contents_fts(rowid, body) VALUES (new.id, new.body);
+  END;
+`;
+
 export function applySchema(db: DatabaseSync): void {
   db.exec("PRAGMA foreign_keys = ON");
 
@@ -19,7 +41,8 @@ export function applySchema(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS contents (
       id         INTEGER PRIMARY KEY,
       feature_id INTEGER NOT NULL REFERENCES features(id) ON DELETE CASCADE,
-      type       TEXT NOT NULL CHECK(type IN ('idea', 'spec', 'plan', 'digest')),
+      type       TEXT NOT NULL,
+      title      TEXT,
       body       TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -27,25 +50,72 @@ export function applySchema(db: DatabaseSync): void {
 
     CREATE UNIQUE INDEX IF NOT EXISTS uq_feature_digest
       ON contents(feature_id) WHERE type = 'digest';
+  `);
 
-    CREATE VIRTUAL TABLE IF NOT EXISTS contents_fts USING fts5(
-      body,
-      content=contents,
-      content_rowid=id,
-      tokenize='unicode61'
+  db.exec(FTS_AND_TRIGGERS);
+
+  runMigrations(db);
+}
+
+function runMigrations(db: DatabaseSync): void {
+  // Migration 1: add title column if missing (existing DBs pre-dating this change)
+  const hasTitle = (
+    db
+      .prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'title'")
+      .get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasTitle) {
+    db.exec("ALTER TABLE contents ADD COLUMN title TEXT");
+  }
+
+  // Migration 2: remove CHECK constraint on type (required to support new types without table recreation)
+  const { sql: tableSQL } = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contents'")
+    .get() as { sql: string };
+
+  if (tableSQL.includes("CHECK")) {
+    removeCheckConstraint(db);
+  }
+}
+
+function removeCheckConstraint(db: DatabaseSync): void {
+  // SQLite cannot ALTER TABLE to modify a CHECK constraint — requires full table recreation.
+  // foreign_keys must be off during the swap; PRAGMA cannot change inside a transaction.
+  db.exec("PRAGMA foreign_keys = OFF");
+
+  db.exec(`
+    BEGIN;
+
+    DROP TRIGGER IF EXISTS contents_ai;
+    DROP TRIGGER IF EXISTS contents_ad;
+    DROP TRIGGER IF EXISTS contents_au;
+    DROP TABLE IF EXISTS contents_fts;
+
+    CREATE TABLE contents_new (
+      id         INTEGER PRIMARY KEY,
+      feature_id INTEGER NOT NULL REFERENCES features(id) ON DELETE CASCADE,
+      type       TEXT NOT NULL,
+      title      TEXT,
+      body       TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE TRIGGER IF NOT EXISTS contents_ai AFTER INSERT ON contents BEGIN
-      INSERT INTO contents_fts(rowid, body) VALUES (new.id, new.body);
-    END;
+    INSERT INTO contents_new (id, feature_id, type, title, body, created_at, updated_at)
+      SELECT id, feature_id, type, title, body, created_at, updated_at FROM contents;
 
-    CREATE TRIGGER IF NOT EXISTS contents_ad AFTER DELETE ON contents BEGIN
-      INSERT INTO contents_fts(contents_fts, rowid, body) VALUES ('delete', old.id, old.body);
-    END;
+    DROP TABLE contents;
+    ALTER TABLE contents_new RENAME TO contents;
 
-    CREATE TRIGGER IF NOT EXISTS contents_au AFTER UPDATE ON contents BEGIN
-      INSERT INTO contents_fts(contents_fts, rowid, body) VALUES ('delete', old.id, old.body);
-      INSERT INTO contents_fts(rowid, body) VALUES (new.id, new.body);
-    END;
+    CREATE UNIQUE INDEX uq_feature_digest ON contents(feature_id) WHERE type = 'digest';
+
+    COMMIT;
   `);
+
+  // FTS virtual table and triggers must be created outside the transaction above.
+  db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
+  db.exec("INSERT INTO contents_fts(contents_fts) VALUES ('rebuild')");
+
+  db.exec("PRAGMA foreign_keys = ON");
 }

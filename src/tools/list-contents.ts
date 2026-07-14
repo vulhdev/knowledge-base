@@ -26,7 +26,7 @@ export function listContents(
   }
 
   const sql = `
-    SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.body, c.created_at, c.updated_at
+    SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.title, c.body, c.created_at, c.updated_at
     FROM contents c
     JOIN features f ON c.feature_id = f.id
     JOIN workspaces w ON f.workspace_id = w.id

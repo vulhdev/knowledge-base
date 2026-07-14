@@ -26,7 +26,7 @@ export function searchContent(
   }
 
   const sql = `
-    SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.body,
+    SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.title, c.body,
            c.created_at, c.updated_at, bm25(contents_fts) AS score
     FROM contents_fts
     JOIN contents c ON contents_fts.rowid = c.id
