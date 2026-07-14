@@ -90,4 +90,17 @@ describe("searchContent", () => {
     expect(searchContent(db, "word")).toHaveLength(0);
     expect(searchContent(db, "newword")).toHaveLength(1);
   });
+
+  it("includes title field in search results", () => {
+    createContent(db, "proj-a", "auth", "doc", "authentication OAuth2 login", "Auth Doc");
+    const results = searchContent(db, "OAuth2");
+    expect(results.every((r) => "title" in r)).toBe(true);
+    const docResult = results.find((r) => r.type === "doc");
+    expect(docResult?.title).toBe("Auth Doc");
+  });
+
+  it("returns null title for documents without title", () => {
+    const results = searchContent(db, "OAuth2");
+    expect(results.some((r) => r.title === null)).toBe(true);
+  });
 });

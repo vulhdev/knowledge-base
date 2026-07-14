@@ -23,6 +23,18 @@ describe("getContent", () => {
     expect(result.updated_at).toBeTruthy();
   });
 
+  it("returns title field (null when not set)", () => {
+    const created = createContent(db, "proj", "auth", "idea", "body");
+    const result = getContent(db, created.id);
+    expect(result.title).toBeNull();
+  });
+
+  it("returns title when set on create", () => {
+    const created = createContent(db, "proj", "auth", "doc", "body", "Feature Doc");
+    const result = getContent(db, created.id);
+    expect(result.title).toBe("Feature Doc");
+  });
+
   it("throws a not-found error for a missing id", () => {
     expect(() => getContent(db, 999)).toThrow(/not found/i);
   });

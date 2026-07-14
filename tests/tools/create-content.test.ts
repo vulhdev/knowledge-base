@@ -51,9 +51,26 @@ describe("createContent", () => {
   });
 
   it("supports all valid content types", () => {
-    for (const type of ["idea", "spec", "plan"] as const) {
+    for (const type of ["idea", "spec", "plan", "digest", "doc"] as const) {
       const r = createContent(db, "ws", type, type, `body for ${type}`);
       expect(r.type).toBe(type);
     }
+  });
+
+  it("returns title when provided", () => {
+    const result = createContent(db, "ws", "ft", "doc", "body text", "My Doc Title");
+    expect(result.title).toBe("My Doc Title");
+  });
+
+  it("returns null title when not provided", () => {
+    const result = createContent(db, "ws", "ft", "idea", "body text");
+    expect(result.title).toBeNull();
+  });
+
+  it("allows multiple doc rows in the same feature", () => {
+    createContent(db, "ws", "ft", "doc", "db schema doc", "DB Schema");
+    createContent(db, "ws", "ft", "doc", "backend flow doc", "Backend Flow");
+    const rows = db.prepare("SELECT id FROM contents WHERE type = 'doc'").all();
+    expect(rows).toHaveLength(2);
   });
 });

@@ -51,4 +51,21 @@ describe("listContents", () => {
   it("throws when workspace is empty", () => {
     expect(() => listContents(db, "")).toThrow(/workspace must not be empty/);
   });
+
+  it("includes title field on every row", () => {
+    const results = listContents(db, "proj-a");
+    expect(results.every((r) => "title" in r)).toBe(true);
+  });
+
+  it("includes doc type in default listing", () => {
+    createContent(db, "proj-a", "auth", "doc", "some doc body", "Auth Doc");
+    const results = listContents(db, "proj-a");
+    expect(results.some((r) => r.type === "doc")).toBe(true);
+  });
+
+  it("returns title value when set", () => {
+    createContent(db, "proj-a", "auth", "doc", "doc body", "Titled Doc");
+    const results = listContents(db, "proj-a", "auth", "doc");
+    expect(results[0].title).toBe("Titled Doc");
+  });
 });

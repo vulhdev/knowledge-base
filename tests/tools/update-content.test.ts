@@ -52,6 +52,30 @@ describe("updateContent", () => {
     expect(() => updateContent(db, created.id, "body", "draft" as any)).toThrow(/type must be one of/);
   });
 
+  it("updates title when provided", () => {
+    const created = createContent(db, "proj", "auth", "doc", "body", "Old Title");
+    const result = updateContent(db, created.id, "body", undefined, "New Title");
+    expect(result.title).toBe("New Title");
+  });
+
+  it("preserves existing title when title is omitted", () => {
+    const created = createContent(db, "proj", "auth", "doc", "body", "Keep This");
+    const result = updateContent(db, created.id, "updated body");
+    expect(result.title).toBe("Keep This");
+  });
+
+  it("title is null when never set and not updated", () => {
+    const created = createContent(db, "proj", "auth", "idea", "body");
+    const result = updateContent(db, created.id, "updated body");
+    expect(result.title).toBeNull();
+  });
+
+  it("accepts doc type", () => {
+    const created = createContent(db, "proj", "auth", "idea", "body");
+    const result = updateContent(db, created.id, "body", "doc");
+    expect(result.type).toBe("doc");
+  });
+
   it("FTS reflects new body after update", () => {
     const created = createContent(db, "proj", "auth", "idea", "old keyword alphazulu");
     updateContent(db, created.id, "new keyword betafox");
