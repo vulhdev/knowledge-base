@@ -1,18 +1,19 @@
 # knowledge-base
 
-An MCP server for Claude Code that provides persistent document storage using SQLite. Organize your ideas, specs, and plans in a structured three-level hierarchy.
+An MCP server for Claude Code that provides persistent document storage using SQLite. Organize your ideas, specs, plans, and feature documentation in a structured three-level hierarchy.
 
 ```
-workspace → feature → content (idea | spec | plan | digest)
+workspace → feature → content (idea | spec | plan | digest | doc)
 ```
 
 ## Features
 
 - **Persistent storage** — all content survives across Claude Code sessions
-- **Three content types** — `idea`, `spec`, `plan`, plus `digest` for summaries
+- **Five content types** — `idea`, `spec`, `plan`, `doc` (current-state feature docs), plus `digest` for summaries
+- **Optional title field** — short label on any document for easy scanning in list/search results
 - **Full-text search** — powered by SQLite FTS5 with BM25 relevance ranking
 - **Zero external dependencies** — uses Node.js built-in `node:sqlite` (no native compilation)
-- **Claude Code skills** — import, export, search, and digest via slash commands
+- **Claude Code skills** — 11 slash commands for create, list, search, get, update, delete, import, export, explore, digest, and doc analysis
 
 ## Requirements
 
@@ -50,14 +51,25 @@ The wizard will:
    - **This project** (`./.claude/skills/`) — current project only
    - **Skip**
 
-After installing, restart Claude Code to pick up the new skills:
+After installing, restart Claude Code to pick up the new skills.
 
-| Skill | Command | Description |
-|---|---|---|
-| `/knowledge-base-search` | Full-text search across all content |
-| `/knowledge-base-import` | Import content from files |
-| `/knowledge-base-export` | Export content to files |
-| `/knowledge-base-digest` | Summarize content into a digest |
+## Claude Code Skills
+
+Skills use colon namespace notation — type the part after the colon to get autocomplete suggestions (e.g. `/doc` → `knowledge-base:doc`).
+
+| Skill | When to use |
+|---|---|
+| `/create` → `knowledge-base:create` | Save a spec, plan, idea, or doc from the current conversation |
+| `/list` → `knowledge-base:list` | Browse all documents in a feature (no keyword needed) |
+| `/search` → `knowledge-base:search` | Full-text search when you know what to look for |
+| `/get` → `knowledge-base:get` | Read the full body of a specific document by ID or description |
+| `/update` → `knowledge-base:update` | Merge new content into an existing document |
+| `/delete` → `knowledge-base:delete` | Permanently remove a document (with confirmation) |
+| `/import` → `knowledge-base:import` | Import markdown files into the knowledge base |
+| `/export` → `knowledge-base:export` | Export documents to markdown files |
+| `/explore` → `knowledge-base:explore` | Proactively load feature context before starting work |
+| `/digest` → `knowledge-base:digest` | Build a TL;DR + index summary for a feature |
+| `/doc` → `knowledge-base:doc` | Analyze a codebase feature and save structured docs (DB schema, backend flow, frontend) |
 
 ## MCP Tools
 
@@ -70,21 +82,22 @@ Creates a document. Auto-creates the workspace and feature if they don't exist.
 ```
 workspace  — top-level project or domain (e.g. "my-app")
 feature    — capability or area (e.g. "auth")
-type       — "idea" | "spec" | "plan" | "digest"
+type       — "idea" | "spec" | "plan" | "digest" | "doc"
+title      — (optional) short label for easy identification in lists
 body       — document text
 ```
 
 ### `get_content`
 
-Fetches a single document by its numeric ID.
+Fetches a single document by its numeric ID. Returns all fields including `title`.
 
 ### `list_contents`
 
-Lists documents in a workspace, with optional filters for feature and/or type.
+Lists documents in a workspace, with optional filters for feature and/or type. Returns `title` on every row.
 
 ### `search_content`
 
-Full-text search across document bodies. Supports SQLite FTS5 MATCH syntax. Returns results ordered by BM25 relevance.
+Full-text search across document bodies. Supports SQLite FTS5 MATCH syntax. Returns results ordered by BM25 relevance, including `title` on every result.
 
 ```
 query      — search terms (FTS5 MATCH syntax supported)
@@ -95,7 +108,18 @@ limit      — max results, 1–50 (default 10)
 
 ### `update_content`
 
-Updates the body (and optionally the type) of an existing document by ID.
+Updates the body (and optionally the type and title) of an existing document by ID. Omitting `title` preserves the existing value.
+
+```
+id     — document ID
+body   — new document body (replaces existing)
+type   — (optional) new type, omit to keep existing
+title  — (optional) new title, omit to keep existing
+```
+
+### `delete_content`
+
+Permanently deletes a document by its numeric ID. Returns the deleted document.
 
 ## Database Schema
 
@@ -115,12 +139,15 @@ CREATE TABLE features (
 CREATE TABLE contents (
   id         INTEGER PRIMARY KEY,
   feature_id INTEGER NOT NULL REFERENCES features(id),
-  type       TEXT NOT NULL CHECK(type IN ('idea', 'spec', 'plan', 'digest')),
+  type       TEXT NOT NULL,   -- "idea" | "spec" | "plan" | "digest" | "doc"
+  title      TEXT,            -- optional short label
   body       TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 ```
+
+Existing databases are automatically migrated on startup: the `title` column is added if missing, and the legacy `CHECK` constraint on `type` is removed (validation is enforced at the application layer via Zod).
 
 ## Development
 
