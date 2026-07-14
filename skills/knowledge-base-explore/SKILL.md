@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-explore
+name: knowledge-base:explore
 description: >
   Proactively load knowledge-base context for a specific feature before starting work.
   Use this skill when ALL of the following are true:

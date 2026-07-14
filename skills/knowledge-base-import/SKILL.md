@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-import
+name: knowledge-base:import
 description: Import markdown files into the knowledge base. Use when the user wants to import or load existing markdown documents into the knowledge base DB. Reads KNOWLEDGE_BASE_WORKSPACE from CLAUDE.md automatically.
 ---
 

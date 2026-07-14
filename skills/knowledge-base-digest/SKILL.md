@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-digest
+name: knowledge-base:digest
 description: Build or rebuild a digest document for a feature in the knowledge base. A digest is a single structured document (TL;DR + index) that summarizes all contents of a feature, enabling fast context loading without reading every content individually. Rebuilds are diff-aware — unchanged content entries are reused. Use when asked to digest, summarize, or index a feature, or when preparing context for a long feature with many documents.
 ---
 

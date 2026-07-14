@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-delete
+name: knowledge-base:delete
 description: Permanently delete a document from the knowledge base. Use when the user wants to remove a stored document — e.g. "xóa spec auth", "delete idea #31", "bỏ plan cũ của feature search", "xóa cái content về X". Always shows the document and asks for confirmation before deleting.
 ---
 

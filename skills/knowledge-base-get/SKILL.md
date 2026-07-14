@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-get
+name: knowledge-base:get
 description: Retrieve and display the full content of a specific document from the knowledge base. Use when the user wants to read, view, or open a stored document — e.g. "lấy spec auth", "đọc plan của feature search", "show me the idea we saved for X", "xem lại content ID 42". Distinct from knowledge-base-search (which shows excerpts) — this fetches and displays the complete body.
 ---
 

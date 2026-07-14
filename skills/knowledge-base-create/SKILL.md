@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-create
+name: knowledge-base:create
 description: Save a spec, plan, idea, or doc from the current conversation into the knowledge base database. Use when the user asks to save, store, or persist something just created in this conversation — e.g. "save this spec", "lưu plan này", "store the idea we just discussed", "lưu doc về feature này".
 ---
 

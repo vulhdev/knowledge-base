@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-list
+name: knowledge-base:list
 description: Browse all documents in a feature of the knowledge base without needing a search query. Use when the user wants to see what's stored in a feature — e.g. "list documents trong auth", "xem tất cả content của feature search", "knowledge base có gì trong payments", "liệt kê docs của X". Distinct from knowledge-base-search (which requires a keyword) — this fetches everything in a feature as a structured table.
 ---
 

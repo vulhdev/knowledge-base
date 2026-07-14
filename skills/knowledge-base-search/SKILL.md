@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-search
+name: knowledge-base:search
 description: Search the knowledge base for stored ideas, specs, plans, or docs. Use when the user asks to find, recall, look up, or retrieve documents from the knowledge base. Reads KNOWLEDGE_BASE_WORKSPACE from CLAUDE.md to scope the search automatically.
 ---
 

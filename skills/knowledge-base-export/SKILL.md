@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-export
+name: knowledge-base:export
 description: Export knowledge base contents to markdown files. Use when the user wants to export, dump, or save knowledge base documents as markdown files. Reads KNOWLEDGE_BASE_WORKSPACE from CLAUDE.md automatically.
 ---
 

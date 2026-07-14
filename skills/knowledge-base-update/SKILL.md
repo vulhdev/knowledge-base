@@ -1,5 +1,5 @@
 ---
-name: knowledge-base-update
+name: knowledge-base:update
 description: Update an existing document in the knowledge base by merging the current conversation content with the stored version. Use when the user wants to revise, update, or overwrite a previously saved document — e.g. "cập nhật spec auth", "update plan này vào KB", "sửa lại idea về X", "lưu lại version mới của spec này".
 ---
 
