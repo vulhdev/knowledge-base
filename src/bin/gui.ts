@@ -1,5 +1,9 @@
 #!/usr/bin/env node
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { openDb } from "../db/client.js";
+
+process.env.DB_PATH ??= join(homedir(), ".claude", "knowledge-base.db");
 import { createApp } from "../gui/server.js";
 
 const port = Number(process.env.PORT ?? 3000);
