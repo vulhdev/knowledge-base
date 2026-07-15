@@ -8,7 +8,7 @@ const PICO_CDN =
 
 const CUSTOM_CSS = `
   :root { --pico-font-size: 16px; }
-  body { max-width: 860px; }
+  body { max-width: 860px; margin-inline: auto; padding-inline: 1.5rem; }
   nav { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
   nav a:first-child { font-weight: bold; font-size: 1.1rem; }
   .breadcrumb { color: var(--pico-muted-color); font-size: 0.9rem; margin-bottom: 0.5rem; }
