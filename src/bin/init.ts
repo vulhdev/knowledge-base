@@ -11,28 +11,64 @@ process.env.DB_PATH ??= join(homedir(), ".claude", "knowledge-base.db");
 
 const CREATE_NEW = "__new__";
 const SKIP = "__skip__";
-const WORKSPACE_KEY = "KNOWLEDGE_BASE_WORKSPACE";
+const BLOCK_START = "<!-- knowledge-base:start -->";
+const BLOCK_END = "<!-- knowledge-base:end -->";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SKILLS_SRC = join(PACKAGE_ROOT, "skills");
 
+function buildBlock(workspace: string): string {
+  return `${BLOCK_START}
+# Knowledge Base
+
+This project is linked to workspace **${workspace}**. Use the \`knowledge-base\` MCP tools to persist and retrieve documents across sessions.
+
+> Run \`npx --package @vulhdev/knowledge-base knowledge-base-init\` to re-configure.
+
+## Always Do
+
+- **After writing a spec** — when you've just produced a structured specification document (Problem, Solution, Scope sections, or output of \`/spec\` skill), ask: *"Save this spec to knowledge-base?"* then call \`create_content\` with \`type="spec"\`.
+- **After writing a plan** — when you've just produced a numbered implementation plan or roadmap (output of \`/plan\` skill or similar), ask: *"Save this plan to knowledge-base?"*
+- **After writing an idea one-pager** — when you've just produced an ideation document with assumptions and MVP scope (output of \`/agent-skills:idea-refine\`), ask: *"Save this idea to knowledge-base?"*
+- **Before starting a bug fix**, ask: *"Search knowledge-base for prior context first?"* If user agrees, call \`search_content(query="...", workspace="${workspace}")\`.
+- **Before starting a new feature**, silently call \`list_contents(workspace="${workspace}")\` and surface any relevant prior docs if found.
+
+## Never Do
+
+- NEVER save without user confirmation (\`search_content\` and \`list_contents\` are always safe to call).
+- NEVER create a duplicate — if a doc on the same topic exists, use \`update_content\` instead.
+
+## MCP Tools
+
+| Tool | Use for |
+|------|---------|
+| \`create_content\` | Save a new spec / plan / idea / doc / digest |
+| \`search_content\` | Find docs by keyword (FTS5, most relevant first) |
+| \`list_contents\` | Browse all docs in this workspace |
+| \`update_content\` | Update an existing doc by ID |
+| \`get_content\` | Fetch a specific doc by ID |
+
+\`KNOWLEDGE_BASE_WORKSPACE=${workspace}\`
+${BLOCK_END}`;
+}
+
 function writeWorkspaceToClaude(name: string): void {
   const claudeMdPath = join(process.cwd(), "CLAUDE.md");
-  const line = `${WORKSPACE_KEY}=${name}`;
-  const pattern = /^KNOWLEDGE_BASE_WORKSPACE=.*/m;
+  const block = buildBlock(name);
+  const blockPattern = /<!--\s*knowledge-base:start\s*-->[\s\S]*?<!--\s*knowledge-base:end\s*-->/;
 
   let content: string;
   try {
     content = readFileSync(claudeMdPath, "utf8");
-    if (pattern.test(content)) {
-      content = content.replace(pattern, line);
+    if (blockPattern.test(content)) {
+      content = content.replace(blockPattern, block);
     } else {
       content = content.endsWith("\n")
-        ? content + line + "\n"
-        : content + "\n" + line + "\n";
+        ? content + "\n" + block + "\n"
+        : content + "\n\n" + block + "\n";
     }
   } catch {
-    content = line + "\n";
+    content = block + "\n";
   }
 
   writeFileSync(claudeMdPath, content, "utf8");
@@ -96,7 +132,7 @@ async function main(): Promise<void> {
   }
 
   writeWorkspaceToClaude(workspaceName);
-  p.log.success(`Written ${WORKSPACE_KEY}=${workspaceName} to CLAUDE.md`);
+  p.log.success(`Written knowledge-base block to CLAUDE.md (workspace: ${workspaceName})`);
 
   const skillsDest = await p.select<string>({
     message: "Install Claude Code skills?",
