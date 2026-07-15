@@ -1,4 +1,4 @@
-# knowledge-base
+<img src="assets/kb-lockup-tagline.png" alt="knowledge-base" width="380" />
 
 An MCP server for Claude Code that provides persistent document storage using SQLite. Organize your ideas, specs, plans, and feature documentation in a structured three-level hierarchy.
 

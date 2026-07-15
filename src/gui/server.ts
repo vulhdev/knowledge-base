@@ -1,4 +1,6 @@
 import express from "express";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { DatabaseSync } from "node:sqlite";
 import { listWorkspaces } from "../db/workspaces.js";
 import { listFeatures } from "./db.js";
@@ -13,8 +15,12 @@ import {
   renderSearchResults,
 } from "./render.js";
 
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 export function createApp(db: DatabaseSync) {
   const app = express();
+
+  app.use("/assets", express.static(join(PACKAGE_ROOT, "assets")));
 
   app.get("/", (_req, res) => {
     const workspaces = listWorkspaces(db);

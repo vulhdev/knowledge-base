@@ -10,7 +10,7 @@ const CUSTOM_CSS = `
   :root { --pico-font-size: 16px; }
   body { max-width: 860px; margin-inline: auto; padding-inline: 1.5rem; }
   nav { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  nav a:first-child { font-weight: bold; font-size: 1.1rem; }
+  nav a:first-child img { height: 28px; display: block; }
   .breadcrumb { color: var(--pico-muted-color); font-size: 0.9rem; margin-bottom: 0.5rem; }
   .breadcrumb a { color: var(--pico-muted-color); }
   .meta { color: var(--pico-muted-color); font-size: 0.85rem; margin-bottom: 1.5rem; }
@@ -45,7 +45,7 @@ export function layout(title: string, body: string, searchQ = "", searchWs = "")
 <body>
   <header>
     <nav>
-      <a href="/">knowledge-base</a>
+      <a href="/"><img src="/assets/kb-lockup.png" alt="knowledge-base" /></a>
       <a href="/search">Search</a>
     </nav>
   </header>
