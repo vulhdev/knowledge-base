@@ -16,6 +16,8 @@ const BLOCK_END = "<!-- knowledge-base:end -->";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SKILLS_SRC = join(PACKAGE_ROOT, "skills");
+const VERSION = (JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")) as { version: string }).version;
+const VERSION_MARKER = ".knowledge-base-version";
 
 function buildBlock(workspace: string): string {
   return `${BLOCK_START}
@@ -158,6 +160,7 @@ async function main(): Promise<void> {
 
   const copied = copySkills(skillsDest as string);
   if (copied.length > 0) {
+    writeFileSync(join(skillsDest as string, VERSION_MARKER), VERSION, "utf8");
     p.log.success(`Installed ${copied.length} skills to ${skillsDest}`);
     for (const skill of copied) p.log.info(`  /${skill}`);
   } else {
