@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "bin": {
     "knowledge-base": "dist/index.js",
-    "knowledge-base-init": "dist/bin/init.js"
+    "knowledge-base-init": "dist/bin/init.js",
+    "knowledge-base-gui": "dist/bin/gui.js"
   },
   "files": [
     "dist",
