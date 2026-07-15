@@ -53,7 +53,17 @@ The wizard will:
 
 After installing, restart Claude Code to pick up the new skills.
 
-### 3. (Optional) Browse with the GUI
+### 3. (Optional) Update skills
+
+When a new version is released, update your installed skills with:
+
+```bash
+npx @vulhdev/knowledge-base update
+```
+
+Auto-detects skills installed in `~/.claude/skills/` and `./.claude/skills/`, and overwrites them only if the version has changed. Warns if no installed skills are found (run `init` first).
+
+### 4. (Optional) Browse with the GUI
 
 To explore your knowledge base in a browser, run:
 
