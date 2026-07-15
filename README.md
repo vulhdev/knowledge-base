@@ -53,6 +53,16 @@ The wizard will:
 
 After installing, restart Claude Code to pick up the new skills.
 
+### 3. (Optional) Browse with the GUI
+
+To explore your knowledge base in a browser, run:
+
+```bash
+npx @vulhdev/knowledge-base gui
+```
+
+Opens a read-only web UI at `http://localhost:3000` (override with `PORT=<n>`). Browse workspaces → features → documents, or search across all content.
+
 ## Claude Code Skills
 
 Skills use colon namespace notation — type the part after the colon to get autocomplete suggestions (e.g. `/doc` → `knowledge-base:doc`).

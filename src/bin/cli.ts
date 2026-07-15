@@ -8,8 +8,12 @@ switch (command) {
   case "gui":
     await import("./gui.js");
     break;
+  case undefined:
+    // No subcommand — start the MCP server (stdio transport, called by Claude Code)
+    await import("../index.js");
+    break;
   default:
-    console.error(`Unknown command: ${command ?? "(none)"}`);
-    console.error("Usage: knowledge-base <init|gui>");
+    console.error(`Unknown command: ${command}`);
+    console.error("Usage: knowledge-base [init|gui]");
     process.exit(1);
 }
