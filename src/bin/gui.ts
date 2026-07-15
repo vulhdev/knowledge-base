@@ -13,5 +13,5 @@ try {
 }
 
 createApp(db).listen(port, () => {
-  console.log(`knowledge-base-gui listening on http://localhost:${port}`);
+  console.log(`knowledge-base gui listening on http://localhost:${port}`);
 });

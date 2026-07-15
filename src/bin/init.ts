@@ -23,7 +23,7 @@ function buildBlock(workspace: string): string {
 
 This project is linked to workspace **${workspace}**. Use the \`knowledge-base\` MCP tools to persist and retrieve documents across sessions.
 
-> Run \`npx --package @vulhdev/knowledge-base knowledge-base-init\` to re-configure.
+> Run \`npx @vulhdev/knowledge-base init\` to re-configure.
 
 ## Always Do
 

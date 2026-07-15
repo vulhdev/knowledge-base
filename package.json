@@ -5,9 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "knowledge-base": "dist/index.js",
-    "knowledge-base-init": "dist/bin/init.js",
-    "knowledge-base-gui": "dist/bin/gui.js"
+    "knowledge-base": "dist/bin/cli.js"
   },
   "files": [
     "dist",

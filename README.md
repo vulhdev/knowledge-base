@@ -41,7 +41,7 @@ That's it. The server auto-creates a database at `~/.claude/knowledge-base.db` o
 To link a Claude Code project to a specific workspace and install skills, run:
 
 ```bash
-npx --package @vulhdev/knowledge-base knowledge-base-init
+npx @vulhdev/knowledge-base init
 ```
 
 The wizard will:

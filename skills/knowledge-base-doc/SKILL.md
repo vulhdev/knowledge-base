@@ -17,7 +17,7 @@ Analyze a feature in the codebase and produce structured `doc` content (DB Schem
 
 ### Step 1: Read the workspace
 
-Read `KNOWLEDGE_BASE_WORKSPACE` from `CLAUDE.md`. If not set, stop and tell the user to run `npx --package @vulhdev/knowledge-base knowledge-base-init` first.
+Read `KNOWLEDGE_BASE_WORKSPACE` from `CLAUDE.md`. If not set, stop and tell the user to run `npx @vulhdev/knowledge-base init` first.
 
 ---
 
