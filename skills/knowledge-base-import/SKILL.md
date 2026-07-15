@@ -31,12 +31,17 @@ find <path> -name "*.md" -type f | sort
 
 For each file, read its content with the Read tool.
 
-Extract a `title` from the file if it starts with a markdown H1 heading (`# Title text`). Use that heading text as the title and strip it from the body (the heading is redundant once stored with a title).
+Determine the title using this priority order:
+
+1. **H1 heading** — if the file starts with `# Title text`, use that text as the title and strip the heading line from the body (it is redundant once stored with a title).
+2. **AI-generated** — if no H1 heading is found, read the body and generate a short title (≤ 10 words) that captures the main subject. Use the same language as the body. Prefer noun phrases (e.g. "OAuth2 Token Refresh Flow", "Kế hoạch triển khai auth"). Do not include the content type in the title.
+
+Always pass a title — never leave it null for imported files.
 
 Then call:
 
 ```
-create_content(workspace=WORKSPACE, feature=FEATURE, type=TYPE, body=<file content>, title=<title if found>)
+create_content(workspace=WORKSPACE, feature=FEATURE, type=TYPE, body=<file content>, title=<title>)
 ```
 
 Use the same type for all files unless the user specified different types per file.
