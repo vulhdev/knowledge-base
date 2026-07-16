@@ -83,6 +83,14 @@ describe("GUI server routes", () => {
     });
   });
 
+  describe("GET /assets/:file", () => {
+    it("serves the logo image with 200", async () => {
+      const res = await request(app).get("/assets/kb-lockup-tagline-dark.png");
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/image\/png/);
+    });
+  });
+
   describe("GET /search", () => {
     it("returns 200 with results for a matching query", async () => {
       const res = await request(app).get("/search?q=auth");

@@ -9,7 +9,8 @@
   },
   "files": [
     "dist",
-    "skills"
+    "skills",
+    "assets"
   ],
   "keywords": [
     "mcp",
