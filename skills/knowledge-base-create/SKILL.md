@@ -15,7 +15,8 @@ Read `KNOWLEDGE_BASE_WORKSPACE` from `CLAUDE.md` (it is already in your context)
 
 ### 2. Determine type
 
-Check the user's message for an explicit type keyword: `spec`, `plan`, `idea`, or `doc`.
+Check the user's message for an explicit type keyword: `spec`, `plan`, `idea`, `doc`, or any
+custom string they mention (e.g. "save this as an issue", "type: adr").
 
 If no keyword is found, infer from the content being saved:
 - Checkboxes (`- [ ]`), ordered steps, phased work → `plan`
@@ -23,7 +24,10 @@ If no keyword is found, infer from the content being saved:
 - Exploratory, open questions, brainstorming → `idea`
 - Current-state documentation of existing code (DB schema, backend flow, frontend structure, how something works right now) → `doc`
 
-If still ambiguous, default to `idea`.
+If still ambiguous, defer to Step 4: after fetching `list_contents` to build the feature
+suggestion list, extract the unique `type` values already in use in that workspace. Then ask
+the user with an `AskUserQuestion` that shows both the built-in suggestions and any existing
+custom types from the DB. Default to `idea` if the user skips.
 
 ### 3. Extract content from context
 

@@ -19,7 +19,7 @@ From the user's message, determine:
 
 - **file(s)** — a file path, a glob, or a directory. If not given, ask: "Which file or folder do you want to import?"
 - **feature** — the feature name to store the content under. If not given, use the filename without the `.md` extension.
-- **type** — `idea`, `spec`, `plan`, or `doc`. If not given, ask the user before proceeding. Use `doc` for files that describe existing code (DB schema, flow diagrams, architecture notes).
+- **type** — any string. Suggested values: `idea`, `spec`, `plan`, `doc`. If not given in the user's message, default to `doc`. Use `doc` for files that describe existing code (DB schema, flow diagrams, architecture notes).
 
 If the user specifies a directory, list all `.md` files under it:
 
