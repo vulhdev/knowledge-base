@@ -21,7 +21,7 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-const contentTypeSchema = z.enum(["idea", "spec", "plan", "digest", "doc"]);
+const contentTypeSchema = z.string().min(1);
 
 function toText(value: unknown): string {
   return JSON.stringify(value, null, 2);
@@ -38,7 +38,7 @@ server.tool(
   {
     workspace: z.string().min(1).describe("Workspace name (e.g. project slug)"),
     feature: z.string().min(1).describe("Feature or area name within the workspace"),
-    type: contentTypeSchema.describe("Document type: idea | spec | plan | digest | doc"),
+    type: contentTypeSchema.describe("Document type. Suggested: idea | spec | plan | digest | doc. Any non-empty string is accepted."),
     title: z.string().min(1).optional().describe("Short label for the document (optional, displayed in list/search results)"),
     body: z.string().min(1).describe("Document body text"),
   },
@@ -74,7 +74,7 @@ server.tool(
   {
     workspace: z.string().min(1).describe("Workspace to list documents from"),
     feature: z.string().optional().describe("Filter to a specific feature"),
-    type: contentTypeSchema.optional().describe("Filter by type: idea | spec | plan | digest | doc"),
+    type: contentTypeSchema.optional().describe("Filter by type. Suggested: idea | spec | plan | digest | doc. Any non-empty string is accepted."),
   },
   async ({ workspace, feature, type }) => {
     try {
@@ -92,7 +92,7 @@ server.tool(
   {
     query: z.string().min(1).describe("Search query (FTS5 MATCH syntax supported)"),
     workspace: z.string().optional().describe("Scope search to a specific workspace"),
-    type: contentTypeSchema.optional().describe("Filter results by type: idea | spec | plan | digest | doc"),
+    type: contentTypeSchema.optional().describe("Filter results by type. Suggested: idea | spec | plan | digest | doc. Any non-empty string is accepted."),
     limit: z.number().int().positive().max(50).default(10).describe("Max results to return (1–50, default 10)"),
   },
   async ({ query, workspace, type, limit }) => {
@@ -111,7 +111,7 @@ server.tool(
   {
     id: z.number().int().positive().describe("Document ID returned by create_content or search_content"),
     body: z.string().min(1).describe("New document body text (replaces existing body)"),
-    type: contentTypeSchema.optional().describe("New document type (omit to keep existing type)"),
+    type: contentTypeSchema.optional().describe("New document type (omit to keep existing type). Suggested: idea | spec | plan | digest | doc. Any non-empty string is accepted."),
     title: z.string().min(1).optional().describe("New title (omit to keep existing title)"),
   },
   async ({ id, body, type, title }) => {
