@@ -34,9 +34,14 @@ describe("createContent", () => {
     expect(features).toHaveLength(1);
   });
 
-  it("throws for invalid type", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(() => createContent(db, "ws", "ft", "invalid" as any, "body")).toThrow(/type must be/);
+  it("accepts any non-empty string as type", () => {
+    const result = createContent(db, "ws", "ft", "issue" as any, "body");
+    expect(result.type).toBe("issue");
+  });
+
+  it("accepts custom type adr", () => {
+    const result = createContent(db, "ws", "ft", "adr" as any, "body");
+    expect(result.type).toBe("adr");
   });
 
   it("throws for empty body", () => {

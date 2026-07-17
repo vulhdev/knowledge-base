@@ -1,8 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ContentType, CreateContentResult } from "../types.js";
 
-const VALID_TYPES: readonly ContentType[] = ["idea", "spec", "plan", "digest", "doc"];
-
 export function createContent(
   db: DatabaseSync,
   workspace: string,
@@ -11,9 +9,6 @@ export function createContent(
   body: string,
   title?: string,
 ): CreateContentResult {
-  if (!VALID_TYPES.includes(type)) {
-    throw new Error(`type must be one of: ${VALID_TYPES.join(", ")}`);
-  }
   if (!body.trim()) {
     throw new Error("body must not be empty");
   }

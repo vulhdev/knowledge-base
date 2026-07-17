@@ -1,8 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Content, ContentType } from "../types.js";
 
-const VALID_TYPES: readonly ContentType[] = ["idea", "spec", "plan", "digest", "doc"];
-
 export function updateContent(
   db: DatabaseSync,
   id: number,
@@ -12,9 +10,6 @@ export function updateContent(
 ): Content {
   if (!body.trim()) {
     throw new Error("body must not be empty");
-  }
-  if (type !== undefined && !VALID_TYPES.includes(type)) {
-    throw new Error(`type must be one of: ${VALID_TYPES.join(", ")}`);
   }
 
   const { changes } = db

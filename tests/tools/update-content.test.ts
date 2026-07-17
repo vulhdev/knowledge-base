@@ -46,10 +46,10 @@ describe("updateContent", () => {
     expect(() => updateContent(db, created.id, "   ")).toThrow(/body must not be empty/);
   });
 
-  it("throws for invalid type", () => {
+  it("accepts custom type string", () => {
     const created = createContent(db, "proj", "auth", "idea", "body");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(() => updateContent(db, created.id, "body", "draft" as any)).toThrow(/type must be one of/);
+    const result = updateContent(db, created.id, "body", "issue" as any);
+    expect(result.type).toBe("issue");
   });
 
   it("updates title when provided", () => {
