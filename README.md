@@ -11,13 +11,19 @@ workspace → feature → content (idea | spec | plan | digest | doc)
 - **Persistent storage** — all content survives across Claude Code sessions
 - **Five content types** — `idea`, `spec`, `plan`, `doc` (current-state feature docs), plus `digest` for summaries
 - **Optional title field** — short label on any document for easy scanning in list/search results
-- **Full-text search** — powered by SQLite FTS5 with BM25 relevance ranking
-- **Zero external dependencies** — uses Node.js built-in `node:sqlite` (no native compilation)
+- **Semantic search** — on-device vector similarity search powered by `sqlite-vec` and a local ONNX embedding model (multilingual, 50+ languages including Vietnamese)
+- **SQLite-backed** — single file database via `better-sqlite3`, no external services
 - **Claude Code skills** — 11 slash commands for create, list, search, get, update, delete, import, export, explore, digest, and doc analysis
 
 ## Requirements
 
 - Node.js 22.5 or later
+- C++ build tools (for `better-sqlite3` native addon):
+  - macOS: `xcode-select --install`
+  - Linux: `sudo apt-get install build-essential`
+  - Windows: `npm install -g windows-build-tools`
+
+  Most users won't need this — prebuilt binaries are bundled for common platforms. If startup fails with a native addon error, run the command above then `npm rebuild better-sqlite3`.
 
 ## Setup
 
@@ -46,12 +52,15 @@ npx @vulhdev/knowledge-base init
 
 The wizard will:
 1. Prompt you to select or create a **workspace** — writes `KNOWLEDGE_BASE_WORKSPACE=<name>` to `CLAUDE.md`
-2. Ask where to install **Claude Code skills**:
+2. **Download the embedding model** (~120 MB, first time only) to `~/.cache/knowledge-base/models/` — required for semantic search. Skipped automatically if already cached.
+3. Ask where to install **Claude Code skills**:
    - **Global** (`~/.claude/skills/`) — available in all projects
    - **This project** (`./.claude/skills/`) — current project only
    - **Skip**
 
 After installing, restart Claude Code to pick up the new skills.
+
+> **Custom model cache directory:** set `MODEL_CACHE_DIR=/your/path` to override where the model is stored.
 
 ### 3. (Optional) Update skills
 
@@ -81,7 +90,7 @@ Skills use colon namespace notation — type the part after the colon to get aut
 |---|---|
 | `/create` → `knowledge-base:create` | Save a spec, plan, idea, or doc from the current conversation |
 | `/list` → `knowledge-base:list` | Browse all documents in a feature (no keyword needed) |
-| `/search` → `knowledge-base:search` | Full-text search when you know what to look for |
+| `/search` → `knowledge-base:search` | Semantic search — finds relevant documents even without exact keywords |
 | `/get` → `knowledge-base:get` | Read the full body of a specific document by ID or description |
 | `/update` → `knowledge-base:update` | Merge new content into an existing document |
 | `/delete` → `knowledge-base:delete` | Permanently remove a document (with confirmation) |
@@ -115,12 +124,14 @@ Fetches a single document by its numeric ID. Returns all fields including `title
 
 Lists documents in a workspace, with optional filters for feature and/or type. Returns `title` on every row.
 
-### `search_content`
+### `search_semantic`
 
-Full-text search across document bodies. Supports SQLite FTS5 MATCH syntax. Returns results ordered by BM25 relevance, including `title` on every result.
+Semantic (vector) search across document bodies using a local ONNX embedding model. Returns documents ordered by vector similarity — finds relevant content even when the exact words don't match. Supports any natural language including Vietnamese.
+
+Requires the embedding model to be downloaded first (`npx @vulhdev/knowledge-base init`). Embeddings for new and updated documents are generated automatically; existing documents are backfilled in the background on the next server startup after `init`.
 
 ```
-query      — search terms (FTS5 MATCH syntax supported)
+query      — natural language search query (any language)
 workspace  — (optional) scope to a specific workspace
 type       — (optional) filter by content type
 limit      — max results, 1–50 (default 10)
@@ -162,12 +173,19 @@ CREATE TABLE contents (
   type       TEXT NOT NULL,   -- "idea" | "spec" | "plan" | "digest" | "doc"
   title      TEXT,            -- optional short label
   body       TEXT NOT NULL,
+  embedding  BLOB,            -- float[384] vector, NULL until model is downloaded
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Virtual table managed by sqlite-vec; kept in sync via INSERT/UPDATE/DELETE triggers
+CREATE VIRTUAL TABLE vec_contents USING vec0(embedding float[384]);
 ```
 
-Existing databases are automatically migrated on startup: the `title` column is added if missing, and the legacy `CHECK` constraint on `type` is removed (validation is enforced at the application layer via Zod).
+Existing databases are automatically migrated on startup:
+- `title` column added if missing
+- Legacy `CHECK` constraint on `type` removed (validation enforced at the application layer via Zod)
+- `embedding` column added if missing; existing rows backfilled asynchronously on the next server startup after `npx @vulhdev/knowledge-base init` (model must be downloaded first)
 
 ## Development
 
