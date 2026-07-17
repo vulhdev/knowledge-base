@@ -103,4 +103,11 @@ describe("searchContent", () => {
     const results = searchContent(db, "OAuth2");
     expect(results.some((r) => r.title === null)).toBe(true);
   });
+
+  it("filters by custom type string", () => {
+    createContent(db, "proj-a", "auth", "issue" as any, "OAuth2 permission error bug");
+    const results = searchContent(db, "OAuth2", undefined, "issue" as any);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((r) => r.type === "issue")).toBe(true);
+  });
 });

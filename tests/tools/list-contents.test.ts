@@ -68,4 +68,11 @@ describe("listContents", () => {
     const results = listContents(db, "proj-a", "auth", "doc");
     expect(results[0].title).toBe("Titled Doc");
   });
+
+  it("filters by custom type string", () => {
+    createContent(db, "proj-a", "auth", "issue" as any, "a bug report");
+    const results = listContents(db, "proj-a", undefined, "issue" as any);
+    expect(results).toHaveLength(1);
+    expect(results[0].type).toBe("issue");
+  });
 });
