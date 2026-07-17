@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type { DatabaseSync } from "node:sqlite";
+import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
 import { updateContent } from "../../src/tools/update-content.js";
 
 describe("updateContent", () => {
-  let db: DatabaseSync;
+  let db: Database.Database;
 
   beforeEach(() => {
     db = createTestDb();

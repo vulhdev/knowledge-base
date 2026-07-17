@@ -1,8 +1,8 @@
-import type { DatabaseSync } from "node:sqlite";
+import type Database from "better-sqlite3";
 import type { Content, ContentType } from "../types.js";
 
 export function updateContent(
-  db: DatabaseSync,
+  db: Database.Database,
   id: number,
   body: string,
   type?: ContentType,

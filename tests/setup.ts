@@ -1,8 +1,8 @@
-import { DatabaseSync } from "node:sqlite";
+import Database from "better-sqlite3";
 import { applySchema } from "../src/db/schema.js";
 
-export function createTestDb(): DatabaseSync {
-  const db = new DatabaseSync(":memory:");
+export function createTestDb(): Database.Database {
+  const db = new Database(":memory:");
   applySchema(db);
   return db;
 }

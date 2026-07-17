@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type { DatabaseSync } from "node:sqlite";
+import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { listWorkspaces, createWorkspace } from "../../src/db/workspaces.js";
 
 describe("listWorkspaces", () => {
-  let db: DatabaseSync;
+  let db: Database.Database;
 
   beforeEach(() => {
     db = createTestDb();
@@ -33,7 +33,7 @@ describe("listWorkspaces", () => {
 });
 
 describe("createWorkspace", () => {
-  let db: DatabaseSync;
+  let db: Database.Database;
 
   beforeEach(() => {
     db = createTestDb();

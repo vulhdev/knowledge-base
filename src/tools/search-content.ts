@@ -1,11 +1,11 @@
-import type { DatabaseSync } from "node:sqlite";
+import type Database from "better-sqlite3";
 import type { ContentType, SearchResult } from "../types.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
 export function searchContent(
-  db: DatabaseSync,
+  db: Database.Database,
   query: string,
   workspace?: string,
   type?: ContentType,

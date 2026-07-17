@@ -1,7 +1,7 @@
 import express from "express";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { DatabaseSync } from "node:sqlite";
+import type Database from "better-sqlite3";
 import { listWorkspaces } from "../db/workspaces.js";
 import { listFeatures } from "./db.js";
 import { listContents } from "../tools/list-contents.js";
@@ -17,7 +17,7 @@ import {
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-export function createApp(db: DatabaseSync) {
+export function createApp(db: Database.Database) {
   const app = express();
 
   app.use("/assets", express.static(join(PACKAGE_ROOT, "assets")));

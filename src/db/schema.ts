@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type Database from "better-sqlite3";
 
 const FTS_AND_TRIGGERS = `
   CREATE VIRTUAL TABLE IF NOT EXISTS contents_fts USING fts5(
@@ -22,7 +22,7 @@ const FTS_AND_TRIGGERS = `
   END;
 `;
 
-export function applySchema(db: DatabaseSync): void {
+export function applySchema(db: Database.Database): void {
   db.exec("PRAGMA foreign_keys = ON");
 
   db.exec(`
@@ -57,7 +57,7 @@ export function applySchema(db: DatabaseSync): void {
   runMigrations(db);
 }
 
-function runMigrations(db: DatabaseSync): void {
+function runMigrations(db: Database.Database): void {
   // Migration 1: add title column if missing (existing DBs pre-dating this change)
   const hasTitle = (
     db
@@ -79,7 +79,7 @@ function runMigrations(db: DatabaseSync): void {
   }
 }
 
-function removeCheckConstraint(db: DatabaseSync): void {
+function removeCheckConstraint(db: Database.Database): void {
   // SQLite cannot ALTER TABLE to modify a CHECK constraint — requires full table recreation.
   // foreign_keys must be off during the swap; PRAGMA cannot change inside a transaction.
   db.exec("PRAGMA foreign_keys = OFF");

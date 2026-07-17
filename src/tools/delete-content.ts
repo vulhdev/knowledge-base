@@ -1,7 +1,7 @@
-import type { DatabaseSync } from "node:sqlite";
+import type Database from "better-sqlite3";
 import type { Content } from "../types.js";
 
-export function deleteContent(db: DatabaseSync, id: number): Content {
+export function deleteContent(db: Database.Database, id: number): Content {
   const row = db
     .prepare(
       `SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.body, c.created_at, c.updated_at

@@ -1,8 +1,8 @@
-import type { DatabaseSync } from "node:sqlite";
+import type Database from "better-sqlite3";
 
 export type Feature = { id: number; name: string };
 
-export function listFeatures(db: DatabaseSync, workspace: string): Feature[] {
+export function listFeatures(db: Database.Database, workspace: string): Feature[] {
   return db
     .prepare(
       `SELECT f.id, f.name

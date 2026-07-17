@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
-import type { DatabaseSync } from "node:sqlite";
+import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
 import { createApp } from "../../src/gui/server.js";
 
 describe("GUI server routes", () => {
-  let db: DatabaseSync;
+  let db: Database.Database;
   let app: ReturnType<typeof createApp>;
 
   beforeEach(() => {

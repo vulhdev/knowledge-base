@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { DatabaseSync } from "node:sqlite";
+import Database from "better-sqlite3";
 import { applySchema } from "../../src/db/schema.js";
 
-function createOldSchemaDb(): DatabaseSync {
-  const db = new DatabaseSync(":memory:");
+function createOldSchemaDb(): Database.Database {
+  const db = new Database(":memory:");
   db.exec(`
     CREATE TABLE workspaces (
       id   INTEGER PRIMARY KEY,

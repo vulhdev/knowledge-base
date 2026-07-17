@@ -1,8 +1,8 @@
-import type { DatabaseSync } from "node:sqlite";
+import type Database from "better-sqlite3";
 import type { Content, ContentType } from "../types.js";
 
 export function listContents(
-  db: DatabaseSync,
+  db: Database.Database,
   workspace: string,
   feature?: string,
   type?: ContentType,
