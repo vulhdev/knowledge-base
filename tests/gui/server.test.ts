@@ -10,6 +10,10 @@ vi.mock("../../src/embedding/model.js", () => ({
   getEmbedding: vi.fn().mockResolvedValue(new Float32Array(384).fill(0)),
 }));
 
+vi.mock("../../src/tools/search-semantic.js", () => ({
+  searchSemantic: vi.fn().mockResolvedValue([]),
+}));
+
 describe("GUI server routes", () => {
   let db: Database.Database;
   let app: ReturnType<typeof createApp>;

@@ -6,7 +6,7 @@ import { listWorkspaces } from "../db/workspaces.js";
 import { listFeatures } from "./db.js";
 import { listContents } from "../tools/list-contents.js";
 import { getContent } from "../tools/get-content.js";
-import { searchContent } from "../tools/search-content.js";
+import { searchSemantic } from "../tools/search-semantic.js";
 import {
   renderWorkspaceList,
   renderFeatureList,
@@ -67,7 +67,7 @@ export function createApp(db: Database.Database) {
     }
   });
 
-  app.get("/search", (req, res) => {
+  app.get("/search", async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const workspace =
       typeof req.query.workspace === "string" ? req.query.workspace : undefined;
@@ -75,7 +75,7 @@ export function createApp(db: Database.Database) {
       res.redirect("/");
       return;
     }
-    const results = searchContent(db, q, workspace);
+    const results = await searchSemantic(db, q, workspace).catch(() => []);
     res.send(renderSearchResults(q, results, workspace));
   });
 

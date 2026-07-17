@@ -10,7 +10,7 @@ import { openDb } from "./db/client.js";
 import { createContent } from "./tools/create-content.js";
 import { getContent } from "./tools/get-content.js";
 import { listContents } from "./tools/list-contents.js";
-import { searchContent } from "./tools/search-content.js";
+import { searchSemantic } from "./tools/search-semantic.js";
 import { updateContent } from "./tools/update-content.js";
 import { deleteContent } from "./tools/delete-content.js";
 
@@ -87,17 +87,17 @@ server.tool(
 );
 
 server.tool(
-  "search_content",
-  "Full-text search across document bodies using SQLite FTS5 with BM25 relevance ranking. Returns documents ordered by relevance (most relevant first).",
+  "search_semantic",
+  "Semantic search across document bodies using vector similarity (multilingual, 50+ languages). Returns documents ordered by semantic similarity to the query. Requires `npx @vulhdev/knowledge-base init` to be run first to download the embedding model.",
   {
-    query: z.string().min(1).describe("Search query (FTS5 MATCH syntax supported)"),
+    query: z.string().min(1).describe("Search query — any natural language, including Vietnamese"),
     workspace: z.string().optional().describe("Scope search to a specific workspace"),
     type: contentTypeSchema.optional().describe("Filter results by type. Suggested: idea | spec | plan | digest | doc. Any non-empty string is accepted."),
     limit: z.number().int().positive().max(50).default(10).describe("Max results to return (1–50, default 10)"),
   },
   async ({ query, workspace, type, limit }) => {
     try {
-      const results = searchContent(db, query, workspace, type, limit);
+      const results = await searchSemantic(db, query, workspace, type, limit);
       return { content: [{ type: "text", text: toText(results) }] };
     } catch (err) {
       return errorContent(err);
