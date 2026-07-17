@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { load as loadSqliteVec } from "sqlite-vec";
 import { applySchema } from "./schema.js";
 
 let instance: Database.Database | null = null;
@@ -13,6 +14,7 @@ export function openDb(): Database.Database {
 
   try {
     instance = new Database(dbPath);
+    loadSqliteVec(instance);
   } catch (err) {
     throw new Error(
       `Failed to load better-sqlite3. Build tools may be missing.\n\n` +

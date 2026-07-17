@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import Database from "better-sqlite3";
+import { load as loadSqliteVec } from "sqlite-vec";
 import { applySchema } from "../../src/db/schema.js";
 
 function createOldSchemaDb(): Database.Database {
   const db = new Database(":memory:");
+  loadSqliteVec(db);
   db.exec(`
     CREATE TABLE workspaces (
       id   INTEGER PRIMARY KEY,
