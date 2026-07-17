@@ -21,7 +21,7 @@ Search the knowledge base for documents stored under the current workspace.
    - `digest` — feature summaries
    If no type is mentioned, search across all types.
 
-4. **Call `search_content`** with:
+4. **Call `search_semantic`** with:
    - `query`: the extracted search terms
    - `workspace`: the value of `KNOWLEDGE_BASE_WORKSPACE`
    - `type` (optional): the identified type filter

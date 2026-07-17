@@ -24,7 +24,7 @@ Use the same lookup logic as `knowledge-base-get`:
 → Call `list_contents(workspace=WORKSPACE, feature=<feature>, type=<type>)`.
 
 **Case C — user describes topic without explicit feature/type:**
-→ Call `search_content(query=<keywords>, workspace=WORKSPACE, limit=10)`.
+→ Call `search_semantic(query=<keywords>, workspace=WORKSPACE, limit=10)`.
 
 If multiple results, present the list and ask the user to pick (same format as `knowledge-base-get` Step 3).
 

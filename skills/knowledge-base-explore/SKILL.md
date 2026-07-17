@@ -48,10 +48,10 @@ Extract from the user's message:
 
 ## Step 1: Quick scan via digest (always run first)
 
-Call `search_content` scoped to digests only:
+Call `search_semantic` scoped to digests only:
 
 ```
-search_content(query=<feature>, workspace=WORKSPACE, type="digest", limit=3)
+search_semantic(query=<feature>, workspace=WORKSPACE, type="digest", limit=3)
 ```
 
 **If digest results are found:**
@@ -68,9 +68,9 @@ search_content(query=<feature>, workspace=WORKSPACE, type="digest", limit=3)
 **For bug mode**, run three searches in parallel:
 
 ```
-search_content(query=<feature>, workspace=WORKSPACE, type="doc", limit=5)
-search_content(query=<feature>, workspace=WORKSPACE, limit=10)
-search_content(query=<symptom>, workspace=WORKSPACE, limit=5)   ← secondary symptom search
+search_semantic(query=<feature>, workspace=WORKSPACE, type="doc", limit=5)
+search_semantic(query=<feature>, workspace=WORKSPACE, limit=10)
+search_semantic(query=<symptom>, workspace=WORKSPACE, limit=5)   ← secondary symptom search
 ```
 
 Merge all results, deduplicate by ID. `doc` types are highest priority. Symptom results are shown in a separate group.
@@ -78,8 +78,8 @@ Merge all results, deduplicate by ID. `doc` types are highest priority. Symptom 
 **For upgrade mode and feature mode**, run two searches in parallel:
 
 ```
-search_content(query=<feature>, workspace=WORKSPACE, type="doc", limit=5)
-search_content(query=<feature>, workspace=WORKSPACE, limit=10)
+search_semantic(query=<feature>, workspace=WORKSPACE, type="doc", limit=5)
+search_semantic(query=<feature>, workspace=WORKSPACE, limit=10)
 ```
 
 Load full bodies of `doc` results via `get_content` before presenting.
@@ -194,24 +194,24 @@ If nothing found:
 
 **"Debug the payment webhook — it's not firing when order completes"**
 → intent=bug, feature=`payment`, symptom=`webhook not firing order complete`
-→ parallel search: `search_content(query="payment")` + `search_content(query="webhook not firing order complete")`
+→ parallel search: `search_semantic(query="payment")` + `search_semantic(query="webhook not firing order complete")`
 → group results: known issues → related decisions → symptom matches
 → present bug mode output
 
 **"Upgrade the auth refresh token flow"**
 → intent=upgrade, feature=`auth`
-→ `search_content(query="auth", type="digest")` → no digest → parallel: doc + general search
+→ `search_semantic(query="auth", type="digest")` → no digest → parallel: doc + general search
 → load full body of "Auth DB Schema" doc
 → group: current state → past decisions → open questions → present upgrade mode output
 
 **"Implement tính năng tạo bài viết"**
 → intent=feature, feature=`bài viết`
-→ `search_content(query="bài viết", type="digest")` → no digest → parallel: doc + general
+→ `search_semantic(query="bài viết", type="digest")` → no digest → parallel: doc + general
 → load full doc bodies → present feature mode output
 
 **"Review the search feature"**
 → intent=feature, feature=`search`
-→ `search_content(query="search", type="digest")` → digest found → present TL;DR + index → done
+→ `search_semantic(query="search", type="digest")` → digest found → present TL;DR + index → done
 
 **"What is dependency injection?"**
 → Conceptual question, no feature named → **do not invoke this skill**

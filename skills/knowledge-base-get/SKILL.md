@@ -22,7 +22,7 @@ Read `KNOWLEDGE_BASE_WORKSPACE` from `CLAUDE.md` (it is already in your context)
 → Call `list_contents(workspace=WORKSPACE, feature=<feature>, type=<type>)` with the known filters.
 
 **Case C — user describes topic without explicit feature/type** (e.g. "lấy cái document về deployment", "show me what we have on caching"):
-→ Extract keywords from the message and call `search_content(query=<keywords>, workspace=WORKSPACE, limit=10)`.
+→ Extract keywords from the message and call `search_semantic(query=<keywords>, workspace=WORKSPACE, limit=10)`.
 
 ### 3. Resolve to a single document (if needed)
 
@@ -68,6 +68,6 @@ Render the body as markdown — do not escape or truncate it.
 
 - "lấy spec của feature auth" → list_contents(feature="auth", type="spec") → 1 result → get and display
 - "xem plan search" → list_contents(feature="search", type="plan") → pick if multiple
-- "đọc lại cái idea về caching" → search_content(query="caching idea") → resolve → get
+- "đọc lại cái idea về caching" → search_semantic(query="caching idea") → resolve → get
 - "get content ID 42" → get_content(id=42) directly
 - `/knowledge-base-get` after `/knowledge-base-search` showed results → ask which ID to open

@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, cpSync, existsSync
 import * as p from "@clack/prompts";
 import { openDb } from "../db/client.js";
 import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
+import { isModelReady, getEmbedding } from "../embedding/model.js";
 
 process.env.DB_PATH ??= join(homedir(), ".claude", "knowledge-base.db");
 
@@ -32,12 +33,12 @@ This project is linked to workspace **${workspace}**. Use the \`knowledge-base\`
 - **After writing a spec** — when you've just produced a structured specification document (Problem, Solution, Scope sections, or output of \`/spec\` skill), ask: *"Save this spec to knowledge-base?"* then call \`create_content\` with \`type="spec"\`.
 - **After writing a plan** — when you've just produced a numbered implementation plan or roadmap (output of \`/plan\` skill or similar), ask: *"Save this plan to knowledge-base?"*
 - **After writing an idea one-pager** — when you've just produced an ideation document with assumptions and MVP scope (output of \`/agent-skills:idea-refine\`), ask: *"Save this idea to knowledge-base?"*
-- **Before starting a bug fix**, ask: *"Search knowledge-base for prior context first?"* If user agrees, call \`search_content(query="...", workspace="${workspace}")\`.
+- **Before starting a bug fix**, ask: *"Search knowledge-base for prior context first?"* If user agrees, call \`search_semantic(query="...", workspace="${workspace}")\`.
 - **Before starting a new feature**, silently call \`list_contents(workspace="${workspace}")\` and surface any relevant prior docs if found.
 
 ## Never Do
 
-- NEVER save without user confirmation (\`search_content\` and \`list_contents\` are always safe to call).
+- NEVER save without user confirmation (\`search_semantic\` and \`list_contents\` are always safe to call).
 - NEVER create a duplicate — if a doc on the same topic exists, use \`update_content\` instead.
 
 ## MCP Tools
@@ -45,7 +46,7 @@ This project is linked to workspace **${workspace}**. Use the \`knowledge-base\`
 | Tool | Use for |
 |------|---------|
 | \`create_content\` | Save a new spec / plan / idea / doc / digest |
-| \`search_content\` | Find docs by keyword (FTS5, most relevant first) |
+| \`search_semantic\` | Find docs by semantic similarity (vector search, multilingual) |
 | \`list_contents\` | Browse all docs in this workspace |
 | \`update_content\` | Update an existing doc by ID |
 | \`get_content\` | Fetch a specific doc by ID |
@@ -135,6 +136,20 @@ async function main(): Promise<void> {
 
   writeWorkspaceToClaude(workspaceName);
   p.log.success(`Written knowledge-base block to CLAUDE.md (workspace: ${workspaceName})`);
+
+  if (isModelReady()) {
+    p.log.info("Embedding model already cached — skipping download.");
+  } else {
+    const modelSpinner = p.spinner();
+    modelSpinner.start("Downloading embedding model (~120 MB, first time only)…");
+    try {
+      await getEmbedding("warm-up");
+      modelSpinner.stop("Embedding model downloaded.");
+    } catch (err) {
+      modelSpinner.stop("Model download failed. Run `npx @vulhdev/knowledge-base init` again to retry.");
+      p.log.warn(String(err));
+    }
+  }
 
   const skillsDest = await p.select<string>({
     message: "Install Claude Code skills?",

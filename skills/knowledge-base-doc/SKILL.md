@@ -33,7 +33,7 @@ Extract the feature name from the user's message. Derive two search terms in par
 ### Step 3: KB lookup — check for existing docs
 
 ```
-search_content(workspace=WORKSPACE, type="doc", query=<feature_name>, limit=10)
+search_semantic(workspace=WORKSPACE, type="doc", query=<feature_name>, limit=10)
 ```
 
 **If docs are found**, present them:

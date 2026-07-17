@@ -22,7 +22,7 @@ Read `KNOWLEDGE_BASE_WORKSPACE` from `CLAUDE.md` (it is already in your context)
 → Call `list_contents(workspace=WORKSPACE, feature=<feature>, type=<type>)` with the known filters.
 
 **Case C — user describes topic without explicit feature/type** (e.g. "xóa cái document về deployment"):
-→ Extract keywords and call `search_content(query=<keywords>, workspace=WORKSPACE, limit=10)`.
+→ Extract keywords and call `search_semantic(query=<keywords>, workspace=WORKSPACE, limit=10)`.
 
 ### 3. Resolve to a single document (if needed)
 
@@ -93,5 +93,5 @@ delete_content(id=<id>)
 
 - "xóa spec auth" → list_contents(feature="auth", type="spec") → 1 result → display → confirm → delete
 - "delete idea #31" → get_content(31) directly → display → confirm → delete
-- "bỏ cái plan cũ về caching" → search_content(query="caching plan") → resolve → display → confirm → delete
+- "bỏ cái plan cũ về caching" → search_semantic(query="caching plan") → resolve → display → confirm → delete
 - "xóa hết plan trong feature search" → list_contents(feature="search", type="plan") → if multiple, ask which one(s) → confirm each → delete
