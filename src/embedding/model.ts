@@ -9,7 +9,7 @@ function getModelCacheDir(): string {
 }
 
 function getLocalModelDir(): string {
-  return join(getModelCacheDir(), "paraphrase-multilingual-MiniLM-L12-v2");
+  return join(getModelCacheDir(), "Xenova", "paraphrase-multilingual-MiniLM-L12-v2");
 }
 
 export function isModelReady(): boolean {

@@ -45,7 +45,7 @@ describe("isModelReady", () => {
   });
 
   it("returns true when cache dir contains model files", async () => {
-    const modelDir = join(tmpDir, "paraphrase-multilingual-MiniLM-L12-v2");
+    const modelDir = join(tmpDir, "Xenova", "paraphrase-multilingual-MiniLM-L12-v2");
     mkdirSync(modelDir, { recursive: true });
     // Simulate a model file being present
     const { writeFileSync } = await import("node:fs");
