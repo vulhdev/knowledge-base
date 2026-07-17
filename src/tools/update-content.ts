@@ -1,13 +1,14 @@
 import type Database from "better-sqlite3";
 import type { Content, ContentType } from "../types.js";
+import { isModelReady, getEmbedding } from "../embedding/model.js";
 
-export function updateContent(
+export async function updateContent(
   db: Database.Database,
   id: number,
   body: string,
   type?: ContentType,
   title?: string,
-): Content {
+): Promise<Content> {
   if (!body.trim()) {
     throw new Error("body must not be empty");
   }
@@ -22,6 +23,16 @@ export function updateContent(
 
   if (changes === 0) {
     throw new Error(`Content not found: id=${id}`);
+  }
+
+  if (isModelReady()) {
+    try {
+      const embedding = await getEmbedding(body);
+      const blob = Buffer.from(embedding.buffer);
+      db.prepare("UPDATE contents SET embedding = ? WHERE id = ?").run(blob, id);
+    } catch {
+      // embedding failure must not prevent content update
+    }
   }
 
   const row = db

@@ -32,7 +32,7 @@ describe("digest type", () => {
 
   it("update_content with type='digest' succeeds", async () => {
     const { id } = await createContent(db, "ws", "ft", "idea", "original idea");
-    const updated = updateContent(db, id, "updated body", "digest");
+    const updated = await updateContent(db, id, "updated body", "digest");
     expect(updated.type).toBe("digest");
   });
 

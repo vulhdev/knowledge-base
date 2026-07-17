@@ -116,7 +116,7 @@ server.tool(
   },
   async ({ id, body, type, title }) => {
     try {
-      const result = updateContent(db, id, body, type, title);
+      const result = await updateContent(db, id, body, type, title);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       return errorContent(err);
