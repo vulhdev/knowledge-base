@@ -44,7 +44,7 @@ server.tool(
   },
   async ({ workspace, feature, type, title, body }) => {
     try {
-      const result = createContent(db, workspace, feature, type, body, title);
+      const result = await createContent(db, workspace, feature, type, body, title);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       return errorContent(err);

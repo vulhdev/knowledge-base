@@ -1,18 +1,23 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
 import { listFeatures } from "../../src/gui/db.js";
 
+vi.mock("../../src/embedding/model.js", () => ({
+  isModelReady: vi.fn().mockReturnValue(false),
+  getEmbedding: vi.fn().mockResolvedValue(new Float32Array(384).fill(0)),
+}));
+
 describe("listFeatures", () => {
   let db: Database.Database;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createTestDb();
-    createContent(db, "proj-a", "auth", "idea", "auth idea");
-    createContent(db, "proj-a", "auth", "spec", "auth spec");
-    createContent(db, "proj-a", "search", "plan", "search plan");
-    createContent(db, "proj-b", "payments", "idea", "payments idea");
+    await createContent(db, "proj-a", "auth", "idea", "auth idea");
+    await createContent(db, "proj-a", "auth", "spec", "auth spec");
+    await createContent(db, "proj-a", "search", "plan", "search plan");
+    await createContent(db, "proj-b", "payments", "idea", "payments idea");
   });
 
   it("returns features for a workspace sorted by name", () => {

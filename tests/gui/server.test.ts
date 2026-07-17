@@ -1,20 +1,25 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
 import { createApp } from "../../src/gui/server.js";
 
+vi.mock("../../src/embedding/model.js", () => ({
+  isModelReady: vi.fn().mockReturnValue(false),
+  getEmbedding: vi.fn().mockResolvedValue(new Float32Array(384).fill(0)),
+}));
+
 describe("GUI server routes", () => {
   let db: Database.Database;
   let app: ReturnType<typeof createApp>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createTestDb();
-    createContent(db, "proj-a", "auth", "spec", "## Auth\n\nUses **JWT** tokens.", "Auth Spec");
-    createContent(db, "proj-a", "auth", "idea", "Some auth idea");
-    createContent(db, "proj-a", "search", "plan", "Search plan body");
-    createContent(db, "proj-b", "payments", "idea", "Payments idea");
+    await createContent(db, "proj-a", "auth", "spec", "## Auth\n\nUses **JWT** tokens.", "Auth Spec");
+    await createContent(db, "proj-a", "auth", "idea", "Some auth idea");
+    await createContent(db, "proj-a", "search", "plan", "Search plan body");
+    await createContent(db, "proj-b", "payments", "idea", "Payments idea");
     app = createApp(db);
   });
 

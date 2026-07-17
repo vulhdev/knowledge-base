@@ -1,18 +1,23 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
 import { listContents } from "../../src/tools/list-contents.js";
 
+vi.mock("../../src/embedding/model.js", () => ({
+  isModelReady: vi.fn().mockReturnValue(false),
+  getEmbedding: vi.fn().mockResolvedValue(new Float32Array(384).fill(0)),
+}));
+
 describe("listContents", () => {
   let db: Database.Database;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createTestDb();
-    createContent(db, "proj-a", "auth", "idea", "auth idea");
-    createContent(db, "proj-a", "auth", "spec", "auth spec");
-    createContent(db, "proj-a", "search", "plan", "search plan");
-    createContent(db, "proj-b", "auth", "idea", "other project idea");
+    await createContent(db, "proj-a", "auth", "idea", "auth idea");
+    await createContent(db, "proj-a", "auth", "spec", "auth spec");
+    await createContent(db, "proj-a", "search", "plan", "search plan");
+    await createContent(db, "proj-b", "auth", "idea", "other project idea");
   });
 
   it("returns all contents for a workspace", () => {
@@ -57,20 +62,20 @@ describe("listContents", () => {
     expect(results.every((r) => "title" in r)).toBe(true);
   });
 
-  it("includes doc type in default listing", () => {
-    createContent(db, "proj-a", "auth", "doc", "some doc body", "Auth Doc");
+  it("includes doc type in default listing", async () => {
+    await createContent(db, "proj-a", "auth", "doc", "some doc body", "Auth Doc");
     const results = listContents(db, "proj-a");
     expect(results.some((r) => r.type === "doc")).toBe(true);
   });
 
-  it("returns title value when set", () => {
-    createContent(db, "proj-a", "auth", "doc", "doc body", "Titled Doc");
+  it("returns title value when set", async () => {
+    await createContent(db, "proj-a", "auth", "doc", "doc body", "Titled Doc");
     const results = listContents(db, "proj-a", "auth", "doc");
     expect(results[0].title).toBe("Titled Doc");
   });
 
-  it("filters by custom type string", () => {
-    createContent(db, "proj-a", "auth", "issue" as any, "a bug report");
+  it("filters by custom type string", async () => {
+    await createContent(db, "proj-a", "auth", "issue" as any, "a bug report");
     const results = listContents(db, "proj-a", undefined, "issue" as any);
     expect(results).toHaveLength(1);
     expect(results[0].type).toBe("issue");
