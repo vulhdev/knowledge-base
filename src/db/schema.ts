@@ -1,5 +1,26 @@
 import type Database from "better-sqlite3";
 
+const VEC_TABLE_AND_TRIGGERS = `
+  CREATE VIRTUAL TABLE IF NOT EXISTS vec_contents USING vec0(
+    embedding float[384]
+  );
+
+  CREATE TRIGGER IF NOT EXISTS contents_vec_ai AFTER INSERT ON contents
+  WHEN new.embedding IS NOT NULL BEGIN
+    INSERT INTO vec_contents(rowid, embedding) VALUES (new.id, new.embedding);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS contents_vec_au AFTER UPDATE ON contents
+  WHEN new.embedding IS NOT NULL BEGIN
+    DELETE FROM vec_contents WHERE rowid = old.id;
+    INSERT INTO vec_contents(rowid, embedding) VALUES (new.id, new.embedding);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS contents_vec_ad AFTER DELETE ON contents BEGIN
+    DELETE FROM vec_contents WHERE rowid = old.id;
+  END;
+`;
+
 const FTS_AND_TRIGGERS = `
   CREATE VIRTUAL TABLE IF NOT EXISTS contents_fts USING fts5(
     body,
@@ -55,6 +76,10 @@ export function applySchema(db: Database.Database): void {
   db.exec(FTS_AND_TRIGGERS);
 
   runMigrations(db);
+
+  // Vec table and triggers created after all migrations so DROP TABLE in migration 2
+  // does not silently remove them.
+  db.exec(VEC_TABLE_AND_TRIGGERS);
 }
 
 function runMigrations(db: Database.Database): void {
@@ -76,6 +101,17 @@ function runMigrations(db: Database.Database): void {
 
   if (tableSQL.includes("CHECK")) {
     removeCheckConstraint(db);
+  }
+
+  // Migration 3: add embedding column for vector search
+  const hasEmbedding = (
+    db
+      .prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'embedding'")
+      .get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasEmbedding) {
+    db.exec("ALTER TABLE contents ADD COLUMN embedding BLOB");
   }
 }
 

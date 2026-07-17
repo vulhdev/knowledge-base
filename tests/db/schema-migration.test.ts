@@ -113,3 +113,64 @@ describe("schema migrations", () => {
     expect(newMatches).toHaveLength(1);
   });
 });
+
+describe("migration 3: embedding column + vec_contents", () => {
+  it("adds embedding column to existing DB", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    const cols = db.prepare("SELECT name FROM pragma_table_info('contents')").all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toContain("embedding");
+  });
+
+  it("creates vec_contents virtual table", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    const table = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vec_contents'")
+      .get() as { name: string } | undefined;
+    expect(table?.name).toBe("vec_contents");
+  });
+
+  it("INSERT trigger populates vec_contents when embedding is provided", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
+    const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
+
+    const fakeVec = Buffer.alloc(384 * 4, 0);
+    db.prepare("INSERT INTO contents (feature_id, type, body, embedding) VALUES (?, 'idea', 'hello', ?)").run(ftId, fakeVec);
+    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'hello'").get() as { id: number };
+
+    const row = db.prepare("SELECT rowid FROM vec_contents WHERE rowid = ?").get(contentId);
+    expect(row).toBeTruthy();
+  });
+
+  it("DELETE trigger removes from vec_contents", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
+    const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
+
+    const fakeVec = Buffer.alloc(384 * 4, 0);
+    db.prepare("INSERT INTO contents (feature_id, type, body, embedding) VALUES (?, 'idea', 'to-delete', ?)").run(ftId, fakeVec);
+    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'to-delete'").get() as { id: number };
+    db.prepare("DELETE FROM contents WHERE id = ?").run(contentId);
+
+    const row = db.prepare("SELECT rowid FROM vec_contents WHERE rowid = ?").get(contentId);
+    expect(row).toBeUndefined();
+  });
+
+  it("migration is idempotent for embedding column and vec_contents", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+    expect(() => applySchema(db)).not.toThrow();
+  });
+});
