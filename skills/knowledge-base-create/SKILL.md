@@ -74,14 +74,49 @@ A `title` is a short label (≤ 80 chars) that makes the document easy to identi
 
 If asking, use `AskUserQuestion` with a suggested title pre-filled as the first option.
 
+### 5b. Check session context for a parent (optional)
+
+Scan the current conversation history for any docs saved earlier in this session — look for `✓ Saved to knowledge base` report blocks that include an `ID`.
+
+**Only apply when the type chain is valid:**
+
+| Type being saved | Look for parent of type |
+|---|---|
+| `spec` | `idea` |
+| `plan` | `spec` (preferred) or `idea` |
+| `idea`, `doc`, others | — skip this step |
+
+If a candidate parent is found, ask:
+
+```
+This session you already saved [idea #42 "Payment Redesign"].
+Link this spec to it as a child?
+  ● Yes — use as parent
+  ○ No — save standalone
+```
+
+Use `AskUserQuestion` with those two options.
+
+- **If yes** → proceed to Step 6 with `PARENT_ID` set; use `derive_content` instead of `create_content`.
+- **If no, or no candidate found** → proceed to Step 6 without a parent; use `create_content`.
+
 ### 6. Save to database
 
-Call:
+**If `PARENT_ID` is set** (from Step 5b):
+
+```
+derive_content(parent_id=PARENT_ID, type=TYPE, body=CONTENT, title=TITLE)
+```
+
+`derive_content` inherits workspace and feature from the parent and creates the link automatically — skip `link_content` for this parent.
+
+**Otherwise:**
+
 ```
 create_content(workspace=WORKSPACE, feature=FEATURE, type=TYPE, body=CONTENT, title=TITLE)
 ```
 
-Omit `title` if not set.
+Omit `title` if not set in either case.
 
 ### 6b. Handle conflicts (if any)
 
@@ -161,3 +196,4 @@ For each confirmed doc, call `link_content` with the correct direction:
 - "Save this plan to the knowledge base" → type=plan from keyword
 - "Save the DB schema doc for the posts feature" → type=doc, ask for title (suggest "DB Schema"), save
 - `/knowledge-base-create spec auth` → type and feature explicit, skip to step 5
+- Session already saved idea #42, now saving a spec → Step 5b detects the idea, asks to link → use `derive_content(parent_id=42, ...)`
