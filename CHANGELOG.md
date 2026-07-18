@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-07-18
+
 ### Added
 - **Content lineage graph** — track provenance chains between `idea`, `spec`, and `plan` documents
 - `link_content` tool — links two existing documents as parent → child; emits `direction_warning` when type order is reversed but never blocks the operation
@@ -144,7 +146,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - FTS5 full-text search index with INSERT/UPDATE/DELETE triggers
 - TypeScript project with `better-sqlite3`, Zod, `@modelcontextprotocol/sdk`, and Vitest
 
-[Unreleased]: https://github.com/vulhdev/knowledge-base/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/vulhdev/knowledge-base/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/vulhdev/knowledge-base/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/vulhdev/knowledge-base/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/vulhdev/knowledge-base/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/vulhdev/knowledge-base/compare/v1.5.5...v1.6.0
