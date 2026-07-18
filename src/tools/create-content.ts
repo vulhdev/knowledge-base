@@ -40,5 +40,5 @@ export async function createContent(
     .prepare("SELECT id, title, created_at FROM contents WHERE id = ?")
     .get(contentId) as { id: number; title: string | null; created_at: string };
 
-  return { id: row.id, workspace, feature, type, title: row.title, created_at: row.created_at };
+  return { id: row.id, workspace, feature, type, title: row.title, created_at: row.created_at, conflicts: [] };
 }

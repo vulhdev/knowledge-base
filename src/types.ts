@@ -13,6 +13,15 @@ export type Content = {
 
 export type SearchResult = Content & { score: number };
 
+export type ConflictType = "semantic_contradiction" | "risk_shadow";
+
+export type ConflictResult = {
+  content_id: number;
+  feature: string;
+  type: ConflictType;
+  reason: string;
+};
+
 export type CreateContentResult = {
   id: number;
   workspace: string;
@@ -20,4 +29,5 @@ export type CreateContentResult = {
   type: ContentType;
   title: string | null;
   created_at: string;
+  conflicts: ConflictResult[];
 };
