@@ -21,6 +21,19 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
+server.server.registerCapabilities({ sampling: {} });
+
+async function requestSampling(prompt: string): Promise<string> {
+  const result = await server.server.createMessage({
+    messages: [{ role: "user", content: { type: "text", text: prompt } }],
+    maxTokens: 500,
+  });
+  const content = result.content;
+  if (typeof content === "string") return content;
+  if (content && typeof content === "object" && "text" in content) return (content as { text: string }).text;
+  return "";
+}
+
 const contentTypeSchema = z.string().min(1);
 
 function toText(value: unknown): string {
@@ -44,7 +57,7 @@ server.tool(
   },
   async ({ workspace, feature, type, title, body }) => {
     try {
-      const result = await createContent(db, workspace, feature, type, body, title);
+      const result = await createContent(db, workspace, feature, type, body, title, requestSampling);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       return errorContent(err);
