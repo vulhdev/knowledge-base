@@ -2,16 +2,14 @@ import Database from "better-sqlite3";
 import { load as loadSqliteVec } from "sqlite-vec";
 import { applySchema } from "./schema.js";
 import { startBackfill } from "../embedding/backfill.js";
+import { loadSettings } from "../config.js";
 
 let instance: Database.Database | null = null;
 
 export function openDb(): Database.Database {
   if (instance) return instance;
 
-  const dbPath = process.env.DB_PATH;
-  if (!dbPath) {
-    throw new Error("DB_PATH environment variable is not set");
-  }
+  const { db_path: dbPath } = loadSettings();
 
   try {
     instance = new Database(dbPath);
