@@ -174,3 +174,71 @@ describe("migration 3: embedding column + vec_contents", () => {
     expect(() => applySchema(db)).not.toThrow();
   });
 });
+
+describe("migration 4: content_links table", () => {
+  it("creates content_links table", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    const table = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'content_links'")
+      .get() as { name: string } | undefined;
+    expect(table?.name).toBe("content_links");
+  });
+
+  it("creates idx_content_links_child index", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    const idx = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_content_links_child'")
+      .get() as { name: string } | undefined;
+    expect(idx?.name).toBe("idx_content_links_child");
+  });
+
+  it("migration 4 is idempotent", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+    expect(() => applySchema(db)).not.toThrow();
+  });
+
+  it("CASCADE delete: removing a content deletes its links", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
+    const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
+
+    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'idea', 'parent')").run(ftId);
+    const parent = db.prepare("SELECT id FROM contents WHERE body = 'parent'").get() as { id: number };
+    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'spec', 'child')").run(ftId);
+    const child = db.prepare("SELECT id FROM contents WHERE body = 'child'").get() as { id: number };
+
+    db.prepare("INSERT INTO content_links (parent_id, child_id) VALUES (?, ?)").run(parent.id, child.id);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM content_links").get() as { n: number }).toEqual({ n: 1 });
+
+    db.prepare("DELETE FROM contents WHERE id = ?").run(parent.id);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM content_links").get() as { n: number }).toEqual({ n: 0 });
+  });
+
+  it("composite PK prevents duplicate links", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
+    const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
+
+    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'idea', 'p')").run(ftId);
+    const p = db.prepare("SELECT id FROM contents WHERE body = 'p'").get() as { id: number };
+    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'spec', 'c')").run(ftId);
+    const c = db.prepare("SELECT id FROM contents WHERE body = 'c'").get() as { id: number };
+
+    db.prepare("INSERT INTO content_links (parent_id, child_id) VALUES (?, ?)").run(p.id, c.id);
+    db.prepare("INSERT OR IGNORE INTO content_links (parent_id, child_id) VALUES (?, ?)").run(p.id, c.id);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM content_links").get() as { n: number }).toEqual({ n: 1 });
+  });
+});

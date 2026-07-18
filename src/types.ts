@@ -22,6 +22,34 @@ export type ConflictResult = {
   reason: string;
 };
 
+export type LinkedContent = {
+  id: number;
+  workspace: string;
+  feature: string;
+  type: ContentType;
+  title: string | null;
+};
+
+export type LineageResult = {
+  root: LinkedContent;
+  ancestors: LinkedContent[];
+  descendants: LinkedContent[];
+};
+
+export type SuggestedParent = {
+  id: number;
+  type: ContentType;
+  title: string | null;
+  score: number;
+};
+
+export type LinkResult = {
+  parent_id: number;
+  child_id: number;
+  created_at: string;
+  direction_warning?: string;
+};
+
 export type CreateContentResult = {
   id: number;
   workspace: string;
@@ -30,4 +58,5 @@ export type CreateContentResult = {
   title: string | null;
   created_at: string;
   conflicts: ConflictResult[];
+  suggested_parents: SuggestedParent[];
 };

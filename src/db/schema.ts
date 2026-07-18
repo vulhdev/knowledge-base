@@ -123,6 +123,18 @@ function runMigrations(db: Database.Database): void {
   if (!hasEmbedding) {
     db.exec("ALTER TABLE contents ADD COLUMN embedding BLOB");
   }
+
+  // Migration 4: add content_links table for provenance tracking
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS content_links (
+      parent_id  INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+      child_id   INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (parent_id, child_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_content_links_child ON content_links(child_id);
+  `);
 }
 
 function removeCheckConstraint(db: Database.Database): void {
