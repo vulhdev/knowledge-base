@@ -1,6 +1,6 @@
 <img src="assets/kb-lockup-tagline.png" alt="knowledge-base" width="380" />
 
-An MCP server for Claude Code that provides persistent document storage using SQLite. Organize your ideas, specs, plans, and feature documentation in a structured three-level hierarchy.
+An MCP server for Claude Code that provides persistent document storage using SQLite. Organize your ideas, specs, plans, and feature documentation in a structured three-level hierarchy — and track the full lineage of how ideas evolve into specs and plans.
 
 ```
 workspace → feature → content (idea | spec | plan | digest | doc)
@@ -10,6 +10,8 @@ workspace → feature → content (idea | spec | plan | digest | doc)
 
 - **Persistent storage** — all content survives across Claude Code sessions
 - **Five content types** — `idea`, `spec`, `plan`, `doc` (current-state feature docs), plus `digest` for summaries
+- **Content lineage** — track provenance chains (`idea → spec → plan`); navigate ancestors and descendants with `get_lineage`, link documents with `link_content`, or create a derived document in one step with `derive_content`
+- **Auto-suggest parents** — when creating a `spec` or `plan`, Claude automatically surfaces semantically similar parent candidates from the same workspace so you can link them without manual lookup
 - **Optional title field** — short label on any document for easy scanning in list/search results
 - **Semantic search** — on-device vector similarity search powered by `sqlite-vec` and a local ONNX embedding model (multilingual, 50+ languages including Vietnamese)
 - **Error log viewer** — every unhandled MCP tool exception is captured to SQLite and viewable in the GUI at `/errors`
@@ -153,6 +155,55 @@ title  — (optional) new title, omit to keep existing
 
 Permanently deletes a document by its numeric ID. Returns the deleted document.
 
+---
+
+### `link_content`
+
+Links two existing documents as parent → child. Use this after both documents already exist.
+
+```
+child_id   — ID of the child document
+parent_id  — ID of the parent document
+```
+
+Returns a `LinkResult` with `parent_id`, `child_id`, `created_at`, and an optional `direction_warning` if the type order is reversed (e.g. linking a `plan` as the parent of an `idea`). The warning is informational — the link is always created.
+
+### `derive_content`
+
+Creates a new document and links it to a parent in a single atomic step. Inherits the parent's workspace and feature.
+
+```
+parent_id  — ID of the parent document to derive from
+type       — type for the new document ("spec", "plan", etc.)
+body       — document body text
+title      — (optional) short label
+```
+
+Returns the full `CreateContentResult` plus a `parent_id` field confirming the link. The response also includes `suggested_parents` in case additional related documents exist worth linking.
+
+### `get_lineage`
+
+Returns the full ancestry chain for a document — all ancestors (nearest → oldest) and all descendants (BFS order, nearest first).
+
+```
+content_id  — ID of the document to inspect
+```
+
+Example response:
+```json
+{
+  "root": { "id": 12, "type": "spec", "title": "Auth redesign spec", ... },
+  "ancestors": [
+    { "id": 7, "type": "idea", "title": "Auth pain points idea", ... }
+  ],
+  "descendants": [
+    { "id": 18, "type": "plan", "title": "Auth implementation plan", ... }
+  ]
+}
+```
+
+Returns `LinkedContent` objects (id, workspace, feature, type, title) — document bodies are omitted for brevity. Use `get_content` to fetch the full body of any node.
+
 ## Database Schema
 
 ```sql
@@ -179,6 +230,14 @@ CREATE TABLE contents (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Provenance graph: tracks idea→spec→plan lineage chains
+CREATE TABLE content_links (
+  parent_id  INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  child_id   INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (parent_id, child_id)
+);
+
 -- Virtual table managed by sqlite-vec; kept in sync via INSERT/UPDATE/DELETE triggers
 CREATE VIRTUAL TABLE vec_contents USING vec0(embedding float[384]);
 
@@ -195,6 +254,7 @@ Existing databases are automatically migrated on startup:
 - `title` column added if missing
 - Legacy `CHECK` constraint on `type` removed (validation enforced at the application layer via Zod)
 - `embedding` column added if missing; existing rows backfilled asynchronously on the next server startup after `npx @vulhdev/knowledge-base init` (model must be downloaded first)
+- `content_links` table added if missing (Migration 4)
 
 ## Development
 
