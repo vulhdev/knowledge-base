@@ -18,6 +18,7 @@ workspace → feature → content (idea | spec | plan | digest | doc)
 - **Error log viewer** — every unhandled MCP tool exception is captured to SQLite and viewable in the GUI at `/errors`
 - **SQLite-backed** — single file database via `better-sqlite3`, no external services
 - **Claude Code skills** — 11 slash commands for create, list, search, get, update, delete, import, export, explore, digest, and doc analysis
+- **Claude Code agents** — reusable agent personas installed alongside skills; `kb-conflict-resolver` provides deep conflict analysis when `semantic_contradiction` is detected
 
 ## Requirements
 
@@ -62,8 +63,12 @@ The wizard will:
    - **Global** (`~/.claude/skills/`) — available in all projects
    - **This project** (`./.claude/skills/`) — current project only
    - **Skip**
+4. Ask where to install **Claude Code agents**:
+   - **Global** (`~/.claude/agents/`) — available in all projects
+   - **This project** (`./.claude/agents/`) — current project only
+   - **Skip**
 
-After installing, restart Claude Code to pick up the new skills.
+After installing, restart Claude Code to pick up the new skills and agents.
 
 > **Custom model cache directory:** pass `MODEL_CACHE_DIR=/your/path` when adding the MCP server to seed it into `settings.json`. Like `DB_PATH`, it is only read on the first run.
 
@@ -104,6 +109,14 @@ Skills use colon namespace notation — type the part after the colon to get aut
 | `/explore` → `knowledge-base:explore` | Proactively load feature context before starting work |
 | `/digest` → `knowledge-base:digest` | Build a TL;DR + index summary for a feature |
 | `/doc` → `knowledge-base:doc` | Analyze a codebase feature and save structured docs (DB schema, backend flow, frontend) |
+
+## Claude Code Agents
+
+Agents are reusable personas installed to `~/.claude/agents/` (global) or `.claude/agents/` (project) via `init`. After installation, restart Claude Code to make them available.
+
+| Agent | When to use |
+|---|---|
+| `kb-conflict-resolver` | Spawned by `/knowledge-base-create` when `semantic_contradiction` is detected — reads both conflicting docs in full, identifies the exact contradicting text, and recommends whether to update, deprecate, or mark as intentional divergence |
 
 ## MCP Tools
 
@@ -237,7 +250,7 @@ Beyond the MCP tools, the package exposes a CLI for human developer workflows:
 
 | Command | Description |
 |---|---|
-| `npx @vulhdev/knowledge-base init` | Link a project to a workspace, download embedding model, install skills |
+| `npx @vulhdev/knowledge-base init` | Link a project to a workspace, download embedding model, install skills and agents |
 | `npx @vulhdev/knowledge-base gui` | Open read-only browser UI at `http://localhost:3000` |
 | `npx @vulhdev/knowledge-base update` | Update installed Claude Code skills to the current version |
 | `npx @vulhdev/knowledge-base link-code` | Link the current HEAD commit to a plan task |
