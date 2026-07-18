@@ -15,6 +15,7 @@ const BLOCK_END = "<!-- knowledge-base:end -->";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SKILLS_SRC = join(PACKAGE_ROOT, "skills");
+const AGENTS_SRC = join(PACKAGE_ROOT, "agents");
 const VERSION = (JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")) as { version: string }).version;
 const VERSION_MARKER = ".knowledge-base-version";
 
@@ -57,6 +58,7 @@ This project is linked to workspace **${workspace}**. Use the \`knowledge-base\`
 | \`get_lineage\` | Get full ancestor/descendant chain for a doc |
 | \`attach_code_ref\` | Link a git commit to a plan at task granularity |
 | \`get_code_refs\` | List git commits linked to a doc, grouped by task |
+| \`kb-conflict-resolver\` (agent) | Deep conflict analysis when \`semantic_contradiction\` is detected |
 
 \`KNOWLEDGE_BASE_WORKSPACE=${workspace}\`
 ${BLOCK_END}`;
@@ -97,6 +99,21 @@ function copySkills(destBase: string): string[] {
     mkdirSync(dest, { recursive: true });
     cpSync(join(SKILLS_SRC, skill), dest, { recursive: true });
     copied.push(skill);
+  }
+
+  return copied;
+}
+
+function copyAgents(destBase: string): string[] {
+  const copied: string[] = [];
+  if (!existsSync(AGENTS_SRC)) return copied;
+
+  const agents = readdirSync(AGENTS_SRC).filter((f) => f.endsWith(".md"));
+
+  for (const agent of agents) {
+    mkdirSync(destBase, { recursive: true });
+    cpSync(join(AGENTS_SRC, agent), join(destBase, agent));
+    copied.push(agent.replace(".md", ""));
   }
 
   return copied;
@@ -175,21 +192,46 @@ async function main(): Promise<void> {
     ],
   });
 
-  if (p.isCancel(skillsDest) || (skillsDest as string) === SKIP) {
-    p.outro("Done.");
-    process.exit(0);
+  if (!p.isCancel(skillsDest) && (skillsDest as string) !== SKIP) {
+    const copied = copySkills(skillsDest as string);
+    if (copied.length > 0) {
+      writeFileSync(join(skillsDest as string, VERSION_MARKER), VERSION, "utf8");
+      p.log.success(`Installed ${copied.length} skills to ${skillsDest}`);
+      for (const skill of copied) p.log.info(`  /${skill}`);
+    } else {
+      p.log.warn("No skills found to install.");
+    }
   }
 
-  const copied = copySkills(skillsDest as string);
-  if (copied.length > 0) {
-    writeFileSync(join(skillsDest as string, VERSION_MARKER), VERSION, "utf8");
-    p.log.success(`Installed ${copied.length} skills to ${skillsDest}`);
-    for (const skill of copied) p.log.info(`  /${skill}`);
-  } else {
-    p.log.warn("No skills found to install.");
+  const agentsDest = await p.select<string>({
+    message: "Install Claude Code agents?",
+    options: [
+      {
+        value: join(homedir(), ".claude", "agents"),
+        label: "Global (~/.claude/agents/)",
+        hint: "available in all projects",
+      },
+      {
+        value: join(process.cwd(), ".claude", "agents"),
+        label: "This project (./.claude/agents/)",
+        hint: "current project only",
+      },
+      { value: SKIP, label: "Skip" },
+    ],
+  });
+
+  if (!p.isCancel(agentsDest) && (agentsDest as string) !== SKIP) {
+    const copied = copyAgents(agentsDest as string);
+    if (copied.length > 0) {
+      writeFileSync(join(agentsDest as string, VERSION_MARKER), VERSION, "utf8");
+      p.log.success(`Installed ${copied.length} agents to ${agentsDest}`);
+      for (const agent of copied) p.log.info(`  ${agent}`);
+    } else {
+      p.log.warn("No agents found to install.");
+    }
   }
 
-  p.outro("Done. Restart Claude Code to pick up the new skills.");
+  p.outro("Done. Restart Claude Code to pick up the new skills and agents.");
 }
 
 main().catch((err) => {
