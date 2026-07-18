@@ -46,10 +46,16 @@ This project is linked to workspace **${workspace}**. Use the \`knowledge-base\`
 |------|---------|
 | \`/knowledge-base-create\` (skill) | Save a new spec / plan / idea / doc — use for all user-initiated saves |
 | \`create_content\` | Internal/programmatic saves only (e.g. derive, digest tools) |
-| \`search_semantic\` | Find docs by semantic similarity (vector search, multilingual) |
-| \`list_contents\` | Browse all docs in this workspace |
-| \`update_content\` | Update an existing doc by ID |
 | \`get_content\` | Fetch a specific doc by ID |
+| \`list_contents\` | Browse all docs in a workspace; filter by feature and/or type |
+| \`search_semantic\` | Semantic search by vector similarity (multilingual, 50+ languages) |
+| \`update_content\` | Update body, type, or title of an existing doc by ID |
+| \`delete_content\` | Permanently delete a doc by ID |
+| \`link_content\` | Link two docs as parent → child |
+| \`derive_content\` | Create a new doc linked to a parent in one step |
+| \`get_lineage\` | Get full ancestor/descendant chain for a doc |
+| \`attach_code_ref\` | Link a git commit to a plan at task granularity |
+| \`get_code_refs\` | List git commits linked to a doc, grouped by task |
 
 \`KNOWLEDGE_BASE_WORKSPACE=${workspace}\`
 ${BLOCK_END}`;
