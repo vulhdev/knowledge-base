@@ -1,6 +1,6 @@
 <img src="assets/kb-lockup-tagline.png" alt="knowledge-base" width="380" />
 
-An MCP server for Claude Code that provides persistent document storage using SQLite. Organize your ideas, specs, plans, and feature documentation in a structured three-level hierarchy — and track the full lineage of how ideas evolve into specs and plans.
+An MCP server for Claude Code that provides persistent document storage using SQLite. Organize your ideas, specs, plans, and feature documentation in a structured three-level hierarchy — track the full lineage of how ideas evolve into specs and plans, and link plans to the git commits that implement them.
 
 ```
 workspace → feature → content (idea | spec | plan | digest | doc)
@@ -14,6 +14,7 @@ workspace → feature → content (idea | spec | plan | digest | doc)
 - **Auto-suggest parents** — when creating a `spec` or `plan`, Claude automatically surfaces semantically similar parent candidates from the same workspace so you can link them without manual lookup
 - **Optional title field** — short label on any document for easy scanning in list/search results
 - **Semantic search** — on-device vector similarity search powered by `sqlite-vec` and a local ONNX embedding model (multilingual, 50+ languages including Vietnamese)
+- **Code grounding** — link plan documents to git commits at task granularity; `attach_code_ref` records which commit implements which task, `get_code_refs` returns the full coverage map, `get_content` includes a `has_code_refs` signal so Claude knows to fetch refs without a round-trip
 - **Error log viewer** — every unhandled MCP tool exception is captured to SQLite and viewable in the GUI at `/errors`
 - **SQLite-backed** — single file database via `better-sqlite3`, no external services
 - **Claude Code skills** — 11 slash commands for create, list, search, get, update, delete, import, export, explore, digest, and doc analysis
@@ -38,12 +39,13 @@ Run this once in any terminal:
 claude mcp add knowledge-base -- npx -y @vulhdev/knowledge-base
 ```
 
-That's it. The server auto-creates a database at `~/.claude/knowledge-base.db` on first run.
+That's it. On first run the server creates `~/.claude/knowledge-base/settings.json` and stores the database at `~/.claude/knowledge-base/knowledge-base.db`. No env vars needed after that.
 
-> To use a custom database path, pass `DB_PATH` explicitly:
+> **Custom database path:** pass `DB_PATH` on the very first run to seed it into `settings.json`:
 > ```bash
 > claude mcp add knowledge-base -e DB_PATH=/your/path/knowledge-base.db -- npx -y @vulhdev/knowledge-base
 > ```
+> After `settings.json` is written, `DB_PATH` is no longer read — the path is taken from the file.
 
 ### 2. (Optional) Initialize a workspace
 
@@ -63,7 +65,7 @@ The wizard will:
 
 After installing, restart Claude Code to pick up the new skills.
 
-> **Custom model cache directory:** set `MODEL_CACHE_DIR=/your/path` to override where the model is stored.
+> **Custom model cache directory:** pass `MODEL_CACHE_DIR=/your/path` when adding the MCP server to seed it into `settings.json`. Like `DB_PATH`, it is only read on the first run.
 
 ### 3. (Optional) Update skills
 
@@ -121,7 +123,7 @@ body       — document text
 
 ### `get_content`
 
-Fetches a single document by its numeric ID. Returns all fields including `title`.
+Fetches a single document by its numeric ID. Returns all fields including `title` and `has_code_refs: boolean` — a zero-cost signal indicating whether any code refs are attached, so Claude can decide whether to call `get_code_refs` without fetching the data first.
 
 ### `list_contents`
 
@@ -154,6 +156,31 @@ title  — (optional) new title, omit to keep existing
 ### `delete_content`
 
 Permanently deletes a document by its numeric ID. Returns the deleted document.
+
+---
+
+### `attach_code_ref`
+
+Links a git commit to a plan (or any document) at task granularity. Call this after each task commit so that resuming a plan in a new session immediately shows which tasks are done.
+
+```
+content_id   — ID of the plan to attach the commit to
+commit_hash  — full or short git commit hash
+file_paths   — array of { path, start?, end? } objects (files changed in this commit)
+task_ref     — (optional) free-text label matching a task in the plan body
+```
+
+Returns the inserted `AttachCodeRefResult`. Throws if `content_id` does not exist. Throws on duplicate `(content_id, commit_hash)` — the same commit cannot be attached twice to the same plan.
+
+### `get_code_refs`
+
+Returns all commits linked to a document, ordered by `created_at` ascending. Use when resuming a plan to see which tasks already have commits and which don't.
+
+```
+content_id  — ID of the document to fetch code refs for
+```
+
+Returns `{ content_id, refs: AttachCodeRefResult[] }`. Returns an empty `refs` array when no refs exist — never throws.
 
 ---
 
@@ -204,6 +231,31 @@ Example response:
 
 Returns `LinkedContent` objects (id, workspace, feature, type, title) — document bodies are omitted for brevity. Use `get_content` to fetch the full body of any node.
 
+## CLI Commands
+
+Beyond the MCP tools, the package exposes a CLI for human developer workflows:
+
+| Command | Description |
+|---|---|
+| `npx @vulhdev/knowledge-base init` | Link a project to a workspace, download embedding model, install skills |
+| `npx @vulhdev/knowledge-base gui` | Open read-only browser UI at `http://localhost:3000` |
+| `npx @vulhdev/knowledge-base update` | Update installed Claude Code skills to the current version |
+| `npx @vulhdev/knowledge-base link-code` | Link the current HEAD commit to a plan task |
+
+### `link-code` subcommand
+
+```bash
+knowledge-base link-code \
+  --workspace <name> \
+  --feature <name> \
+  --task "Task 2: Setup session middleware"
+
+# Fallback: use numeric content ID directly
+knowledge-base link-code --content-id 42 --task "Task 2"
+```
+
+Reads the HEAD commit hash and changed files from git automatically. DB path is resolved from `~/.claude/knowledge-base/settings.json` — no env var setup needed. Prints `✓ Linked commit <hash> → plan #<id> (<task>)` on success.
+
 ## Database Schema
 
 ```sql
@@ -238,6 +290,17 @@ CREATE TABLE content_links (
   PRIMARY KEY (parent_id, child_id)
 );
 
+-- Links plan documents to git commits at task granularity (Migration 5)
+CREATE TABLE code_refs (
+  id          INTEGER PRIMARY KEY,
+  content_id  INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  task_ref    TEXT,            -- free-text label matching a task in the plan body
+  commit_hash TEXT NOT NULL,
+  file_paths  TEXT NOT NULL,  -- JSON: [{"path": "src/auth.ts", "start": 42, "end": 89}]
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(content_id, commit_hash)
+);
+
 -- Virtual table managed by sqlite-vec; kept in sync via INSERT/UPDATE/DELETE triggers
 CREATE VIRTUAL TABLE vec_contents USING vec0(embedding float[384]);
 
@@ -255,6 +318,8 @@ Existing databases are automatically migrated on startup:
 - Legacy `CHECK` constraint on `type` removed (validation enforced at the application layer via Zod)
 - `embedding` column added if missing; existing rows backfilled asynchronously on the next server startup after `npx @vulhdev/knowledge-base init` (model must be downloaded first)
 - `content_links` table added if missing (Migration 4)
+- `code_refs` table added if missing (Migration 5)
+- Legacy database at `~/.claude/knowledge-base.db` automatically moved to `~/.claude/knowledge-base/knowledge-base.db` on first startup
 
 ## Development
 
