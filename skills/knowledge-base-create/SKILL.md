@@ -1,6 +1,6 @@
 ---
 name: knowledge-base:create
-description: Save a spec, plan, idea, or doc from the current conversation into the knowledge base database. Use when the user asks to save, store, or persist something just created in this conversation — e.g. "save this spec", "lưu plan này", "store the idea we just discussed", "lưu doc về feature này".
+description: Save a spec, plan, idea, or doc from the current conversation into the knowledge base database. Use when the user asks to save, store, or persist something just created in this conversation — e.g. "save this spec", "store this plan", "save the idea we just discussed", "save the doc for this feature".
 ---
 
 # knowledge-base:create
@@ -44,20 +44,20 @@ Call `list_contents(workspace=WORKSPACE)` to retrieve existing entries. Extract 
 **Step C — Ask the user:**
 Present an `AskUserQuestion` with:
 - Up to 3 existing features that are most relevant to the inferred topic (prefer exact or partial match)
-- A "Tạo feature mới" option
+- A "Create new feature" option
 
 If the inferred feature exactly matches an existing one, put it first.
 
 Example:
 ```
-Lưu vào feature nào?
-  ● auth (đang có)
+Which feature to save under?
+  ● auth (existing)
   ○ api
   ○ search
-  ○ Tạo feature mới
+  ○ Create new feature
 ```
 
-If the user picks "Tạo feature mới", ask: "Tên feature mới là gì?"
+If the user picks "Create new feature", ask: "What should the new feature be called?"
 
 ### 5. Determine title (optional)
 
@@ -83,21 +83,46 @@ create_content(workspace=WORKSPACE, feature=FEATURE, type=TYPE, body=CONTENT, ti
 
 Omit `title` if not set.
 
-### 7. Report
+### 7. Suggest links (optional)
+
+After saving, check if there are related documents to link.
+
+**Skip this step if** `list_contents` from Step 4 returned fewer than 3 docs total.
+
+Otherwise call:
+```
+search_semantic(query="<title> <body_first_300_chars>", workspace=WORKSPACE, limit=3)
+```
+
+If results are returned, present them:
+```
+Related docs — link any of these?
+  [ ] #12 auth/spec "OAuth2 Token Refresh Flow"
+  [ ] #7  auth/idea "Auth Strategy"
+```
+
+For each confirmed doc, call `link_content` with the correct direction:
+- `idea → spec → plan`: parent is the earlier type in the chain
+- When direction is ambiguous, ask: "Which doc is the parent?"
+
+**If linking multiple docs, call all `link_content` in parallel in one response** — do not await each call sequentially.
+
+### 8. Report
 
 ```
-✓ Đã lưu vào knowledge base
+✓ Saved to knowledge base
   Workspace : <WORKSPACE>
   Feature   : <feature>
   Type      : <type>
   Title     : <title or (none)>
   ID        : <id>
+  Links     : #12 (parent), #7 (parent)   ← if any
 ```
 
 ## Example invocations
 
 - `/knowledge-base-create` after generating a spec → detect type=spec, infer feature, ask to confirm
-- "Lưu spec này giúp mình" → type=spec from keyword
-- "Save plan vào knowledge base" → type=plan from keyword
-- "Lưu doc về DB schema của feature tạo bài viết" → type=doc, ask for title (suggest "DB Schema"), save
+- "Save this spec" → type=spec from keyword
+- "Save this plan to the knowledge base" → type=plan from keyword
+- "Save the DB schema doc for the posts feature" → type=doc, ask for title (suggest "DB Schema"), save
 - `/knowledge-base-create spec auth` → type and feature explicit, skip to step 5

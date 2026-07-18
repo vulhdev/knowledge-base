@@ -34,7 +34,7 @@ For each file, read its content with the Read tool.
 Determine the title using this priority order:
 
 1. **H1 heading** — if the file starts with `# Title text`, use that text as the title and strip the heading line from the body (it is redundant once stored with a title).
-2. **AI-generated** — if no H1 heading is found, read the body and generate a short title (≤ 10 words) that captures the main subject. Use the same language as the body. Prefer noun phrases (e.g. "OAuth2 Token Refresh Flow", "Kế hoạch triển khai auth"). Do not include the content type in the title.
+2. **AI-generated** — if no H1 heading is found, read the body and generate a short title (≤ 10 words) that captures the main subject. Use the same language as the body. Prefer noun phrases (e.g. "OAuth2 Token Refresh Flow", "Auth Deployment Plan"). Do not include the content type in the title.
 
 Always pass a title — never leave it null for imported files.
 
@@ -46,13 +46,47 @@ create_content(workspace=WORKSPACE, feature=FEATURE, type=TYPE, body=<file conte
 
 Use the same type for all files unless the user specified different types per file.
 
-### 4. Report results
+### 4. Suggest links (optional)
+
+After all files are saved, suggest relationships between the imported docs and existing content. Do this **once at the end**, not per file.
+
+**Structural links — check first:**
+If the imported files come from folders that map to types (e.g. `ideas/`, `specs/`, `plans/`), detect the chain for each feature:
+
+- Group saved docs by feature name
+- If the same feature has docs of type `idea`, `spec`, and/or `plan`, suggest linking them as `idea → spec → plan` (parent → child)
+
+Example:
+```
+Detected linkable chain:
+  auth: idea #7 → spec #12 → plan #15
+  Create these 2 links?
+```
+
+**Semantic links — run in parallel with structural check:**
+For each imported file, call `search_semantic` using its title + first 300 chars of body to find related existing docs (not the ones just imported). Collect all results, deduplicate, then present together.
+
+Present all suggestions in one block:
+```
+Suggested links — select which ones to create:
+  [ ] #7 auth/idea → #12 auth/spec (structural chain)
+  [ ] #12 auth/spec → #3 auth/idea "Prior Auth Research" (semantic)
+  [ ] #13 search/idea → #5 search/spec "Search API Contract" (semantic)
+```
+
+**If the user confirms multiple links, call all `link_content` in parallel in one response** — do not await each call sequentially.
+
+### 5. Report results
 
 ```
 Imported into workspace: <WORKSPACE>
-  ✓ auth (spec) — id 12
+  ✓ auth (spec) "OAuth2 Token Refresh Flow" — id 12
   ✓ search (idea) "Full-text Search Plan" — id 13
   ✓ auth (doc) "DB Schema" — id 14
+
+Links created:
+  ✓ #7 → #12 (idea → spec)
+  ✓ #12 → #15 (spec → plan)
 ```
 
 ## Example invocations
