@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
-import type { ContentType, CreateContentResult } from "../types.js";
+import type { ContentType, ConflictResult, CreateContentResult } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
+import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 
 export async function createContent(
   db: Database.Database,
@@ -9,6 +10,7 @@ export async function createContent(
   type: ContentType,
   body: string,
   title?: string,
+  requestSampling?: RequestSampling,
 ): Promise<CreateContentResult> {
   if (!body.trim()) {
     throw new Error("body must not be empty");
@@ -26,13 +28,24 @@ export async function createContent(
 
   const contentId = Number(lastInsertRowid);
 
+  let embeddingBlob: Buffer | null = null;
+
   if (isModelReady()) {
     try {
       const embedding = await getEmbedding(body);
-      const blob = Buffer.from(embedding.buffer);
-      db.prepare("UPDATE contents SET embedding = ? WHERE id = ?").run(blob, contentId);
+      embeddingBlob = Buffer.from(embedding.buffer);
+      db.prepare("UPDATE contents SET embedding = ? WHERE id = ?").run(embeddingBlob, contentId);
     } catch {
       // embedding failure must not prevent content creation
+    }
+  }
+
+  let conflicts: ConflictResult[] = [];
+  if (requestSampling && embeddingBlob) {
+    try {
+      conflicts = await detectConflicts(db, contentId, workspace, feature, type, body, embeddingBlob, requestSampling);
+    } catch {
+      // conflict detection failure must not prevent content creation
     }
   }
 
@@ -40,5 +53,5 @@ export async function createContent(
     .prepare("SELECT id, title, created_at FROM contents WHERE id = ?")
     .get(contentId) as { id: number; title: string | null; created_at: string };
 
-  return { id: row.id, workspace, feature, type, title: row.title, created_at: row.created_at, conflicts: [] };
+  return { id: row.id, workspace, feature, type, title: row.title, created_at: row.created_at, conflicts };
 }

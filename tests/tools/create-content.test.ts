@@ -95,4 +95,49 @@ describe("createContent", () => {
 
     vi.mocked(isModelReady).mockReturnValue(false);
   });
+
+  it("returns conflicts: [] when requestSampling is not provided", async () => {
+    const result = await createContent(db, "ws", "ft", "spec", "some spec");
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it("returns conflicts: [] when embedding not ready (no similar docs to compare)", async () => {
+    const requestSampling = vi.fn();
+    const result = await createContent(db, "ws", "ft", "spec", "some spec", undefined, requestSampling);
+    expect(result.conflicts).toEqual([]);
+    expect(requestSampling).not.toHaveBeenCalled();
+  });
+
+  it("returns conflicts when sampling detects one", async () => {
+    const { isModelReady, getEmbedding } = await import("../../src/embedding/model.js");
+    vi.mocked(isModelReady).mockReturnValue(true);
+    vi.mocked(getEmbedding).mockResolvedValue(new Float32Array(384).fill(0));
+
+    const first = await createContent(db, "ws", "ft", "spec", "use REST API");
+    const conflictResponse = JSON.stringify([
+      { content_id: first.id, feature: "ft", type: "semantic_contradiction", reason: "REST vs GraphQL" },
+    ]);
+    const requestSampling = vi.fn().mockResolvedValue(conflictResponse);
+
+    const result = await createContent(db, "ws", "ft2", "spec", "use GraphQL API", undefined, requestSampling);
+    expect(result.conflicts).toHaveLength(1);
+    expect(result.conflicts[0].content_id).toBe(first.id);
+    expect(result.conflicts[0].type).toBe("semantic_contradiction");
+
+    vi.mocked(isModelReady).mockReturnValue(false);
+  });
+
+  it("returns conflicts: [] when requestSampling throws", async () => {
+    const { isModelReady, getEmbedding } = await import("../../src/embedding/model.js");
+    vi.mocked(isModelReady).mockReturnValue(true);
+    vi.mocked(getEmbedding).mockResolvedValue(new Float32Array(384).fill(0));
+
+    await createContent(db, "ws", "ft", "spec", "existing doc");
+    const requestSampling = vi.fn().mockRejectedValue(new Error("host unavailable"));
+
+    const result = await createContent(db, "ws", "ft2", "spec", "new doc", undefined, requestSampling);
+    expect(result.conflicts).toEqual([]);
+
+    vi.mocked(isModelReady).mockReturnValue(false);
+  });
 });
