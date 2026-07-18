@@ -2,6 +2,7 @@ import { parse } from "marked";
 import type { Workspace } from "../db/workspaces.js";
 import type { Feature } from "./db.js";
 import type { Content, SearchResult } from "../types.js";
+import type { ErrorLog } from "../db/error-log.js";
 
 const PICO_CDN =
   "https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css";
@@ -47,6 +48,7 @@ export function layout(title: string, body: string, searchQ = "", searchWs = "")
     <nav>
       <a href="/"><img src="/assets/kb-lockup-tagline-dark.png" alt="knowledge-base" /></a>
       <a href="/search">Search</a>
+      <a href="/errors">Errors</a>
     </nav>
   </header>
   <main>
@@ -170,6 +172,28 @@ export function renderSearchResults(
   <tbody>${rows}</tbody>
 </table>`;
   return layout(`Search: ${query}`, body, query, workspace);
+}
+
+export function renderErrorList(errors: ErrorLog[]): string {
+  if (errors.length === 0) {
+    return layout("Errors", "<p>No errors recorded.</p>");
+  }
+  const rows = errors
+    .map(
+      (e) =>
+        `<tr>
+          <td>${esc(e.timestamp)}</td>
+          <td><span class="badge">${esc(e.tool_name)}</span></td>
+          <td>${esc(e.message)}</td>
+        </tr>`,
+    )
+    .join("\n");
+  const body = `<h2>Error Log</h2>
+<table>
+  <thead><tr><th>Timestamp</th><th>Tool</th><th>Message</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>`;
+  return layout("Errors", body);
 }
 
 function esc(text: string): string {

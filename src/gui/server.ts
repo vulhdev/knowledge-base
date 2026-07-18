@@ -13,7 +13,9 @@ import {
   renderContentList,
   renderContent,
   renderSearchResults,
+  renderErrorList,
 } from "./render.js";
+import { listErrorLogs } from "../db/error-log.js";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -65,6 +67,11 @@ export function createApp(db: Database.Database) {
     } catch {
       res.status(404).send("<p>Content not found</p>");
     }
+  });
+
+  app.get("/errors", (_req, res) => {
+    const errors = listErrorLogs(db);
+    res.send(renderErrorList(errors));
   });
 
   app.get("/search", async (req, res) => {

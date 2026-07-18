@@ -3,6 +3,7 @@ import request from "supertest";
 import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
+import { insertErrorLog } from "../../src/db/error-log.js";
 import { createApp } from "../../src/gui/server.js";
 
 vi.mock("../../src/embedding/model.js", () => ({
@@ -117,6 +118,37 @@ describe("GUI server routes", () => {
       const res = await request(app).get("/search?q=auth&workspace=proj-a");
       expect(res.status).toBe(200);
       expect(res.text).toContain("proj-a");
+    });
+  });
+
+  describe("GET /errors", () => {
+    it("returns 200 with empty-state message when no errors exist", async () => {
+      const res = await request(app).get("/errors");
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("No errors recorded");
+    });
+
+    it("returns 200 and renders error rows when errors exist", async () => {
+      insertErrorLog(db, "get_content", "Content not found");
+      const res = await request(app).get("/errors");
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("get_content");
+      expect(res.text).toContain("Content not found");
+    });
+
+    it("shows errors newest-first", async () => {
+      insertErrorLog(db, "tool_a", "first error");
+      insertErrorLog(db, "tool_b", "second error");
+      const res = await request(app).get("/errors");
+      expect(res.text.indexOf("tool_b")).toBeLessThan(res.text.indexOf("tool_a"));
+    });
+  });
+
+  describe("nav link", () => {
+    it("includes Errors link on the home page", async () => {
+      const res = await request(app).get("/");
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('href="/errors"');
     });
   });
 });
