@@ -12,6 +12,7 @@ workspace → feature → content (idea | spec | plan | digest | doc)
 - **Five content types** — `idea`, `spec`, `plan`, `doc` (current-state feature docs), plus `digest` for summaries
 - **Optional title field** — short label on any document for easy scanning in list/search results
 - **Semantic search** — on-device vector similarity search powered by `sqlite-vec` and a local ONNX embedding model (multilingual, 50+ languages including Vietnamese)
+- **Error log viewer** — every unhandled MCP tool exception is captured to SQLite and viewable in the GUI at `/errors`
 - **SQLite-backed** — single file database via `better-sqlite3`, no external services
 - **Claude Code skills** — 11 slash commands for create, list, search, get, update, delete, import, export, explore, digest, and doc analysis
 
@@ -80,7 +81,7 @@ To explore your knowledge base in a browser, run:
 npx @vulhdev/knowledge-base gui
 ```
 
-Opens a read-only web UI at `http://localhost:3000` (override with `PORT=<n>`). Browse workspaces → features → documents, or search across all content.
+Opens a read-only web UI at `http://localhost:3000` (override with `PORT=<n>`). Browse workspaces → features → documents, search across all content, or open the **Errors** tab to inspect recent MCP tool failures.
 
 ## Claude Code Skills
 
@@ -180,6 +181,14 @@ CREATE TABLE contents (
 
 -- Virtual table managed by sqlite-vec; kept in sync via INSERT/UPDATE/DELETE triggers
 CREATE VIRTUAL TABLE vec_contents USING vec0(embedding float[384]);
+
+CREATE TABLE error_logs (
+  id        INTEGER PRIMARY KEY,
+  timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+  tool_name TEXT NOT NULL,  -- MCP tool that threw (e.g. "get_content")
+  message   TEXT NOT NULL,
+  severity  TEXT NOT NULL DEFAULT 'error'
+);
 ```
 
 Existing databases are automatically migrated on startup:
