@@ -139,11 +139,24 @@ Check `result.conflicts[]` from the `create_content` response.
   Excerpt: "When the user saves a new document via create_content..."
 ```
 
-3. Use `AskUserQuestion` (multiSelect: true) to ask which conflicting docs to link:
+3. **Optional deep analysis** — ask the user:
+
+```
+Run deep conflict analysis?
+  ● Yes — spawn kb-conflict-resolver agent (reads both docs in full, explains contradiction, recommends action)
+  ○ No — proceed with lightweight flow
+```
+
+If yes, spawn `kb-conflict-resolver` via the Agent tool:
+- Pass: new doc body, conflicting doc body, and `conflict.reason`
+- The agent returns a reconciliation memo (nature of conflict, exact quotes, recommended action)
+- Present the memo to the user before proceeding to the link step
+
+4. Use `AskUserQuestion` (multiSelect: true) to ask which conflicting docs to link:
    - One option per conflicting doc: `#<id> · <feature>/<type> "<title>"`
    - Plus: `"Do not link any"`
 
-4. For each confirmed link, call `link_content` — all in parallel. Direction: conflicting doc is typically the parent (older); new doc is the child.
+5. For each confirmed link, call `link_content` — all in parallel. Direction: conflicting doc is typically the parent (older); new doc is the child.
 
 **`risk_shadow` (low severity):**
 
