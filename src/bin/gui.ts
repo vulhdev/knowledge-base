@@ -1,11 +1,7 @@
 #!/usr/bin/env node
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { createServer } from "node:net";
 import { openDb } from "../db/client.js";
 import { createApp } from "../gui/server.js";
-
-process.env.DB_PATH ??= join(homedir(), ".claude", "knowledge-base.db");
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {

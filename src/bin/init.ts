@@ -8,8 +8,6 @@ import { openDb } from "../db/client.js";
 import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 
-process.env.DB_PATH ??= join(homedir(), ".claude", "knowledge-base.db");
-
 const CREATE_NEW = "__new__";
 const SKIP = "__skip__";
 const BLOCK_START = "<!-- knowledge-base:start -->";

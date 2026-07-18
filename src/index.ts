@@ -1,11 +1,7 @@
 #!/usr/bin/env node
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-
-process.env.DB_PATH ??= join(homedir(), ".claude", "knowledge-base.db");
 import { openDb } from "./db/client.js";
 import { createContent } from "./tools/create-content.js";
 import { getContent } from "./tools/get-content.js";
