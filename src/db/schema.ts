@@ -135,6 +135,21 @@ function runMigrations(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_content_links_child ON content_links(child_id);
   `);
+
+  // Migration 5: add code_refs table for linking plans to git commits
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS code_refs (
+      id          INTEGER PRIMARY KEY,
+      content_id  INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+      task_ref    TEXT,
+      commit_hash TEXT NOT NULL,
+      file_paths  TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(content_id, commit_hash)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_code_refs_content ON code_refs(content_id);
+  `);
 }
 
 function removeCheckConstraint(db: Database.Database): void {

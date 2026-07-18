@@ -60,3 +60,23 @@ export type CreateContentResult = {
   conflicts: ConflictResult[];
   suggested_parents: SuggestedParent[];
 };
+
+export type CodeRefFile = {
+  path: string;
+  start?: number;
+  end?: number;
+};
+
+export type AttachCodeRefResult = {
+  id: number;
+  content_id: number;
+  task_ref: string | null;
+  commit_hash: string;
+  file_paths: CodeRefFile[];
+  created_at: string;
+};
+
+export type GetCodeRefsResult = {
+  content_id: number;
+  refs: AttachCodeRefResult[];
+};
