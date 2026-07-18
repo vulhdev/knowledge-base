@@ -31,6 +31,7 @@ This project is linked to workspace **${workspace}**. Use the \`knowledge-base\`
 - **After writing a spec** — when you've just produced a structured specification document (Problem, Solution, Scope sections, or output of \`/spec\` skill), ask: *"Save this spec to knowledge-base?"* then invoke \`/knowledge-base-create\`.
 - **After writing a plan** — when you've just produced a numbered implementation plan or roadmap (output of \`/plan\` skill or similar), ask: *"Save this plan to knowledge-base?"* then invoke \`/knowledge-base-create\`.
 - **After writing an idea one-pager** — when you've just produced an ideation document with assumptions and MVP scope (output of \`/agent-skills:idea-refine\`), ask: *"Save this idea to knowledge-base?"* then invoke \`/knowledge-base-create\`.
+- **After creating a git commit** — if the current session has an active plan doc, call \`attach_code_ref\` to link the commit to that plan. Read the session context to find the plan's \`content_id\` and the matching \`task_ref\` (e.g. the task description that was just implemented), then call \`attach_code_ref(content_id, commit_hash, file_paths, task_ref)\`. Skip silently if no plan doc is active in the session.
 - **Before starting a bug fix**, ask: *"Search knowledge-base for prior context first?"* If user agrees, call \`search_semantic(query="...", workspace="${workspace}")\`.
 - **Before starting a new feature**, silently call \`list_contents(workspace="${workspace}")\` and surface any relevant prior docs if found.
 

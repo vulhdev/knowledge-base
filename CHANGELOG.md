@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Session-aware parent linking in `knowledge-base-create`** — scans conversation history for docs saved earlier in the session; if the type chain is valid (`idea→spec`, `spec→plan`), asks the user to link and uses `derive_content` to create and link atomically (Step 5b)
+- **Conflict-aware save flow in `knowledge-base-create`** — after `create_content`, checks `conflicts[]` in the response; `semantic_contradiction` fetches an excerpt and prompts the user to link the conflicting doc; `risk_shadow` is surfaced as a note in the Step 8 report without interrupting the flow (Step 6b)
+
+### Fixed
+- `CLAUDE.md` `Always Do` section now invokes `/knowledge-base-create` skill instead of calling `create_content` directly; added `Never Do` guard to prevent bypassing the full save flow (conflict detection, link suggestion, feature selection)
+
+### Changed
+- Skills & MCP Tools table in the `init` block expanded from 5 to 11 entries to match `src/tools/` — added `delete_content`, `link_content`, `derive_content`, `get_lineage`, `attach_code_ref`, `get_code_refs`
+
+## [1.10.3] — 2026-07-18
+
+### Added
+- `knowledge-base-link` skill — manually links two existing documents by ID with direction inference and `direction_warning` handling
+- **Auto-linking in `knowledge-base-create`** — after saving, suggests related docs via `search_semantic` and prompts the user to link with correct `idea→spec→plan` direction
+- **Auto-linking in `knowledge-base-import`** — detects structural chains from folder layout and semantic similarity at the end of a batch import; calls `link_content` in parallel
+
+## [1.10.2] — 2026-07-18
+
+### Changed
+- Updated README to document v1.9.0 settings config and v1.10.0 code grounding features
+
+## [1.10.1] — 2026-07-18
+
+### Changed
+- Updated CHANGELOG to document v1.9.0 and v1.10.0 releases
+
 ## [1.10.0] — 2026-07-18
 
 ### Added
@@ -167,7 +194,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - FTS5 full-text search index with INSERT/UPDATE/DELETE triggers
 - TypeScript project with `better-sqlite3`, Zod, `@modelcontextprotocol/sdk`, and Vitest
 
-[Unreleased]: https://github.com/vulhdev/knowledge-base/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/vulhdev/knowledge-base/compare/v1.10.3...HEAD
+[1.10.3]: https://github.com/vulhdev/knowledge-base/compare/v1.10.2...v1.10.3
+[1.10.2]: https://github.com/vulhdev/knowledge-base/compare/v1.10.1...v1.10.2
+[1.10.1]: https://github.com/vulhdev/knowledge-base/compare/v1.10.0...v1.10.1
+[1.10.0]: https://github.com/vulhdev/knowledge-base/compare/v1.9.0...v1.10.0
+[1.9.0]: https://github.com/vulhdev/knowledge-base/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/vulhdev/knowledge-base/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/vulhdev/knowledge-base/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/vulhdev/knowledge-base/compare/v1.6.0...v1.6.1
