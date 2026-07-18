@@ -9,6 +9,7 @@ export type Content = {
   body: string;
   created_at: string;
   updated_at: string;
+  has_code_refs: boolean;
 };
 
 export type SearchResult = Content & { score: number };
