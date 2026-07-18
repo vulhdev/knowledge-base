@@ -80,6 +80,16 @@ export function applySchema(db: Database.Database): void {
   // Vec table and triggers created after all migrations so DROP TABLE in migration 2
   // does not silently remove them.
   db.exec(VEC_TABLE_AND_TRIGGERS);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS error_logs (
+      id        INTEGER PRIMARY KEY,
+      timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+      tool_name TEXT NOT NULL,
+      message   TEXT NOT NULL,
+      severity  TEXT NOT NULL DEFAULT 'error'
+    );
+  `);
 }
 
 function runMigrations(db: Database.Database): void {
