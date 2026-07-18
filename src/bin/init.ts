@@ -28,9 +28,9 @@ This project is linked to workspace **${workspace}**. Use the \`knowledge-base\`
 
 ## Always Do
 
-- **After writing a spec** — when you've just produced a structured specification document (Problem, Solution, Scope sections, or output of \`/spec\` skill), ask: *"Save this spec to knowledge-base?"* then call \`create_content\` with \`type="spec"\`.
-- **After writing a plan** — when you've just produced a numbered implementation plan or roadmap (output of \`/plan\` skill or similar), ask: *"Save this plan to knowledge-base?"*
-- **After writing an idea one-pager** — when you've just produced an ideation document with assumptions and MVP scope (output of \`/agent-skills:idea-refine\`), ask: *"Save this idea to knowledge-base?"*
+- **After writing a spec** — when you've just produced a structured specification document (Problem, Solution, Scope sections, or output of \`/spec\` skill), ask: *"Save this spec to knowledge-base?"* then invoke \`/knowledge-base-create\`.
+- **After writing a plan** — when you've just produced a numbered implementation plan or roadmap (output of \`/plan\` skill or similar), ask: *"Save this plan to knowledge-base?"* then invoke \`/knowledge-base-create\`.
+- **After writing an idea one-pager** — when you've just produced an ideation document with assumptions and MVP scope (output of \`/agent-skills:idea-refine\`), ask: *"Save this idea to knowledge-base?"* then invoke \`/knowledge-base-create\`.
 - **Before starting a bug fix**, ask: *"Search knowledge-base for prior context first?"* If user agrees, call \`search_semantic(query="...", workspace="${workspace}")\`.
 - **Before starting a new feature**, silently call \`list_contents(workspace="${workspace}")\` and surface any relevant prior docs if found.
 
@@ -38,12 +38,14 @@ This project is linked to workspace **${workspace}**. Use the \`knowledge-base\`
 
 - NEVER save without user confirmation (\`search_semantic\` and \`list_contents\` are always safe to call).
 - NEVER create a duplicate — if a doc on the same topic exists, use \`update_content\` instead.
+- NEVER call \`create_content\` directly for user-initiated saves — always invoke \`/knowledge-base-create\` so the full save flow runs (conflict detection, link suggestion).
 
-## MCP Tools
+## Skills & MCP Tools
 
-| Tool | Use for |
+| Tool / Skill | Use for |
 |------|---------|
-| \`create_content\` | Save a new spec / plan / idea / doc / digest |
+| \`/knowledge-base-create\` (skill) | Save a new spec / plan / idea / doc — use for all user-initiated saves |
+| \`create_content\` | Internal/programmatic saves only (e.g. derive, digest tools) |
 | \`search_semantic\` | Find docs by semantic similarity (vector search, multilingual) |
 | \`list_contents\` | Browse all docs in this workspace |
 | \`update_content\` | Update an existing doc by ID |
