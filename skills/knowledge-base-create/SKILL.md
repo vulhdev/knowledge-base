@@ -83,6 +83,37 @@ create_content(workspace=WORKSPACE, feature=FEATURE, type=TYPE, body=CONTENT, ti
 
 Omit `title` if not set.
 
+### 6b. Handle conflicts (if any)
+
+Check `result.conflicts[]` from the `create_content` response.
+
+**If `conflicts[]` is empty** → skip to Step 7.
+
+**If conflicts exist**, separate into two groups:
+
+**`semantic_contradiction` (high severity):**
+
+1. Call `get_content(id=conflict.content_id)` in parallel for each contradiction to retrieve the body.
+2. Display a warning block for each, showing the first 150 chars of body as excerpt:
+
+```
+⚠ Conflict detected — the saved doc may contradict:
+
+  #35 · conflict-detection/spec "Spec: Cross-content..."
+  Reason: "New doc defines ConflictResult differently from the existing definition"
+  Excerpt: "When the user saves a new document via create_content..."
+```
+
+3. Use `AskUserQuestion` (multiSelect: true) to ask which conflicting docs to link:
+   - One option per conflicting doc: `#<id> · <feature>/<type> "<title>"`
+   - Plus: `"Do not link any"`
+
+4. For each confirmed link, call `link_content` — all in parallel. Direction: conflicting doc is typically the parent (older); new doc is the child.
+
+**`risk_shadow` (low severity):**
+
+Do not interrupt. Collect all `risk_shadow` conflicts and surface them in Step 8 report as a note section. No action required.
+
 ### 7. Suggest links (optional)
 
 After saving, check if there are related documents to link.
@@ -117,6 +148,10 @@ For each confirmed doc, call `link_content` with the correct direction:
   Title     : <title or (none)>
   ID        : <id>
   Links     : #12 (parent), #7 (parent)   ← if any
+
+⚡ Risk shadowed:
+  #30 · conflict-detection/plan — "New doc does not address the retry logic risk flagged here"
+  ← only show if risk_shadow conflicts exist; omit this section otherwise
 ```
 
 ## Example invocations
