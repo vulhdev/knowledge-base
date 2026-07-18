@@ -13,6 +13,7 @@ import { listContents } from "./tools/list-contents.js";
 import { searchSemantic } from "./tools/search-semantic.js";
 import { updateContent } from "./tools/update-content.js";
 import { deleteContent } from "./tools/delete-content.js";
+import { insertErrorLog } from "./db/error-log.js";
 
 const db = openDb();
 
@@ -60,6 +61,7 @@ server.tool(
       const result = await createContent(db, workspace, feature, type, body, title, requestSampling);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
+      insertErrorLog(db, "create_content", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },
@@ -76,6 +78,7 @@ server.tool(
       const result = getContent(db, id);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
+      insertErrorLog(db, "get_content", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },
@@ -94,6 +97,7 @@ server.tool(
       const results = listContents(db, workspace, feature, type);
       return { content: [{ type: "text", text: toText(results) }] };
     } catch (err) {
+      insertErrorLog(db, "list_contents", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },
@@ -113,6 +117,7 @@ server.tool(
       const results = await searchSemantic(db, query, workspace, type, limit);
       return { content: [{ type: "text", text: toText(results) }] };
     } catch (err) {
+      insertErrorLog(db, "search_semantic", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },
@@ -132,6 +137,7 @@ server.tool(
       const result = await updateContent(db, id, body, type, title);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
+      insertErrorLog(db, "update_content", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },
@@ -148,6 +154,7 @@ server.tool(
       const result = deleteContent(db, id);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
+      insertErrorLog(db, "delete_content", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },
