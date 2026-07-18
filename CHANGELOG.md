@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-07-18
+
+### Added
+- **Code grounding** — link plan documents to git commits at task granularity; enables Claude to resume a plan in a new session and immediately know which tasks already have commits
+- `attach_code_ref` tool — records a commit hash and changed files against a plan (or any content), with an optional `task_ref` label matching a task in the plan body; `UNIQUE(content_id, commit_hash)` prevents duplicate entries
+- `get_code_refs` tool — returns all commits linked to a document ordered by `created_at`, parsed as `{ content_id, refs: AttachCodeRefResult[] }`; returns an empty `refs` array (never throws) when no refs exist
+- `has_code_refs: boolean` field on `get_content` response — zero-cost signal (EXISTS subquery) letting Claude decide whether to call `get_code_refs` without a separate round-trip
+- `kb link-code` CLI subcommand — resolves `content_id` from `--workspace` / `--feature` names (or `--content-id` fallback), reads HEAD commit hash and changed files from git, and writes a `code_refs` row directly to SQLite; no env var setup required since DB path is read from `~/.claude/knowledge-base/settings.json`
+- `code_refs` table (Migration 5) — stores per-task commit references with `file_paths` as a JSON array of `{ path, start?, end? }` objects; CASCADE delete keeps refs in sync when content is removed
+- `CodeRefFile`, `AttachCodeRefResult`, `GetCodeRefsResult` types exported from `types.ts`
+
+## [1.9.0] — 2026-07-18
+
+### Added
+- **Settings config** — DB path and model cache dir are now persisted in `~/.claude/knowledge-base/settings.json`; env vars (`DB_PATH`, `MODEL_CACHE_DIR`) are read once on first startup to seed the file and never consulted again
+- Automatic migration of the legacy database from `~/.claude/knowledge-base.db` to `~/.claude/knowledge-base/knowledge-base.db` on first startup; cross-device move handled via copy + delete fallback
+
+### Changed
+- `DB_PATH` env var no longer required after initial setup; MCP config can be simplified to remove it once `settings.json` is written
+- `MODEL_CACHE_DIR` env var replaced by `model_cache_dir` in `settings.json`
+
 ## [1.8.0] — 2026-07-18
 
 ### Added
