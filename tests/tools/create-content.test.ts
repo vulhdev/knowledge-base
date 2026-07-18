@@ -140,4 +140,58 @@ describe("createContent", () => {
 
     vi.mocked(isModelReady).mockReturnValue(false);
   });
+
+  // suggested_parents
+  it("always returns suggested_parents as an array", async () => {
+    const result = await createContent(db, "ws", "ft", "spec", "some spec body");
+    expect(Array.isArray(result.suggested_parents)).toBe(true);
+  });
+
+  it("suggested_parents is [] for type=idea (no parent type)", async () => {
+    const result = await createContent(db, "ws", "ft", "idea", "some idea body");
+    expect(result.suggested_parents).toEqual([]);
+  });
+
+  it("suggested_parents is [] for unknown types", async () => {
+    const result = await createContent(db, "ws", "ft", "adr", "some adr body");
+    expect(result.suggested_parents).toEqual([]);
+  });
+
+  it("FTS fallback: suggests ideas when creating spec and model is not ready", async () => {
+    // Insert an idea with matching text
+    await createContent(db, "ws", "ft", "idea", "payment flow redesign proposal");
+
+    const result = await createContent(db, "ws", "ft", "spec", "payment flow redesign spec");
+
+    expect(result.suggested_parents.length).toBeGreaterThan(0);
+    expect(result.suggested_parents[0].type).toBe("idea");
+    expect(typeof result.suggested_parents[0].id).toBe("number");
+    expect(typeof result.suggested_parents[0].score).toBe("number");
+  });
+
+  it("FTS fallback: suggests specs when creating plan and model is not ready", async () => {
+    await createContent(db, "ws", "ft", "spec", "authentication redesign spec");
+
+    const result = await createContent(db, "ws", "ft", "plan", "authentication redesign plan");
+
+    expect(result.suggested_parents.length).toBeGreaterThan(0);
+    expect(result.suggested_parents[0].type).toBe("spec");
+  });
+
+  it("FTS fallback: does not suggest content from a different workspace", async () => {
+    await createContent(db, "other-ws", "ft", "idea", "payment flow redesign idea");
+
+    const result = await createContent(db, "ws", "ft", "spec", "payment flow redesign spec");
+
+    // Should not suggest the idea from other-ws
+    const otherWsIds = result.suggested_parents.filter(
+      (s) => db.prepare("SELECT w.name FROM contents c JOIN features f ON c.feature_id = f.id JOIN workspaces w ON f.workspace_id = w.id WHERE c.id = ?").get(s.id) as { name: string } | undefined,
+    );
+    for (const suggestion of result.suggested_parents) {
+      const row = db
+        .prepare("SELECT w.name AS ws FROM contents c JOIN features f ON c.feature_id = f.id JOIN workspaces w ON f.workspace_id = w.id WHERE c.id = ?")
+        .get(suggestion.id) as { ws: string };
+      expect(row.ws).toBe("ws");
+    }
+  });
 });

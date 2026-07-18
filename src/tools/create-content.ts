@@ -1,7 +1,81 @@
 import type Database from "better-sqlite3";
-import type { ContentType, ConflictResult, CreateContentResult } from "../types.js";
+import type { ContentType, ConflictResult, CreateContentResult, SuggestedParent } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
+
+const PARENT_TYPE: Record<string, string> = { spec: "idea", plan: "spec" };
+const SUGGEST_LIMIT = 3;
+const SCORE_THRESHOLD = 0.25;
+
+async function suggestParents(
+  db: Database.Database,
+  workspace: string,
+  type: string,
+  body: string,
+  embeddingBlob: Buffer | null,
+): Promise<SuggestedParent[]> {
+  const parentType = PARENT_TYPE[type];
+  if (!parentType) return [];
+
+  if (embeddingBlob) {
+    try {
+      type VecRow = { id: number; type: string; title: string | null; score: number };
+      const rows = db
+        .prepare(
+          `SELECT c.id, c.type, c.title, v.distance AS score
+           FROM vec_contents v
+           JOIN contents c ON v.rowid = c.id
+           JOIN features f ON c.feature_id = f.id
+           JOIN workspaces w ON f.workspace_id = w.id
+           WHERE v.embedding MATCH ? AND k = ?
+             AND c.type = ?
+             AND w.name = ?
+           ORDER BY v.distance`,
+        )
+        .all(embeddingBlob, SUGGEST_LIMIT * 4, parentType, workspace) as VecRow[];
+
+      const filtered = rows.filter((r) => r.score <= SCORE_THRESHOLD).slice(0, SUGGEST_LIMIT);
+      if (filtered.length > 0) {
+        return filtered.map((r) => ({ id: r.id, type: r.type, title: r.title, score: r.score }));
+      }
+    } catch {
+      // fall through to FTS
+    }
+  }
+
+  // FTS fallback
+  try {
+    const words = body
+      .trim()
+      .split(/\s+/)
+      .slice(0, 8)
+      .map((w) => w.replace(/[^\w]/g, ""))
+      .filter((w) => w.length > 2);
+
+    if (words.length === 0) return [];
+
+    const ftsQuery = words.join(" OR ");
+
+    type FtsRow = { id: number; type: string; title: string | null };
+    const rows = db
+      .prepare(
+        `SELECT c.id, c.type, c.title
+         FROM contents_fts fts
+         JOIN contents c ON fts.rowid = c.id
+         JOIN features f ON c.feature_id = f.id
+         JOIN workspaces w ON f.workspace_id = w.id
+         WHERE contents_fts MATCH ?
+           AND c.type = ?
+           AND w.name = ?
+         LIMIT ?`,
+      )
+      .all(ftsQuery, parentType, workspace, SUGGEST_LIMIT) as FtsRow[];
+
+    return rows.map((r) => ({ id: r.id, type: r.type, title: r.title, score: 0 }));
+  } catch {
+    return [];
+  }
+}
 
 export async function createContent(
   db: Database.Database,
@@ -53,5 +127,7 @@ export async function createContent(
     .prepare("SELECT id, title, created_at FROM contents WHERE id = ?")
     .get(contentId) as { id: number; title: string | null; created_at: string };
 
-  return { id: row.id, workspace, feature, type, title: row.title, created_at: row.created_at, conflicts, suggested_parents: [] };
+  const suggested_parents = await suggestParents(db, workspace, type, body, embeddingBlob);
+
+  return { id: row.id, workspace, feature, type, title: row.title, created_at: row.created_at, conflicts, suggested_parents };
 }
