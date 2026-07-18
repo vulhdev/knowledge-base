@@ -13,6 +13,9 @@ import { listContents } from "./tools/list-contents.js";
 import { searchSemantic } from "./tools/search-semantic.js";
 import { updateContent } from "./tools/update-content.js";
 import { deleteContent } from "./tools/delete-content.js";
+import { linkContent } from "./tools/link-content.js";
+import { deriveContent } from "./tools/derive-content.js";
+import { getLineage } from "./tools/get-lineage.js";
 import { insertErrorLog } from "./db/error-log.js";
 
 const db = openDb();
@@ -155,6 +158,61 @@ server.tool(
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       insertErrorLog(db, "delete_content", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "link_content",
+  "Links two existing documents as parent → child. Use after both documents exist. Emits a direction_warning if the type order is reversed (e.g. plan→idea) but does not block the operation.",
+  {
+    child_id: z.number().int().positive().describe("ID of the child document"),
+    parent_id: z.number().int().positive().describe("ID of the parent document"),
+  },
+  async ({ child_id, parent_id }) => {
+    try {
+      const result = linkContent(db, child_id, parent_id);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "link_content", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "derive_content",
+  "Creates a new document linked to a parent in a single step. Inherits the parent's workspace and feature. Returns the new document plus a parent_id field.",
+  {
+    parent_id: z.number().int().positive().describe("ID of the parent document to derive from"),
+    type: contentTypeSchema.describe("Type of the new document. Suggested: idea | spec | plan | digest | doc."),
+    body: z.string().min(1).describe("Document body text"),
+    title: z.string().min(1).optional().describe("Short label for the document (optional)"),
+  },
+  async ({ parent_id, type, body, title }) => {
+    try {
+      const result = await deriveContent(db, parent_id, type, body, title);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "derive_content", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "get_lineage",
+  "Returns the full ancestry chain for a document: all ancestors (nearest→oldest) and all descendants (BFS order). Use to answer 'which idea caused this spec?' or 'what has this idea produced?'",
+  {
+    content_id: z.number().int().positive().describe("ID of the document to get lineage for"),
+  },
+  async ({ content_id }) => {
+    try {
+      const result = getLineage(db, content_id);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "get_lineage", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },
