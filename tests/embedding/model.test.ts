@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,23 +14,14 @@ vi.mock("@huggingface/transformers", () => ({
 }));
 
 describe("isModelReady", () => {
-  let origEnv: string | undefined;
   let tmpDir: string;
 
   beforeEach(() => {
-    origEnv = process.env.MODEL_CACHE_DIR;
     tmpDir = join(tmpdir(), `kb-test-${Date.now()}`);
-    process.env.MODEL_CACHE_DIR = tmpDir;
-    // Reset module cache so isModelReady picks up new env
     vi.resetModules();
-  });
-
-  afterEach(() => {
-    if (origEnv === undefined) {
-      delete process.env.MODEL_CACHE_DIR;
-    } else {
-      process.env.MODEL_CACHE_DIR = origEnv;
-    }
+    vi.doMock("../../src/config.js", () => ({
+      loadSettings: () => ({ db_path: ":memory:", model_cache_dir: tmpDir }),
+    }));
   });
 
   it("returns false when cache dir does not exist", async () => {

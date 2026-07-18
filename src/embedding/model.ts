@@ -1,11 +1,11 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync, readdirSync } from "node:fs";
+import { loadSettings } from "../config.js";
 
 const MODEL_NAME = "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
 
 function getModelCacheDir(): string {
-  return process.env.MODEL_CACHE_DIR ?? join(homedir(), ".cache", "knowledge-base", "models");
+  return loadSettings().model_cache_dir;
 }
 
 function getLocalModelDir(): string {
