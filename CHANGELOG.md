@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] — 2026-07-19
+
+### Added
+- **Agent distribution** — `init` now installs Claude Code agent personas alongside skills; a new `agents/` directory ships with the package and is copied to `~/.claude/agents/` (global) or `.claude/agents/` (project) on user choice; requires restart to pick up
+- **`kb-conflict-resolver` agent** — deep conflict analysis persona for `knowledge-base-create`; when `semantic_contradiction` is detected, the user can optionally spawn this agent to read both docs in full, identify the exact contradicting text, and recommend whether to update, deprecate, or mark as intentional divergence
+- **Optional deep conflict analysis in `knowledge-base-create` Step 6b** — after detecting `semantic_contradiction`, asks the user if they want to run `kb-conflict-resolver` for a structured reconciliation memo before deciding whether to link the conflicting docs
+
+### Changed
+- `init` wizard flow restructured — skipping skills no longer exits early; both skills and agents prompts always run independently
+- `init` outro updated: "Restart Claude Code to pick up the new skills and agents."
+- `buildBlock()` Skills & MCP Tools table updated with `kb-conflict-resolver (agent)` entry
+
+## [1.11.0] — 2026-07-19
+
 ### Added
 - **Session-aware parent linking in `knowledge-base-create`** — scans conversation history for docs saved earlier in the session; if the type chain is valid (`idea→spec`, `spec→plan`), asks the user to link and uses `derive_content` to create and link atomically (Step 5b)
 - **Conflict-aware save flow in `knowledge-base-create`** — after `create_content`, checks `conflicts[]` in the response; `semantic_contradiction` fetches an excerpt and prompts the user to link the conflicting doc; `risk_shadow` is surfaced as a note in the Step 8 report without interrupting the flow (Step 6b)
