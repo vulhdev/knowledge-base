@@ -12,6 +12,8 @@ import { deleteContent } from "./tools/delete-content.js";
 import { linkContent } from "./tools/link-content.js";
 import { deriveContent } from "./tools/derive-content.js";
 import { getLineage } from "./tools/get-lineage.js";
+import { attachCodeRef } from "./tools/attach-code-ref.js";
+import { getCodeRefs } from "./tools/get-code-refs.js";
 import { insertErrorLog } from "./db/error-log.js";
 
 const db = openDb();
@@ -209,6 +211,45 @@ server.tool(
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       insertErrorLog(db, "get_lineage", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "attach_code_ref",
+  "Links a git commit to a knowledge-base document (primarily a plan) at task granularity. Call after each task commit so that resuming a plan in a new session shows which tasks already have commits.",
+  {
+    content_id: z.number().int().positive().describe("ID of the plan (or any content) to attach the commit to"),
+    commit_hash: z.string().min(1).describe("Full or short git commit hash"),
+    file_paths: z
+      .array(z.object({ path: z.string().min(1), start: z.number().int().optional(), end: z.number().int().optional() }))
+      .describe("Files changed in this commit, with optional line ranges"),
+    task_ref: z.string().min(1).optional().describe("Free-text label matching a task in the plan body (e.g. 'Task 2: Setup session middleware')"),
+  },
+  async ({ content_id, commit_hash, file_paths, task_ref }) => {
+    try {
+      const result = attachCodeRef(db, content_id, commit_hash, file_paths, task_ref);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "attach_code_ref", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "get_code_refs",
+  "Returns all git commits linked to a document, grouped by task. Use when resuming a plan to see which tasks already have commits and which don't.",
+  {
+    content_id: z.number().int().positive().describe("ID of the document to fetch code refs for"),
+  },
+  async ({ content_id }) => {
+    try {
+      const result = getCodeRefs(db, content_id);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "get_code_refs", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },
