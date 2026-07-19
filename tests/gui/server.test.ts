@@ -3,6 +3,7 @@ import request from "supertest";
 import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
+import { linkContent } from "../../src/tools/link-content.js";
 import { insertErrorLog } from "../../src/db/error-log.js";
 import { createApp } from "../../src/gui/server.js";
 
@@ -149,6 +150,43 @@ describe("GUI server routes", () => {
       const res = await request(app).get("/");
       expect(res.status).toBe(200);
       expect(res.text).toContain('href="/errors"');
+    });
+  });
+
+  describe("layout width", () => {
+    it("renders with 1400px max-width on all pages", async () => {
+      const res = await request(app).get("/");
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("1400px");
+    });
+  });
+
+  describe("linked content sidebar", () => {
+    it("shows sidebar with parents and children when content has links", async () => {
+      const parent = await createContent(db, "proj-a", "auth", "idea", "Parent idea body", "Parent Idea");
+      const child = await createContent(db, "proj-a", "auth", "spec", "Child spec body", "Child Spec");
+      linkContent(db, child.id, parent.id);
+
+      const res = await request(app).get(`/ws/proj-a/auth/${child.id}`);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('<aside class="content-sidebar">');
+      expect(res.text).toContain("Parents");
+      expect(res.text).toContain("Parent Idea");
+    });
+
+    it("does not show sidebar when content has no links", async () => {
+      const solo = await createContent(db, "proj-a", "auth", "idea", "Solo idea body", "Solo Idea");
+      const res = await request(app).get(`/ws/proj-a/auth/${solo.id}`);
+      expect(res.status).toBe(200);
+      expect(res.text).not.toContain('<aside class="content-sidebar">');
+    });
+
+    it("renders page normally when getLineage throws", async () => {
+      const result = await createContent(db, "proj-a", "auth", "idea", "Some idea", "Crash Test");
+      db.prepare("DROP TABLE content_links").run();
+      const res = await request(app).get(`/ws/proj-a/auth/${result.id}`);
+      expect(res.status).toBe(200);
+      expect(res.text).not.toContain('<aside class="content-sidebar">');
     });
   });
 });
