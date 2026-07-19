@@ -6,7 +6,9 @@ import { listWorkspaces } from "../db/workspaces.js";
 import { listFeatures } from "./db.js";
 import { listContents } from "../tools/list-contents.js";
 import { getContent } from "../tools/get-content.js";
+import { getLineage } from "../tools/get-lineage.js";
 import { searchSemantic } from "../tools/search-semantic.js";
+import type { LineageResult } from "../types.js";
 import {
   renderWorkspaceList,
   renderFeatureList,
@@ -63,7 +65,9 @@ export function createApp(db: Database.Database) {
     }
     try {
       const content = getContent(db, id);
-      res.send(renderContent(content));
+      let lineage: LineageResult | undefined;
+      try { lineage = getLineage(db, id); } catch { /* no links or db error */ }
+      res.send(renderContent(content, lineage));
     } catch {
       res.status(404).send("<p>Content not found</p>");
     }
