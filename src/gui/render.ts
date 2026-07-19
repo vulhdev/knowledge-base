@@ -161,8 +161,7 @@ function renderLinkedSidebar(lineage: LineageResult): string {
   const { ancestors, descendants } = lineage;
   if (ancestors.length === 0 && descendants.length === 0) return "";
   const item = (c: LinkedContent) =>
-    `<li><a href="/ws/${encodeURIComponent(c.workspace)}/${encodeURIComponent(c.feature)}/${c.id}">${esc(c.title ?? `#${c.id}`)}</a>
-     &nbsp;<span class="badge">${esc(c.type)}</span></li>`;
+    `<li><span class="badge">${esc(c.type)}</span>&nbsp;<a href="/ws/${encodeURIComponent(c.workspace)}/${encodeURIComponent(c.feature)}/${c.id}">${esc(c.title ?? `#${c.id}`)}</a></li>`;
   const parents = ancestors.length
     ? `<h4>Parents</h4><ul>${ancestors.map(item).join("")}</ul>` : "";
   const children = descendants.length
