@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.4] — 2026-07-20
+
+### Added
+- **Web GUI: linked content sidebar** — content detail pages now show a sidebar listing all ancestors ("Parents") and descendants ("Children") of the current document, sourced from `getLineage`; each entry links directly to the related doc and displays a type badge; sidebar is hidden when no links exist and errors from `getLineage` are silently caught so the page always renders
+
+### Changed
+- **Web GUI: wider layout** — body `max-width` increased from 860px to 1400px across all pages
+
 ## [1.12.3] — 2026-07-19
 
 ### Changed
