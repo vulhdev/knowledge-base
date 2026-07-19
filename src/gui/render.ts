@@ -1,7 +1,7 @@
 import { parse } from "marked";
 import type { Workspace } from "../db/workspaces.js";
 import type { Feature } from "./db.js";
-import type { Content, SearchResult } from "../types.js";
+import type { Content, SearchResult, LineageResult, LinkedContent } from "../types.js";
 import type { ErrorLog } from "../db/error-log.js";
 
 const PICO_CDN =
@@ -9,7 +9,7 @@ const PICO_CDN =
 
 const CUSTOM_CSS = `
   :root { --pico-font-size: 16px; }
-  body { max-width: 860px; margin-inline: auto; padding-inline: 1.5rem; }
+  body { max-width: 1400px; margin-inline: auto; padding-inline: 1.5rem; }
   nav { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
   nav a:first-child img { height: 50px; display: block; }
   .breadcrumb { color: var(--pico-muted-color); font-size: 0.9rem; margin-bottom: 0.5rem; }
@@ -19,6 +19,11 @@ const CUSTOM_CSS = `
            background: var(--pico-secondary-background); font-size: 0.8rem; }
   table td:last-child { white-space: nowrap; }
   .content-body { margin-top: 1.5rem; }
+  .content-layout { display: grid; grid-template-columns: 1fr 260px; gap: 2rem; align-items: start; }
+  .content-sidebar { border-left: 1px solid var(--pico-muted-border-color); padding-left: 1.5rem; }
+  .content-sidebar h4 { margin-bottom: 0.4rem; font-size: 0.9rem; }
+  .content-sidebar ul { list-style: none; padding: 0; margin: 0; }
+  .content-sidebar li { margin-bottom: 0.5rem; font-size: 0.85rem; }
   .search-form { display: flex; gap: 0.5rem; align-items: flex-end; margin-bottom: 1.5rem; }
   .search-form input { flex: 1; margin: 0; }
   .search-form button { margin: 0; width: auto; }
@@ -127,7 +132,7 @@ export function renderContentList(
   return layout(`${workspace}/${feature}`, body);
 }
 
-export function renderContent(content: Content): string {
+export function renderContent(content: Content, lineage?: LineageResult): string {
   const crumb = `<p class="breadcrumb">
     <a href="/">Home</a> /
     <a href="/ws/${encodeURIComponent(content.workspace)}">${esc(content.workspace)}</a> /
@@ -136,6 +141,11 @@ export function renderContent(content: Content): string {
   </p>`;
   const title = content.title ?? `#${content.id}`;
   const renderedBody = parse(content.body) as string;
+  const sidebar = lineage ? renderLinkedSidebar(lineage) : "";
+  const mainContent = `<div class="content-body">${renderedBody}</div>`;
+  const contentArea = sidebar
+    ? `<div class="content-layout">${mainContent}${sidebar}</div>`
+    : mainContent;
   const body = `${crumb}
 <h1>${esc(title)}</h1>
 <p class="meta">
@@ -143,8 +153,21 @@ export function renderContent(content: Content): string {
   &nbsp; Updated ${formatDate(content.updated_at)}
 </p>
 <hr />
-<div class="content-body">${renderedBody}</div>`;
+${contentArea}`;
   return layout(title, body);
+}
+
+function renderLinkedSidebar(lineage: LineageResult): string {
+  const { ancestors, descendants } = lineage;
+  if (ancestors.length === 0 && descendants.length === 0) return "";
+  const item = (c: LinkedContent) =>
+    `<li><a href="/ws/${encodeURIComponent(c.workspace)}/${encodeURIComponent(c.feature)}/${c.id}">${esc(c.title ?? `#${c.id}`)}</a>
+     &nbsp;<span class="badge">${esc(c.type)}</span></li>`;
+  const parents = ancestors.length
+    ? `<h4>Parents</h4><ul>${ancestors.map(item).join("")}</ul>` : "";
+  const children = descendants.length
+    ? `<h4>Children</h4><ul>${descendants.map(item).join("")}</ul>` : "";
+  return `<aside class="content-sidebar">${parents}${children}</aside>`;
 }
 
 export function renderSearchResults(
