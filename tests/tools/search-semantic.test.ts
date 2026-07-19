@@ -74,4 +74,22 @@ describe("searchSemantic", () => {
     const results = await searchSemantic(db, "auth");
     expect(results).toEqual([]);
   });
+
+  it("surfaces keyword-matched doc via BM25 — hybrid RRF ranks it above equal-distance vec results", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    // All mock embeddings are identical so vec distance is equal for every doc.
+    // The "FTS5" token uniquely appears in one doc body — BM25 should push it to rank 1.
+    const results = await searchSemantic(db, "FTS5 full text search");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].body).toContain("FTS5");
+  });
+
+  it("includes FTS-only hits not in ANN pool when pool is small", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    // With limit=1, internalK=5. There are 4 docs and all have equal vec distance,
+    // so all 4 are in the ANN pool. FTS finds "FTS5" doc — verify it surfaces in top result.
+    const results = await searchSemantic(db, "FTS5", undefined, undefined, 1);
+    expect(results).toHaveLength(1);
+    expect(results[0].body).toContain("FTS5");
+  });
 });

@@ -28,6 +28,8 @@ function readOrMigrate(): Settings {
 
   mkdirSync(SETTINGS_DIR, { recursive: true });
 
+  let dbPath = process.env.DB_PATH ?? DEFAULT_DB;
+
   if (existsSync(LEGACY_DB)) {
     try {
       renameSync(LEGACY_DB, DEFAULT_DB);
@@ -37,10 +39,11 @@ function readOrMigrate(): Settings {
         unlinkSync(LEGACY_DB);
       }
     }
+    dbPath = DEFAULT_DB;
   }
 
   const settings: Settings = {
-    db_path: process.env.DB_PATH ?? DEFAULT_DB,
+    db_path: dbPath,
     model_cache_dir: process.env.MODEL_CACHE_DIR ?? DEFAULT_MODEL,
   };
 
