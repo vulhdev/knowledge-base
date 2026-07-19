@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.3] — 2026-07-19
+
+### Changed
+- **`knowledge-base-explore` skill: lineage traversal** — after Step 2 search, `get_lineage` is now called in parallel on the top results (up to 2) to surface linked ancestors and descendants not returned by semantic search; output includes a new "Linked docs (via lineage)" section in all three modes (bug/upgrade/feature)
+- **`knowledge-base-explore` skill: type-agnostic search** — removed `type="doc"` filter from Step 2 searches; any content type (idea, spec, plan, doc, etc.) is now eligible for full-body loading, reflecting that current state can be captured in any document type
+- **`knowledge-base-explore` skill: Step 3 deep mode** — `get_content` and `get_lineage` are now called in parallel when entering deep mode, with lineage shown beneath the full body
+
 ## [1.12.2] — 2026-07-19
 
 ### Changed
