@@ -23,7 +23,7 @@ const CUSTOM_CSS = `
   .content-sidebar { border-left: 1px solid var(--pico-muted-border-color); padding-left: 1.5rem; }
   .content-sidebar h4 { margin-bottom: 0.4rem; font-size: 0.9rem; }
   .content-sidebar ul { list-style: none; padding: 0; margin: 0; }
-  .content-sidebar li { margin-bottom: 0.5rem; font-size: 0.85rem; }
+  .content-sidebar li { display: flex; align-items: baseline; gap: 0.4rem; margin-bottom: 0.5rem; font-size: 0.85rem; }
   .search-form { display: flex; gap: 0.5rem; align-items: flex-end; margin-bottom: 1.5rem; }
   .search-form input { flex: 1; margin: 0; }
   .search-form button { margin: 0; width: auto; }
