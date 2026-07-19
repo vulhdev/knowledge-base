@@ -65,24 +65,30 @@ search_semantic(query=<feature>, workspace=WORKSPACE, type="digest", limit=3)
 
 ## Step 2: Fallback — full-text search
 
-**For bug mode**, run three searches in parallel:
+**For bug mode**, run two searches in parallel:
 
 ```
-search_semantic(query=<feature>, workspace=WORKSPACE, type="doc", limit=5)
 search_semantic(query=<feature>, workspace=WORKSPACE, limit=10)
 search_semantic(query=<symptom>, workspace=WORKSPACE, limit=5)   ← secondary symptom search
 ```
 
-Merge all results, deduplicate by ID. `doc` types are highest priority. Symptom results are shown in a separate group.
+Merge all results, deduplicate by ID. Symptom results are shown in a separate group.
 
-**For upgrade mode and feature mode**, run two searches in parallel:
+**For upgrade mode and feature mode**, run one search:
 
 ```
-search_semantic(query=<feature>, workspace=WORKSPACE, type="doc", limit=5)
 search_semantic(query=<feature>, workspace=WORKSPACE, limit=10)
 ```
 
-Load full bodies of `doc` results via `get_content` before presenting.
+Load full bodies of the top results via `get_content` before presenting (any type — idea, spec, plan, doc, etc.).
+
+For each top result (up to 2), call `get_lineage` in parallel to discover linked ancestors and descendants not returned by search:
+
+```
+get_lineage(id=<content_id>)
+```
+
+Add any newly discovered IDs not already in the result set. Load their bodies if directly relevant to the task (any type).
 
 ---
 
@@ -92,11 +98,14 @@ Enter deep mode when:
 - Quick mode returned a digest index but you need the **full body** of a specific spec, plan, or doc
 - The user explicitly asks to "read the full spec" or "load the full doc"
 
+Call `get_content` and `get_lineage` in parallel:
+
 ```
 get_content(id=<id>)
+get_lineage(id=<id>)
 ```
 
-Load only IDs directly relevant to the current task — not all of them.
+Load only IDs directly relevant to the current task — not all of them. Show lineage as a "Linked docs" section beneath the full body.
 
 ---
 
@@ -116,6 +125,10 @@ Symptom: <extracted symptom or "not specified">
 
 **Symptom matches (cross-feature):**
 - [#44 · plan] "Fix retry logic" — matched on: "webhook not firing"...
+
+**Linked docs (via lineage):**
+- [#10 · spec] "Payment Design" ← ancestor of #31
+- [#50 · plan] "Fix webhook retry" → child of #31
 ```
 
 If nothing found in any group, note it:
@@ -129,14 +142,18 @@ If nothing found in any group, note it:
 🔧 Knowledge-base context for upgrading `<feature>`:
 
 **Current state (load full body):**
-- [#12 · doc] "DB Schema" — <full body>
-- [#18 · doc] "Backend Flow" — <full body>
+- [#12 · spec] "DB Schema" — <full body>
+- [#18 · plan] "Backend Flow" — <full body>
 
 **Past decisions / constraints:**
 - [#31 · spec] "Token Expiry Design" — excerpt with the rationale...
 
 **Open questions (never resolved):**
 - [#29 · idea] "Refresh token rotation" — excerpt with the question...
+
+**Linked docs (via lineage):**
+- [#8 · idea] "Initial DB proposal" ← ancestor of #12
+- [#20 · plan] "Schema migration v2" → child of #12
 ```
 
 ---
@@ -159,11 +176,14 @@ If fallback search was used (no digest):
 ```
 📚 Knowledge-base context for `<feature>` (no digest — raw search results):
 
-**Docs (current state):**
-- [#12 · doc] "DB Schema" — <full body loaded>
+**Top results (current state):**
+- [#12 · spec] "DB Schema" — <full body loaded>
 
 **Other:**
 - [#31 · spec] Short excerpt from body...
+
+**Linked docs (via lineage):**
+- [#8 · idea] "Initial DB proposal" ← ancestor of #12
 ```
 
 If nothing found:
@@ -178,12 +198,12 @@ If nothing found:
 | Situation | Action |
 |---|---|
 | Bug mode + digest found | Present: known issues group, related decisions, stop (quick) |
-| Bug mode + no digest | Parallel search: feature + symptom as separate queries, merge results |
+| Bug mode + no digest | Parallel search: feature + symptom; merge results; call `get_lineage` on top results |
 | Bug mode + nothing found | Note it: may be a new/undocumented issue |
 | Upgrade mode + digest found | Present: current state docs, past decisions, open questions |
-| Upgrade mode + no digest | Load full `doc` bodies, present decisions and open questions groups |
+| Upgrade mode + no digest | Load full bodies (any type) + `get_lineage`; present decisions, open questions, linked docs |
 | Feature mode + digest found | Present TL;DR + index table, stop (quick) |
-| Feature mode + no digest | Load full `doc` bodies, present raw results |
+| Feature mode + no digest | Load full bodies (any type) + `get_lineage`; present raw results and linked docs |
 | Nothing found (any mode) | Note it briefly, proceed with task |
 | Workspace not configured | Skip silently |
 | Already explored this session | Skip — don't call again |
@@ -200,14 +220,14 @@ If nothing found:
 
 **"Upgrade the auth refresh token flow"**
 → intent=upgrade, feature=`auth`
-→ `search_semantic(query="auth", type="digest")` → no digest → parallel: doc + general search
-→ load full body of "Auth DB Schema" doc
+→ `search_semantic(query="auth", type="digest")` → no digest → `search_semantic(query="auth", limit=10)`
+→ load full body of top results (any type)
 → group: current state → past decisions → open questions → present upgrade mode output
 
 **"Implement tính năng tạo bài viết"**
 → intent=feature, feature=`bài viết`
-→ `search_semantic(query="bài viết", type="digest")` → no digest → parallel: doc + general
-→ load full doc bodies → present feature mode output
+→ `search_semantic(query="bài viết", type="digest")` → no digest → `search_semantic(query="bài viết", limit=10)`
+→ load full bodies of top results (any type) → present feature mode output
 
 **"Review the search feature"**
 → intent=feature, feature=`search`
