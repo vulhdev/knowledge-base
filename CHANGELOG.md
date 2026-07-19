@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.2] — 2026-07-19
+
+### Changed
+- **Hybrid BM25 + vector search with Reciprocal Rank Fusion** — `search_semantic` now runs a BM25 full-text search (FTS5) in parallel with the ANN vector query and merges results using RRF (k=60); documents matching on both signals are promoted to the top, reducing missed results caused by vocabulary mismatch between the query and document body
+- Internal ANN candidate pool expanded to `limit × 5` (max 100) before re-ranking, improving recall without changing the exposed `limit` parameter
+
+### Fixed
+- Config: `db_path` now correctly resolves to `DEFAULT_DB` after a legacy database migration, ignoring a stale `DB_PATH` env var that pointed to the old location
+
+## [1.12.1] — 2026-07-19
+
+### Fixed
+- `agents/` directory was missing from the npm published package — added to `files` in `package.json` so `init` can copy agent personas on install
+
 ## [1.12.0] — 2026-07-19
 
 ### Added
