@@ -1,6 +1,6 @@
 import { parse } from "marked";
 import type { Workspace } from "../db/workspaces.js";
-import type { Feature } from "./db.js";
+import type { Feature, WorkspaceSummary } from "./db.js";
 import type { Content, SearchResult, LineageResult, LinkedContent } from "../types.js";
 import type { ErrorLog } from "../db/error-log.js";
 
@@ -57,6 +57,14 @@ const CUSTOM_CSS = `
   .content-sidebar li { display: block; margin-bottom: 8px; font-size: 13px; }
   .content-sidebar li .badge { font-size: 11px; padding: 1px 6px; }
   .content-sidebar li a { display: inline; color: #d2bbff; }
+  .hero { text-align: center; padding-block: 40px 32px; }
+  .hero h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 20px; }
+  .workspace-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 8px; }
+  @media (max-width: 768px) { .workspace-grid { grid-template-columns: 1fr; } }
+  .workspace-card { background: #141c24; border: 1px solid #2d363e; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 6px; transition: border-color 0.15s; }
+  .workspace-card:hover { border-color: #7c3aed; }
+  .workspace-card-name { font-weight: 600; font-size: 15px; color: #dae3ee; }
+  .workspace-card-meta { font-size: 12px; color: #8b949e; }
 `;
 
 function searchBar(defaultQ = "", defaultWs = ""): string {
@@ -96,21 +104,24 @@ export function layout(title: string, body: string, searchQ = "", searchWs = "")
 </html>`;
 }
 
-export function renderWorkspaceList(workspaces: Workspace[]): string {
+export function renderWorkspaceList(workspaces: WorkspaceSummary[]): string {
+  const hero = `<div class="hero">
+    <h1>Find answers across your workspace.</h1>
+  </div>`;
   if (workspaces.length === 0) {
-    return layout("Workspaces", "<p>No workspaces found. Create content via Claude to get started.</p>");
+    return layout("Workspaces", hero + "<p>No workspaces found. Create content via Claude to get started.</p>");
   }
-  const rows = workspaces
-    .map(
-      (w) =>
-        `<tr><td><a href="/ws/${encodeURIComponent(w.name)}">${esc(w.name)}</a></td></tr>`,
-    )
+  const cards = workspaces
+    .map((w) => {
+      const count = `${w.feature_count} feature${w.feature_count !== 1 ? "s" : ""}`;
+      const updated = w.last_updated ? `· Updated ${formatDate(w.last_updated)}` : "";
+      return `<a href="/ws/${encodeURIComponent(w.name)}" class="workspace-card">
+        <span class="workspace-card-name">${esc(w.name)}</span>
+        <span class="workspace-card-meta">${esc(count)} ${esc(updated)}</span>
+      </a>`;
+    })
     .join("\n");
-  const body = `<h2>Workspaces</h2>
-<table>
-  <thead><tr><th>Name</th></tr></thead>
-  <tbody>${rows}</tbody>
-</table>`;
+  const body = `${hero}<div class="workspace-grid">${cards}</div>`;
   return layout("Workspaces", body);
 }
 

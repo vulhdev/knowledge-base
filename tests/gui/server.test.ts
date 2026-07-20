@@ -36,6 +36,22 @@ describe("GUI server routes", () => {
       expect(res.text).toContain("proj-a");
       expect(res.text).toContain("proj-b");
     });
+
+    it("renders workspace card grid instead of a table", async () => {
+      const res = await request(app).get("/");
+      expect(res.text).toContain("workspace-grid");
+      expect(res.text).not.toContain("<table");
+    });
+
+    it("renders hero heading on home page", async () => {
+      const res = await request(app).get("/");
+      expect(res.text).toContain("Find answers across your workspace");
+    });
+
+    it("shows feature count in workspace card", async () => {
+      const res = await request(app).get("/");
+      expect(res.text).toContain("features");
+    });
   });
 
   describe("GET /ws/:workspace", () => {
