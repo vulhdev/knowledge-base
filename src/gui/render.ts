@@ -32,8 +32,8 @@ const CUSTOM_CSS = `
   td:last-child { white-space: nowrap; }
   tr:hover td { background: #141c24; }
   .nav { display: flex; align-items: center; border-bottom: 1px solid #2d363e; margin-bottom: 32px; padding-bottom: 0; }
-  .nav-brand { font-weight: 600; color: #dae3ee; padding-right: 24px; font-size: 15px; text-decoration: none; }
-  .nav-brand:hover { color: #ffffff; }
+  .nav-brand { padding-right: 24px; display: flex; align-items: center; }
+  .nav-brand img { height: 36px; display: block; }
   .nav a.nav-link { padding: 12px 16px; font-size: 14px; color: #8b949e; border-bottom: 2px solid transparent; margin-bottom: -1px; }
   .nav a.nav-link:hover { color: #dae3ee; }
   .breadcrumb { font-size: 13px; color: #8b949e; margin-bottom: 16px; }
@@ -90,7 +90,7 @@ export function layout(title: string, body: string, searchQ = "", searchWs = "")
 <body>
   <header>
     <nav class="nav">
-      <a href="/" class="nav-brand">knowledge-base</a>
+      <a href="/" class="nav-brand"><img src="/assets/kb-lockup-tagline-dark.png" alt="knowledge-base" /></a>
       <a href="/search" class="nav-link">Search</a>
       <a href="/errors" class="nav-link">Errors</a>
     </nav>
