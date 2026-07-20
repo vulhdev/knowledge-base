@@ -1,5 +1,4 @@
 import { parse } from "marked";
-import type { Workspace } from "../db/workspaces.js";
 import type { Feature, WorkspaceSummary } from "./db.js";
 import type { Content, SearchResult, LineageResult, LinkedContent } from "../types.js";
 import type { ErrorLog } from "../db/error-log.js";
@@ -263,7 +262,6 @@ export function renderErrorList(errors: ErrorLog[]): string {
         </tr>`,
     )
     .join("\n");
-  // note: tool_name badges keep default color (#41474f) — no semantic type mapping
   const body = `<h2>Error Log</h2>
 <table>
   <thead><tr><th>Timestamp</th><th>Tool</th><th>Message</th></tr></thead>
