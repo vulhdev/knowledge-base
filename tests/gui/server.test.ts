@@ -154,10 +154,27 @@ describe("GUI server routes", () => {
   });
 
   describe("layout width", () => {
-    it("renders with 1400px max-width on all pages", async () => {
+    it("renders with 1280px max-width on all pages", async () => {
       const res = await request(app).get("/");
       expect(res.status).toBe(200);
-      expect(res.text).toContain("1400px");
+      expect(res.text).toContain("1280px");
+    });
+  });
+
+  describe("dark theme", () => {
+    it("does not load Pico CSS", async () => {
+      const res = await request(app).get("/");
+      expect(res.text).not.toContain("picocss");
+    });
+
+    it("loads Google Fonts", async () => {
+      const res = await request(app).get("/");
+      expect(res.text).toContain("fonts.googleapis.com");
+    });
+
+    it("uses dark background color token", async () => {
+      const res = await request(app).get("/");
+      expect(res.text).toContain("#0b141c");
     });
   });
 

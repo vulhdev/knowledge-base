@@ -4,33 +4,59 @@ import type { Feature } from "./db.js";
 import type { Content, SearchResult, LineageResult, LinkedContent } from "../types.js";
 import type { ErrorLog } from "../db/error-log.js";
 
-const PICO_CDN =
-  "https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css";
+const GOOGLE_FONTS =
+  "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap";
 
 const CUSTOM_CSS = `
-  :root { --pico-font-size: 16px; }
-  body { max-width: 1400px; margin-inline: auto; padding-inline: 1.5rem; }
-  nav { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  nav a:first-child img { height: 50px; display: block; }
-  .breadcrumb { color: var(--pico-muted-color); font-size: 0.9rem; margin-bottom: 0.5rem; }
-  .breadcrumb a { color: var(--pico-muted-color); }
-  .meta { color: var(--pico-muted-color); font-size: 0.85rem; margin-bottom: 1.5rem; }
-  .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 4px;
-           background: var(--pico-secondary-background); font-size: 0.8rem; }
-  table td:last-child { white-space: nowrap; }
-  .content-body { margin-top: 1.5rem; min-width: 0; }
-  .content-layout { display: grid; grid-template-columns: 1fr 260px; gap: 2rem; align-items: start; }
-  .content-sidebar { border-left: 1px solid var(--pico-muted-border-color); padding-left: 1.5rem; }
-  .content-sidebar h4 { margin-bottom: 0.4rem; font-size: 0.9rem; }
-  .content-sidebar ul { list-style: none; padding: 0; margin: 0; }
-  .content-sidebar li { display: block; margin-bottom: 0.5rem; font-size: 0.85rem; }
-  .content-sidebar li .badge { display: inline-block; }
-  .content-sidebar li a { display: inline; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 16px; line-height: 24px;
+    background: #0b141c; color: #dae3ee;
+    max-width: 1280px; margin-inline: auto;
+    padding-inline: 24px; padding-block: 24px;
+  }
+  a { color: #d2bbff; text-decoration: none; }
+  a:hover { color: #ffffff; }
+  h1 { font-size: 28px; font-weight: 600; line-height: 36px; letter-spacing: -0.01em; margin-bottom: 16px; }
+  h2 { font-size: 20px; font-weight: 600; line-height: 28px; margin-bottom: 12px; }
+  h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  p { margin-bottom: 12px; }
+  ul, ol { padding-left: 1.5rem; margin-bottom: 12px; }
+  hr { border: none; border-top: 1px solid #2d363e; margin-block: 24px; }
+  code { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #141c24; padding: 1px 5px; border-radius: 4px; }
+  pre { background: #060f16; border: 1px solid #2d363e; border-radius: 8px; padding: 16px; overflow-x: auto; margin-bottom: 16px; }
+  pre code { background: none; padding: 0; font-size: 14px; line-height: 22px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  th { text-align: left; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; color: #8b949e; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 12px; border-bottom: 1px solid #2d363e; }
+  td { padding: 12px; border-bottom: 1px solid #2d363e; font-size: 14px; }
+  td:last-child { white-space: nowrap; }
+  tr:hover td { background: #141c24; }
+  .nav { display: flex; align-items: center; border-bottom: 1px solid #2d363e; margin-bottom: 32px; padding-bottom: 0; }
+  .nav-brand { font-weight: 600; color: #dae3ee; padding-right: 24px; font-size: 15px; text-decoration: none; }
+  .nav-brand:hover { color: #ffffff; }
+  .nav a.nav-link { padding: 12px 16px; font-size: 14px; color: #8b949e; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .nav a.nav-link:hover { color: #dae3ee; }
+  .breadcrumb { font-size: 13px; color: #8b949e; margin-bottom: 16px; }
+  .breadcrumb a { color: #8b949e; }
+  .breadcrumb a:hover { color: #d2bbff; }
+  .meta { font-size: 13px; color: #8b949e; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ffffff; background: #41474f; }
+  .search-form { display: flex; gap: 8px; margin-bottom: 24px; }
+  .search-form input { flex: 1; background: #141c24; border: 1px solid #2d363e; border-radius: 8px; padding: 10px 14px; color: #dae3ee; font-size: 14px; font-family: inherit; }
+  .search-form input:focus { outline: none; border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,0.2); }
+  .search-form button { background: #7c3aed; color: #ffffff; border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; font-size: 14px; font-family: inherit; }
+  .search-form button:hover { background: #6d28d9; }
+  .content-body { min-width: 0; }
   .content-body pre { overflow-x: auto; }
   .content-body table { display: block; overflow-x: auto; }
-  .search-form { display: flex; gap: 0.5rem; align-items: flex-end; margin-bottom: 1.5rem; }
-  .search-form input { flex: 1; margin: 0; }
-  .search-form button { margin: 0; width: auto; }
+  .content-layout { display: grid; grid-template-columns: 1fr 260px; gap: 32px; align-items: start; margin-top: 24px; }
+  .content-sidebar { border-left: 1px solid #2d363e; padding-left: 24px; }
+  .content-sidebar .section-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.08em; color: #8b949e; text-transform: uppercase; margin-bottom: 8px; display: block; }
+  .content-sidebar ul { list-style: none; padding: 0; margin: 0 0 20px 0; }
+  .content-sidebar li { display: block; margin-bottom: 8px; font-size: 13px; }
+  .content-sidebar li .badge { font-size: 11px; padding: 1px 6px; }
+  .content-sidebar li a { display: inline; color: #d2bbff; }
 `;
 
 function searchBar(defaultQ = "", defaultWs = ""): string {
@@ -49,15 +75,17 @@ export function layout(title: string, body: string, searchQ = "", searchWs = "")
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${esc(title)} — knowledge-base</title>
-  <link rel="stylesheet" href="${PICO_CDN}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="${GOOGLE_FONTS}" />
   <style>${CUSTOM_CSS}</style>
 </head>
 <body>
   <header>
-    <nav>
-      <a href="/"><img src="/assets/kb-lockup-tagline-dark.png" alt="knowledge-base" /></a>
-      <a href="/search">Search</a>
-      <a href="/errors">Errors</a>
+    <nav class="nav">
+      <a href="/" class="nav-brand">knowledge-base</a>
+      <a href="/search" class="nav-link">Search</a>
+      <a href="/errors" class="nav-link">Errors</a>
     </nav>
   </header>
   <main>
