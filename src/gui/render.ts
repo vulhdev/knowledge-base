@@ -56,6 +56,12 @@ const CUSTOM_CSS = `
   .content-sidebar li { display: block; margin-bottom: 8px; font-size: 13px; }
   .content-sidebar li .badge { font-size: 11px; padding: 1px 6px; }
   .content-sidebar li a { display: inline; color: #d2bbff; }
+  .page-subtitle { font-size: 13px; color: #8b949e; margin-bottom: 24px; margin-top: -8px; }
+  .tool-chip { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #182028; border: 1px solid #2d363e; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #c1c7d0; }
+  .severity-error { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #ef4444; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: #fff; }
+  .ts { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8b949e; white-space: nowrap; }
+  .msg { color: #8b949e; font-size: 13px; }
+  .empty-state { text-align: center; padding: 64px 0; color: #8b949e; font-size: 14px; }
   .hero { text-align: center; padding-block: 40px 32px; }
   .hero h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 20px; }
   .workspace-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 8px; }
@@ -249,22 +255,25 @@ export function renderSearchResults(
 }
 
 export function renderErrorList(errors: ErrorLog[]): string {
+  const header = `<h1>Error Log</h1>
+<p class="page-subtitle">MCP tool errors recorded in the last 1000 entries</p>`;
   if (errors.length === 0) {
-    return layout("Errors", "<p>No errors recorded.</p>");
+    return layout("Errors", header + `<div class="empty-state">✓ No errors recorded.</div>`);
   }
   const rows = errors
     .map(
       (e) =>
         `<tr>
-          <td>${esc(e.timestamp)}</td>
-          <td><span class="badge">${esc(e.tool_name)}</span></td>
-          <td>${esc(e.message)}</td>
+          <td><span class="ts">${esc(e.timestamp)}</span></td>
+          <td><span class="tool-chip">${esc(e.tool_name)}</span></td>
+          <td><span class="severity-error">${esc(e.severity)}</span></td>
+          <td class="msg">${esc(e.message)}</td>
         </tr>`,
     )
     .join("\n");
-  const body = `<h2>Error Log</h2>
+  const body = `${header}
 <table>
-  <thead><tr><th>Timestamp</th><th>Tool</th><th>Message</th></tr></thead>
+  <thead><tr><th>Timestamp</th><th>Tool</th><th>Severity</th><th>Message</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>`;
   return layout("Errors", body);
