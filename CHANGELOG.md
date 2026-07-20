@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.5] — 2026-07-20
+
+### Fixed
+- **Web GUI: content detail page overflow** — code blocks (`pre`) and tables inside the content body no longer cause horizontal page overflow when the linked-content sidebar is absent; `overflow-x: auto` is now applied to both element types so wide content scrolls within its container instead of expanding the page
+
 ## [1.12.4] — 2026-07-20
 
 ### Added

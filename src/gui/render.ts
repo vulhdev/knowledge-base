@@ -26,6 +26,8 @@ const CUSTOM_CSS = `
   .content-sidebar li { display: block; margin-bottom: 0.5rem; font-size: 0.85rem; }
   .content-sidebar li .badge { display: inline-block; }
   .content-sidebar li a { display: inline; }
+  .content-body pre { overflow-x: auto; }
+  .content-body table { display: block; overflow-x: auto; }
   .search-form { display: flex; gap: 0.5rem; align-items: flex-end; margin-bottom: 1.5rem; }
   .search-form input { flex: 1; margin: 0; }
   .search-form button { margin: 0; width: auto; }
