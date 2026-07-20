@@ -18,7 +18,7 @@ const CUSTOM_CSS = `
   .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 4px;
            background: var(--pico-secondary-background); font-size: 0.8rem; }
   table td:last-child { white-space: nowrap; }
-  .content-body { margin-top: 1.5rem; }
+  .content-body { margin-top: 1.5rem; min-width: 0; }
   .content-layout { display: grid; grid-template-columns: 1fr 260px; gap: 2rem; align-items: start; }
   .content-sidebar { border-left: 1px solid var(--pico-muted-border-color); padding-left: 1.5rem; }
   .content-sidebar h4 { margin-bottom: 0.4rem; font-size: 0.9rem; }
