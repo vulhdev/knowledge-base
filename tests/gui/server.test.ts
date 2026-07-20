@@ -203,8 +203,24 @@ describe("GUI server routes", () => {
       const res = await request(app).get(`/ws/proj-a/auth/${child.id}`);
       expect(res.status).toBe(200);
       expect(res.text).toContain('<aside class="content-sidebar">');
-      expect(res.text).toContain("Parents");
+      expect(res.text).toContain("PARENTS");
       expect(res.text).toContain("Parent Idea");
+    });
+
+    it("renders type badges with per-type colors", async () => {
+      const contents = db
+        .prepare(
+          `SELECT c.id, c.type FROM contents c
+           JOIN features f ON c.feature_id = f.id
+           JOIN workspaces w ON f.workspace_id = w.id
+           WHERE w.name = 'proj-a' AND f.name = 'auth'`,
+        )
+        .all() as { id: number; type: string }[];
+      const spec = contents.find((c) => c.type === "spec")!;
+
+      const res = await request(app).get(`/ws/proj-a/auth/${spec.id}`);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("#7c3aed");
     });
 
     it("does not show sidebar when content has no links", async () => {

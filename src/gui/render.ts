@@ -162,7 +162,7 @@ export function renderContentList(
       (c) =>
         `<tr>
           <td><a href="/ws/${encodeURIComponent(workspace)}/${encodeURIComponent(feature)}/${c.id}">${esc(c.title ?? `#${c.id}`)}</a></td>
-          <td><span class="badge">${esc(c.type)}</span></td>
+          <td>${typeBadge(c.type)}</td>
           <td>${formatDate(c.updated_at)}</td>
         </tr>`,
     )
@@ -192,7 +192,7 @@ export function renderContent(content: Content, lineage?: LineageResult): string
   const body = `${crumb}
 <h1>${esc(title)}</h1>
 <p class="meta">
-  <span class="badge">${esc(content.type)}</span>
+  ${typeBadge(content.type)}
   &nbsp; Updated ${formatDate(content.updated_at)}
 </p>
 <hr />
@@ -200,15 +200,25 @@ ${contentArea}`;
   return layout(title, body);
 }
 
+function typeBadge(type: string): string {
+  const colors: Record<string, string> = {
+    spec: "#7c3aed",
+    plan: "#a15100",
+    idea: "#1d4ed8",
+  };
+  const bg = colors[type] ?? "#41474f";
+  return `<span class="badge" style="background:${bg}">${esc(type)}</span>`;
+}
+
 function renderLinkedSidebar(lineage: LineageResult): string {
   const { ancestors, descendants } = lineage;
   if (ancestors.length === 0 && descendants.length === 0) return "";
   const item = (c: LinkedContent) =>
-    `<li><span class="badge">${esc(c.type)}</span>&nbsp;<a href="/ws/${encodeURIComponent(c.workspace)}/${encodeURIComponent(c.feature)}/${c.id}">${esc(c.title ?? `#${c.id}`)}</a></li>`;
+    `<li>${typeBadge(c.type)}&nbsp;<a href="/ws/${encodeURIComponent(c.workspace)}/${encodeURIComponent(c.feature)}/${c.id}">${esc(c.title ?? `#${c.id}`)}</a></li>`;
   const parents = ancestors.length
-    ? `<h4>Parents</h4><ul>${ancestors.map(item).join("")}</ul>` : "";
+    ? `<span class="section-label">PARENTS</span><ul>${ancestors.map(item).join("")}</ul>` : "";
   const children = descendants.length
-    ? `<h4>Children</h4><ul>${descendants.map(item).join("")}</ul>` : "";
+    ? `<span class="section-label">CHILDREN</span><ul>${descendants.map(item).join("")}</ul>` : "";
   return `<aside class="content-sidebar">${parents}${children}</aside>`;
 }
 
@@ -227,7 +237,7 @@ export function renderSearchResults(
         `<tr>
           <td><a href="/ws/${encodeURIComponent(r.workspace)}/${encodeURIComponent(r.feature)}/${r.id}">${esc(r.title ?? `#${r.id}`)}</a></td>
           <td>${esc(r.workspace)} / ${esc(r.feature)}</td>
-          <td><span class="badge">${esc(r.type)}</span></td>
+          <td>${typeBadge(r.type)}</td>
         </tr>`,
     )
     .join("\n");
@@ -253,6 +263,7 @@ export function renderErrorList(errors: ErrorLog[]): string {
         </tr>`,
     )
     .join("\n");
+  // note: tool_name badges keep default color (#41474f) — no semantic type mapping
   const body = `<h2>Error Log</h2>
 <table>
   <thead><tr><th>Timestamp</th><th>Tool</th><th>Message</th></tr></thead>
