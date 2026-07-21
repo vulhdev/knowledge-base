@@ -202,6 +202,29 @@ For each confirmed doc, call `link_content` with the correct direction:
   ← only show if risk_shadow conflicts exist; omit this section otherwise
 ```
 
+### 9. Offer inline review (optional)
+
+After printing the Step 8 report, ask the user:
+
+> "Want to review this document in the GUI before moving on?"
+
+**If yes:**
+1. Call `open_for_review(content_id)` with the ID from Step 8
+2. Print the returned URL clearly:
+   ```
+   Review URL: http://localhost:3000/ws/.../review?review_id=<N>
+   Note: Start GUI server first if not running: npx @vulhdev/knowledge-base gui
+   ```
+3. Call `wait_for_review(content_id)` (default timeout 300s)
+4. **If review commits within timeout:** receive the comments and process them following the same logic as `/knowledge-base-review` (Step 3–5 of that skill)
+5. **If timeout:** print:
+   ```
+   Review not committed within the wait window.
+   When you're done reviewing, call /knowledge-base-review to process the feedback.
+   ```
+
+**If no (or user skips):** done.
+
 ## Example invocations
 
 - `/knowledge-base-create` after generating a spec → detect type=spec, infer feature, ask to confirm
