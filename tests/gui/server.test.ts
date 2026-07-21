@@ -110,6 +110,78 @@ describe("GUI server routes", () => {
     });
   });
 
+  describe("GET /ws/:workspace/:feature/:id/export", () => {
+    let contentId: number;
+
+    beforeEach(async () => {
+      const rows = db
+        .prepare(
+          `SELECT c.id FROM contents c
+           JOIN features f ON c.feature_id = f.id
+           JOIN workspaces w ON f.workspace_id = w.id
+           WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title = 'Auth Spec'`,
+        )
+        .all() as { id: number }[];
+      contentId = rows[0].id;
+    });
+
+    it("returns 200 with text/markdown content-type", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${contentId}/export`);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/text\/markdown/);
+    });
+
+    it("sets Content-Disposition attachment with slugified filename", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${contentId}/export`);
+      expect(res.headers["content-disposition"]).toMatch(/attachment/);
+      expect(res.headers["content-disposition"]).toMatch(/auth-spec\.md/);
+    });
+
+    it("response body starts with YAML frontmatter block", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${contentId}/export`);
+      expect(res.text).toMatch(/^---\n/);
+    });
+
+    it("frontmatter contains title, type, feature, workspace, exported fields", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${contentId}/export`);
+      expect(res.text).toContain("title: Auth Spec");
+      expect(res.text).toContain("type: spec");
+      expect(res.text).toContain("feature: auth");
+      expect(res.text).toContain("workspace: proj-a");
+      expect(res.text).toMatch(/exported: \d{4}-\d{2}-\d{2}/);
+    });
+
+    it("response body contains original content body after frontmatter", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${contentId}/export`);
+      expect(res.text).toContain("## Auth");
+      expect(res.text).toContain("Uses **JWT** tokens.");
+    });
+
+    it("returns 404 for non-existent id", async () => {
+      const res = await request(app).get("/ws/proj-a/auth/99999/export");
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 for non-integer id", async () => {
+      const res = await request(app).get("/ws/proj-a/auth/not-a-number/export");
+      expect(res.status).toBe(404);
+    });
+
+    it("falls back to content-{id}.md when title is null", async () => {
+      const rows = db
+        .prepare(
+          `SELECT c.id FROM contents c
+           JOIN features f ON c.feature_id = f.id
+           JOIN workspaces w ON f.workspace_id = w.id
+           WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title IS NULL`,
+        )
+        .all() as { id: number }[];
+      const id = rows[0].id;
+      const res = await request(app).get(`/ws/proj-a/auth/${id}/export`);
+      expect(res.headers["content-disposition"]).toMatch(new RegExp(`content-${id}\\.md`));
+    });
+  });
+
   describe("GET /assets/:file", () => {
     it("serves the logo image with 200", async () => {
       const res = await request(app).get("/assets/kb-lockup-tagline-dark.png");
