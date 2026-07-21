@@ -73,6 +73,9 @@ const CUSTOM_CSS = `
   .workspace-card:hover { border-color: #7c3aed; }
   .workspace-card-name { font-weight: 600; font-size: 15px; color: #dae3ee; }
   .workspace-card-meta { font-size: 12px; color: #8b949e; }
+  .content-body input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; border: 2px solid #4b5563; border-radius: 3px; background: transparent; cursor: default; vertical-align: middle; margin-right: 6px; position: relative; display: inline-block; flex-shrink: 0; }
+  .content-body input[type="checkbox"]:checked { background: #22c55e; border-color: #22c55e; }
+  .content-body input[type="checkbox"]:checked::after { content: ''; position: absolute; left: 2px; top: -1px; width: 5px; height: 9px; border: 2px solid #fff; border-top: none; border-left: none; transform: rotate(45deg); }
   .recent-section { margin-top: 40px; }
   .section-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.08em; color: #8b949e; text-transform: uppercase; display: block; margin-bottom: 12px; }
   .recent-list { list-style: none; padding: 0; margin: 0; }
