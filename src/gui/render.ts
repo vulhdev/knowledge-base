@@ -39,7 +39,10 @@ const CUSTOM_CSS = `
   .breadcrumb { font-size: 13px; color: #8b949e; margin-bottom: 16px; }
   .breadcrumb a { color: #8b949e; }
   .breadcrumb a:hover { color: #d2bbff; }
-  .meta { font-size: 13px; color: #8b949e; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+  .meta { font-size: 13px; color: #8b949e; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .action-btns { display: flex; gap: 8px; }
+  .action-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; background: #222b33; border: 1px solid #2d363e; border-radius: 6px; color: #dae3ee; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .action-btn:hover { border-color: #7c3aed; color: #dae3ee; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ffffff; background: #41474f; }
   .search-form { display: flex; gap: 8px; margin-bottom: 24px; }
   .search-form input { flex: 1; background: #141c24; border: 1px solid #2d363e; border-radius: 8px; padding: 10px 14px; color: #dae3ee; font-size: 14px; font-family: inherit; }
@@ -194,11 +197,18 @@ export function renderContent(content: Content, lineage?: LineageResult): string
   const contentArea = sidebar
     ? `<div class="content-layout">${mainContent}${sidebar}</div>`
     : mainContent;
+  const exportUrl = `/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}/${content.id}/export`;
+  const escapedBody = JSON.stringify(content.body);
+  const copyScript = `(function(b){navigator.clipboard.writeText(b).then(function(){var el=document.getElementById('copy-btn-${content.id}');el.textContent='Copied!';setTimeout(function(){el.textContent='Copy';},2000);})})(${escapedBody})`;
+  const actions = `<span class="action-btns">
+  <a class="action-btn" href="${exportUrl}">↓ Export .md</a>
+  <button id="copy-btn-${content.id}" class="action-btn" onclick="${esc(copyScript)}">Copy</button>
+</span>`;
   const body = `${crumb}
 <h1>${esc(title)}</h1>
 <p class="meta">
-  ${typeBadge(content.type)}
-  &nbsp; Updated ${formatDate(content.updated_at)}
+  <span>${typeBadge(content.type)}&nbsp; Updated ${formatDate(content.updated_at)}</span>
+  ${actions}
 </p>
 <hr />
 ${contentArea}`;
