@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] — 2026-07-21
+
+### Added
+- **`search_semantic`: pagination via `offset` parameter** — new optional `offset` param (default 0) lets callers page through results beyond the initial `limit`; the response shape changes from a flat array to a `SearchPage` object with fields `results`, `has_more`, `total_in_pool`, `offset`, and `limit`; the internal ANN candidate pool scales to `(offset + limit) × 5` (max 200) so pagination is lossless across pages
+- **`knowledge-base-explore` skill: pagination loop** — after presenting Step 2 results, if `has_more = true` the skill now asks the user whether to dig deeper; on agreement it fetches the next page with `offset += limit`, merges new results into the running context (deduplicated by ID), and presents only the new-page entries in a grouped format; the loop repeats until the user declines or `has_more = false`
+
+### Changed
+- **`search_semantic`: FTS5 indexes `title` with 5× BM25 weight** — the full-text search table now includes the `title` column alongside `body`; title matches are weighted 5× higher than body matches via `bm25(contents_fts, 5.0, 1.0)`, so a doc whose title directly matches the query reliably ranks above body-only matches; Migration 6 drops and rebuilds the FTS index automatically on startup for existing databases
+- **`search_semantic`: recency boost on RRF score** — documents updated recently receive a small multiplicative boost on top of the RRF score: `score × (1 + 0.2 × decay)` where `decay = 1 / (1 + age_days / 30)`; a doc updated today gets up to +20%, a doc 30 days old gets +10%, a doc 90 days old gets +5%; recency acts as a tiebreaker and does not override strong content-relevance signals
+
 ## [1.12.5] — 2026-07-20
 
 ### Fixed
