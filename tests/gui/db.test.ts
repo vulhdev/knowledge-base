@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
-import { listFeatures, listWorkspaceSummaries } from "../../src/gui/db.js";
+import { listFeatures, listWorkspaceSummaries, listRecentContents } from "../../src/gui/db.js";
 
 vi.mock("../../src/embedding/model.js", () => ({
   isModelReady: vi.fn().mockReturnValue(false),
@@ -82,5 +82,56 @@ describe("listWorkspaceSummaries", () => {
     const summaries = listWorkspaceSummaries(db);
     expect(summaries[0].name).toBe("alpha");
     expect(summaries[summaries.length - 1].name).toBe("zebra");
+  });
+});
+
+describe("listRecentContents", () => {
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    db = createTestDb();
+  });
+
+  it("returns contents sorted by MAX(created_at, updated_at) DESC", async () => {
+    const old = await createContent(db, "ws-a", "feat", "idea", "old body", "Old Doc");
+    const newer = await createContent(db, "ws-a", "feat", "spec", "new body", "New Doc");
+    db.prepare("UPDATE contents SET created_at = '2020-01-01T00:00:00.000Z', updated_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(old.id);
+    db.prepare("UPDATE contents SET created_at = '2025-01-01T00:00:00.000Z', updated_at = '2025-01-01T00:00:00.000Z' WHERE id = ?").run(newer.id);
+
+    const results = listRecentContents(db, 10);
+    expect(results[0].title).toBe("New Doc");
+    expect(results[1].title).toBe("Old Doc");
+  });
+
+  it("respects the limit parameter", async () => {
+    await createContent(db, "ws-a", "feat", "idea", "a");
+    await createContent(db, "ws-a", "feat", "idea", "b");
+    await createContent(db, "ws-a", "feat", "idea", "c");
+
+    const results = listRecentContents(db, 2);
+    expect(results).toHaveLength(2);
+  });
+
+  it("returns cross-workspace results", async () => {
+    await createContent(db, "ws-a", "feat", "idea", "body a", "Doc A");
+    await createContent(db, "ws-b", "feat", "spec", "body b", "Doc B");
+
+    const results = listRecentContents(db, 10);
+    const workspaces = results.map((r) => r.workspace);
+    expect(workspaces).toContain("ws-a");
+    expect(workspaces).toContain("ws-b");
+  });
+
+  it("returns empty array when no contents exist", () => {
+    const results = listRecentContents(db);
+    expect(results).toEqual([]);
+  });
+
+  it("touched_at reflects updated_at when content is updated after creation", async () => {
+    const result = await createContent(db, "ws-a", "feat", "idea", "original", "My Doc");
+    db.prepare("UPDATE contents SET updated_at = '2030-01-01T00:00:00.000Z' WHERE id = ?").run(result.id);
+
+    const results = listRecentContents(db, 1);
+    expect(results[0].touched_at).toBe("2030-01-01T00:00:00.000Z");
   });
 });
