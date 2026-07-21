@@ -40,13 +40,7 @@ Run this once in any terminal:
 claude mcp add knowledge-base -- npx -y @vulhdev/knowledge-base
 ```
 
-That's it. On first run the server creates `~/.claude/knowledge-base/settings.json` and stores the database at `~/.claude/knowledge-base/knowledge-base.db`. No env vars needed after that.
-
-> **Custom database path:** pass `DB_PATH` on the very first run to seed it into `settings.json`:
-> ```bash
-> claude mcp add knowledge-base -e DB_PATH=/your/path/knowledge-base.db -- npx -y @vulhdev/knowledge-base
-> ```
-> After `settings.json` is written, `DB_PATH` is no longer read — the path is taken from the file.
+That's it. On first run the server creates `~/.claude/knowledge-base/settings.json` and stores the database at `~/.claude/knowledge-base/knowledge-base.db`.
 
 ### 2. (Optional) Initialize a workspace
 
@@ -69,8 +63,6 @@ The wizard will:
    - **Skip**
 
 After installing, restart Claude Code to pick up the new skills and agents.
-
-> **Custom model cache directory:** pass `MODEL_CACHE_DIR=/your/path` when adding the MCP server to seed it into `settings.json`. Like `DB_PATH`, it is only read on the first run.
 
 ### 3. (Optional) Update skills
 
