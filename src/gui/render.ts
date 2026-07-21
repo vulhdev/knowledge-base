@@ -325,16 +325,17 @@ export function renderReview(
           (c) => `<li class="review-comment-item">
             ${c.selected_text ? `<blockquote class="review-quote">${esc(c.selected_text)}</blockquote>` : ""}
             <p class="review-comment-text">${esc(c.comment)}</p>
+            <p class="review-comment-ts">${formatDate(c.created_at)}</p>
           </li>`,
         )
         .join("")
-    : `<li class="review-comment-empty">No comments yet. Select text to add one.</li>`;
+    : `<li class="review-comment-empty">No comments yet.<br>Select text above to add one.</li>`;
 
-  const sidebar = `<aside class="content-sidebar review-sidebar">
+  const sidebar = `<aside class="review-sidebar">
     <span class="section-label">Comments</span>
     <ul id="review-comment-list" class="review-comment-list">${commentItems}</ul>
     <button id="commit-btn" class="action-btn review-commit-btn" data-path="${esc(commentsBasePath)}">
-      Commit Review
+      ✓ Commit Review
     </button>
   </aside>`;
 
@@ -416,18 +417,19 @@ export function renderReview(
 </script>`;
 
   const reviewCSS = `<style>
-  .review-layout { display: grid; grid-template-columns: 1fr 280px; gap: 32px; align-items: start; margin-top: 24px; }
-  .review-sidebar { border-left: 1px solid #2d363e; padding-left: 24px; position: sticky; top: 24px; }
-  .review-comment-list { list-style: none; padding: 0; margin: 0 0 16px 0; }
-  .review-comment-item { margin-bottom: 12px; border-bottom: 1px solid #2d363e; padding-bottom: 12px; }
-  .review-comment-empty { font-size: 13px; color: #8b949e; }
-  .review-quote { border-left: 3px solid #7c3aed; padding-left: 8px; font-size: 12px; color: #8b949e; font-style: italic; margin-bottom: 4px; word-break: break-word; }
-  .review-comment-text { font-size: 13px; margin: 0; }
-  .review-commit-btn { width: 100%; justify-content: center; background: #7c3aed; border-color: #7c3aed; color: #fff; margin-top: 8px; }
-  .review-commit-btn:hover { background: #6d28d9; }
+  .review-layout { display: grid; grid-template-columns: 1fr 300px; gap: 32px; align-items: start; margin-top: 24px; }
+  .review-sidebar { background: #141c24; border: 1px solid #2d363e; border-radius: 8px; padding: 16px; position: sticky; top: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .review-comment-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .review-comment-item { background: #182028; border-radius: 8px; padding: 12px; }
+  .review-comment-empty { font-size: 13px; color: #8b949e; text-align: center; padding: 12px 0; }
+  .review-quote { border-left: 3px solid #7c3aed; background: #0b141c; border-radius: 0 4px 4px 0; padding: 4px 8px; font-size: 12px; color: #8b949e; font-style: italic; margin: 0 0 8px 0; word-break: break-word; }
+  .review-comment-text { font-size: 13px; color: #dae3ee; margin: 0; line-height: 20px; }
+  .review-comment-ts { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b949e; margin: 6px 0 0 0; }
+  .review-commit-btn { width: 100%; justify-content: center; background: #7c3aed; border-color: #7c3aed; color: #fff; height: 40px; font-size: 14px; font-weight: 500; }
+  .review-commit-btn:hover { background: #6d28d9; border-color: #6d28d9; }
   .review-commit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-  .review-popup { position: absolute; z-index: 100; background: #141c24; border: 1px solid #7c3aed; border-radius: 8px; padding: 12px; width: 300px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
-  .review-popup-input { width: 100%; background: #0b141c; border: 1px solid #2d363e; border-radius: 4px; color: #dae3ee; font-size: 13px; font-family: inherit; padding: 8px; resize: vertical; }
+  .review-popup { position: absolute; z-index: 100; background: #141c24; border: 1px solid #7c3aed; border-radius: 8px; padding: 12px; width: 300px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+  .review-popup-input { width: 100%; background: #0b141c; border: 1px solid #2d363e; border-radius: 4px; color: #dae3ee; font-size: 13px; font-family: inherit; padding: 8px; resize: vertical; box-sizing: border-box; }
   .review-popup-actions { display: flex; gap: 8px; margin-top: 8px; }
   #content-body ::selection { background: rgba(124, 58, 237, 0.3); }
   </style>`;
