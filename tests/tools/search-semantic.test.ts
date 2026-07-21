@@ -98,7 +98,9 @@ describe("searchSemantic", () => {
     const { searchSemantic } = await import("../../src/tools/search-semantic.js");
     const pageDefault = await searchSemantic(db, "auth");
     const pageZero = await searchSemantic(db, "auth", undefined, undefined, 10, 0);
-    expect(pageZero.results).toEqual(pageDefault.results);
+    // Compare IDs and order only — scores differ by a few ULPs because recency
+    // uses Date.now() and the two calls happen milliseconds apart.
+    expect(pageZero.results.map(r => r.id)).toEqual(pageDefault.results.map(r => r.id));
     expect(pageZero.offset).toBe(0);
   });
 
