@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] — 2026-07-21
+
+### Added
+- **Web GUI: Export .md button on content detail** — each content detail page now has an "↓ Export .md" button that downloads the document as a Markdown file with YAML frontmatter (`title`, `type`, `feature`, `workspace`, `exported` date); the filename is slugified from the document title
+- **Web GUI: Copy to Clipboard button on content detail** — a "Copy" button next to the export button copies the full body text to the clipboard; the label briefly changes to "Copied!" for 2 seconds as confirmation
+- **Web GUI: Recently Updated section on home page** — the home page now shows a "Recently Updated" section below the workspace grid listing the 5 most recently touched docs across all workspaces, sorted by `MAX(created_at, updated_at) DESC`; each row shows a type badge, linked title, workspace/feature path, and relative age ("just now", "Xm ago", "Xh ago", "Xd ago")
+
+### Changed
+- **Web GUI: green checkbox styling for task lists** — `[x]` items in rendered Markdown now display a green-filled checkbox with a white checkmark instead of the browser's greyed-out disabled appearance, making plan/spec progress immediately visible
+
 ## [1.14.0] — 2026-07-21
 
 ### Added
