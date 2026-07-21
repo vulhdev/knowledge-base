@@ -13,7 +13,7 @@ workspace → feature → content (idea | spec | plan | digest | doc)
 - **Content lineage** — track provenance chains (`idea → spec → plan`); navigate ancestors and descendants with `get_lineage`, link documents with `link_content`, or create a derived document in one step with `derive_content`
 - **Auto-suggest parents** — when creating a `spec` or `plan`, Claude automatically surfaces semantically similar parent candidates from the same workspace so you can link them without manual lookup
 - **Optional title field** — short label on any document for easy scanning in list/search results
-- **Semantic search** — on-device vector similarity search powered by `sqlite-vec` and a local ONNX embedding model (multilingual, 50+ languages including Vietnamese)
+- **Semantic search** — on-device vector similarity search powered by `sqlite-vec` and a local ONNX embedding model (multilingual, 50+ languages including Vietnamese); title matches are weighted 5× above body matches; recent documents receive a small recency boost (up to +20% for today, 30-day half-life); supports pagination via `offset` so callers can page through results beyond the initial `limit`
 - **Code grounding** — link plan documents to git commits at task granularity; `attach_code_ref` records which commit implements which task, `get_code_refs` returns the full coverage map, `get_content` includes a `has_code_refs` signal so Claude knows to fetch refs without a round-trip
 - **Error log viewer** — every unhandled MCP tool exception is captured to SQLite and viewable in the GUI at `/errors`
 - **SQLite-backed** — single file database via `better-sqlite3`, no external services
@@ -144,7 +144,11 @@ Lists documents in a workspace, with optional filters for feature and/or type. R
 
 ### `search_semantic`
 
-Semantic (vector) search across document bodies using a local ONNX embedding model. Returns documents ordered by vector similarity — finds relevant content even when the exact words don't match. Supports any natural language including Vietnamese.
+Semantic (vector) search using a local ONNX embedding model combined with BM25 full-text search via Reciprocal Rank Fusion. Returns a `SearchPage` object — finds relevant content even when exact words don't match. Supports any natural language including Vietnamese.
+
+Ranking signals applied in order:
+- **Vector similarity** (ANN via `sqlite-vec`) + **BM25** (FTS5, title weighted 5× over body) fused with RRF
+- **Recency boost** — documents updated more recently score slightly higher (max +20% today, 30-day half-life)
 
 Requires the embedding model to be downloaded first (`npx @vulhdev/knowledge-base init`). Embeddings for new and updated documents are generated automatically; existing documents are backfilled in the background on the next server startup after `init`.
 
@@ -153,6 +157,18 @@ query      — natural language search query (any language)
 workspace  — (optional) scope to a specific workspace
 type       — (optional) filter by content type
 limit      — max results, 1–50 (default 10)
+offset     — (optional) skip first N results for pagination (default 0)
+```
+
+Returns a `SearchPage`:
+```json
+{
+  "results":       [...],
+  "has_more":      true,
+  "total_in_pool": 34,
+  "offset":        0,
+  "limit":         10
+}
 ```
 
 ### `update_content`
@@ -332,6 +348,7 @@ Existing databases are automatically migrated on startup:
 - `embedding` column added if missing; existing rows backfilled asynchronously on the next server startup after `npx @vulhdev/knowledge-base init` (model must be downloaded first)
 - `content_links` table added if missing (Migration 4)
 - `code_refs` table added if missing (Migration 5)
+- FTS index rebuilt to include `title` column alongside `body`, with 5× BM25 column weight on title (Migration 6)
 - Legacy database at `~/.claude/knowledge-base.db` automatically moved to `~/.claude/knowledge-base/knowledge-base.db` on first startup
 
 ## Development
