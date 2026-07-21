@@ -6,6 +6,15 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 // Standard RRF constant — dampens the impact of rank differences at the top
 const RRF_K = 60;
+const MS_PER_DAY = 86_400_000;
+// Recency boost: max +20% for a doc updated today, decaying with a 30-day half-life
+const RECENCY_WEIGHT = 0.2;
+const RECENCY_HALF_LIFE_DAYS = 30;
+
+function recencyFactor(updatedAt: string): number {
+  const ageDays = (Date.now() - new Date(updatedAt).getTime()) / MS_PER_DAY;
+  return 1 / (1 + ageDays / RECENCY_HALF_LIFE_DAYS);
+}
 
 type RawRow = Omit<SearchResult, "has_code_refs" | "score">;
 
@@ -105,7 +114,8 @@ export async function searchSemantic(
         (vecRank !== undefined ? 1 / (RRF_K + vecRank) : 0) +
         (ftsRank !== undefined ? 1 / (RRF_K + ftsRank) : 0);
 
-      scored.push({ ...content, has_code_refs: false, score: rrfScore });
+      const boostedScore = rrfScore * (1 + RECENCY_WEIGHT * recencyFactor(content.updated_at));
+      scored.push({ ...content, has_code_refs: false, score: boostedScore });
     }
 
     scored.sort((a, b) => b.score - a.score);

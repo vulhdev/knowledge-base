@@ -133,6 +133,31 @@ describe("searchSemantic", () => {
     expect(page.has_more).toBe(false);
   });
 
+  it("newer doc ranks higher than older doc with same RRF score", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    // sqlite-vec breaks ties by rowid DESC (newest insertion first).
+    // docRecent gets lower id; docOld gets higher id and would win the tie without recency boost.
+    // After recency boost, docRecent (updated today) outscores docOld (updated 90 days ago).
+    await createContent(db, "ws-recency", "feat", "doc", "identical recency test body"); // lower id = docRecent
+    await createContent(db, "ws-recency", "feat", "doc", "identical recency test body"); // higher id = docOld
+
+    const ids = (db
+      .prepare(`SELECT c.id FROM contents c
+        JOIN features f ON c.feature_id = f.id
+        JOIN workspaces w ON f.workspace_id = w.id
+        WHERE w.name = 'ws-recency' ORDER BY c.id ASC`)
+      .all() as { id: number }[]).map(r => r.id);
+    const [recentId, oldId] = ids;
+
+    // Backdate the second (higher-rowid) doc so it loses the recency contest
+    db.prepare("UPDATE contents SET updated_at = datetime('now', '-90 days') WHERE id = ?").run(oldId);
+
+    const page = await searchSemantic(db, "recency test", "ws-recency");
+    expect(page.results.length).toBe(2);
+    // docRecent should rank first because it has a higher recency boost
+    expect(page.results[0].id).toBe(recentId);
+  });
+
   it("title match ranks above equal-body doc without title match", async () => {
     const { searchSemantic } = await import("../../src/tools/search-semantic.js");
     // All vec embeddings are identical (mocked). The unique keyword "zebraftsterm" appears
