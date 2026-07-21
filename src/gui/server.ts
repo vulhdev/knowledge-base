@@ -8,7 +8,7 @@ import { listContents } from "../tools/list-contents.js";
 import { getContent } from "../tools/get-content.js";
 import { getLineage } from "../tools/get-lineage.js";
 import { searchSemantic } from "../tools/search-semantic.js";
-import type { LineageResult } from "../types.js";
+import type { LineageResult, Content } from "../types.js";
 import {
   renderWorkspaceList,
   renderFeatureList,
@@ -73,6 +73,24 @@ export function createApp(db: Database.Database) {
     }
   });
 
+  app.get("/ws/:workspace/:feature/:id/export", (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(404).send("<p>Not found</p>");
+      return;
+    }
+    try {
+      const content = getContent(db, id);
+      const filename = slugifyTitle(content.title ?? `content-${id}`);
+      const body = buildExportBody(content);
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}.md"`);
+      res.send(body);
+    } catch {
+      res.status(404).send("<p>Content not found</p>");
+    }
+  });
+
   app.get("/errors", (_req, res) => {
     const errors = listErrorLogs(db);
     res.send(renderErrorList(errors));
@@ -91,4 +109,23 @@ export function createApp(db: Database.Database) {
   });
 
   return app;
+}
+
+function slugifyTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "content";
+}
+
+function buildExportBody(content: Content): string {
+  const exported = new Date().toISOString().slice(0, 10);
+  const frontmatter = [
+    "---",
+    `title: ${content.title ?? ""}`,
+    `type: ${content.type}`,
+    `feature: ${content.feature}`,
+    `workspace: ${content.workspace}`,
+    `exported: ${exported}`,
+    "---",
+    "",
+  ].join("\n");
+  return frontmatter + content.body;
 }
