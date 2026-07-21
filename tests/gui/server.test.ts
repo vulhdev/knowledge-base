@@ -52,6 +52,39 @@ describe("GUI server routes", () => {
       const res = await request(app).get("/");
       expect(res.text).toContain("features");
     });
+
+    it("renders recent-section on home page when contents exist", async () => {
+      const res = await request(app).get("/");
+      expect(res.text).toContain('<section class="recent-section">');
+      expect(res.text).toContain("Recently Updated");
+    });
+
+    it("renders recent-row with correct href to content detail", async () => {
+      const rows = db
+        .prepare(
+          `SELECT c.id FROM contents c
+           JOIN features f ON c.feature_id = f.id
+           JOIN workspaces w ON f.workspace_id = w.id
+           WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title = 'Auth Spec'`,
+        )
+        .all() as { id: number }[];
+      const id = rows[0].id;
+      const res = await request(app).get("/");
+      expect(res.text).toContain(`/ws/proj-a/auth/${id}`);
+    });
+
+    it("renders type badge in recent row", async () => {
+      const res = await request(app).get("/");
+      expect(res.text).toContain("recent-row");
+      expect(res.text).toContain("badge");
+    });
+
+    it("does not render recent-section when no contents exist", async () => {
+      const emptyDb = createTestDb();
+      const emptyApp = createApp(emptyDb);
+      const res = await request(emptyApp).get("/");
+      expect(res.text).not.toContain('<section class="recent-section">');
+    });
   });
 
   describe("GET /ws/:workspace", () => {
