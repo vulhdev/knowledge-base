@@ -13,7 +13,7 @@ vi.mock("../../src/embedding/model.js", () => ({
 }));
 
 vi.mock("../../src/tools/search-semantic.js", () => ({
-  searchSemantic: vi.fn().mockResolvedValue([]),
+  searchSemantic: vi.fn().mockResolvedValue({ results: [], has_more: false, total_in_pool: 0, offset: 0, limit: 10 }),
 }));
 
 describe("GUI server routes", () => {

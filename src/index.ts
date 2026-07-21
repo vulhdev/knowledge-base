@@ -112,11 +112,12 @@ server.tool(
     workspace: z.string().optional().describe("Scope search to a specific workspace"),
     type: contentTypeSchema.optional().describe("Filter results by type. Suggested: idea | spec | plan | digest | doc. Any non-empty string is accepted."),
     limit: z.number().int().positive().max(50).default(10).describe("Max results to return (1–50, default 10)"),
+    offset: z.number().int().min(0).default(0).describe("Skip first N results (for pagination)"),
   },
-  async ({ query, workspace, type, limit }) => {
+  async ({ query, workspace, type, limit, offset }) => {
     try {
-      const results = await searchSemantic(db, query, workspace, type, limit);
-      return { content: [{ type: "text", text: toText(results) }] };
+      const page = await searchSemantic(db, query, workspace, type, limit, offset);
+      return { content: [{ type: "text", text: toText(page) }] };
     } catch (err) {
       insertErrorLog(db, "search_semantic", err instanceof Error ? err.message : String(err));
       return errorContent(err);

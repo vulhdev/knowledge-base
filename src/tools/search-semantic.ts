@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { ContentType, SearchResult } from "../types.js";
+import type { ContentType, SearchResult, SearchPage } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 
 const DEFAULT_LIMIT = 10;
@@ -15,7 +15,8 @@ export async function searchSemantic(
   workspace?: string,
   type?: ContentType,
   limit = DEFAULT_LIMIT,
-): Promise<SearchResult[]> {
+  offset = 0,
+): Promise<SearchPage> {
   if (!isModelReady()) {
     throw new Error(
       "Semantic search is not available. Run: npx @vulhdev/knowledge-base init",
@@ -23,8 +24,9 @@ export async function searchSemantic(
   }
 
   const clampedLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
-  // Fetch more ANN candidates than the requested limit so re-ranking has a wider pool
-  const internalK = Math.min(clampedLimit * 5, 100);
+  const clampedOffset = Math.max(0, offset);
+  // Pool must be large enough to cover offset + limit so pagination is lossless
+  const internalK = Math.min((clampedOffset + clampedLimit) * 5, 200);
 
   try {
     const queryEmbedding = await getEmbedding(query);
@@ -107,12 +109,19 @@ export async function searchSemantic(
     }
 
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, clampedLimit);
+    const sliced = scored.slice(clampedOffset, clampedOffset + clampedLimit);
+    return {
+      results: sliced,
+      has_more: scored.length > clampedOffset + clampedLimit,
+      total_in_pool: scored.length,
+      offset: clampedOffset,
+      limit: clampedLimit,
+    };
   } catch (err) {
     if (err instanceof Error && err.message.includes("npx @vulhdev")) {
       throw err;
     }
-    return [];
+    return { results: [], has_more: false, total_in_pool: 0, offset: clampedOffset ?? 0, limit: clampedLimit ?? DEFAULT_LIMIT };
   }
 }
 

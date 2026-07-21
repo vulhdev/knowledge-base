@@ -14,6 +14,14 @@ export type Content = {
 
 export type SearchResult = Content & { score: number };
 
+export type SearchPage = {
+  results: SearchResult[];
+  has_more: boolean;
+  total_in_pool: number;
+  offset: number;
+  limit: number;
+};
+
 export type ConflictType = "semantic_contradiction" | "risk_shadow";
 
 export type ConflictResult = {

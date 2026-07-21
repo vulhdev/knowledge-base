@@ -86,8 +86,8 @@ export function createApp(db: Database.Database) {
       res.redirect("/");
       return;
     }
-    const results = await searchSemantic(db, q, workspace).catch(() => []);
-    res.send(renderSearchResults(q, results, workspace));
+    const page = await searchSemantic(db, q, workspace).catch(() => ({ results: [], has_more: false, total_in_pool: 0, offset: 0, limit: 10 }));
+    res.send(renderSearchResults(q, page.results, workspace));
   });
 
   return app;
