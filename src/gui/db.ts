@@ -21,6 +21,31 @@ export type WorkspaceSummary = {
   last_updated: string | null;
 };
 
+export type RecentContent = {
+  id: number;
+  title: string | null;
+  type: string;
+  workspace: string;
+  feature: string;
+  touched_at: string;
+};
+
+export function listRecentContents(db: Database.Database, limit = 5): RecentContent[] {
+  return db
+    .prepare(
+      `SELECT c.id, c.title, c.type,
+         w.name AS workspace,
+         f.name AS feature,
+         MAX(c.created_at, c.updated_at) AS touched_at
+       FROM contents c
+       JOIN features f ON c.feature_id = f.id
+       JOIN workspaces w ON f.workspace_id = w.id
+       ORDER BY touched_at DESC
+       LIMIT ?`,
+    )
+    .all(limit) as RecentContent[];
+}
+
 export function listWorkspaceSummaries(db: Database.Database): WorkspaceSummary[] {
   return db
     .prepare(
