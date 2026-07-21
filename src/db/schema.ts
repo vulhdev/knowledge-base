@@ -23,6 +23,7 @@ const VEC_TABLE_AND_TRIGGERS = `
 
 const FTS_AND_TRIGGERS = `
   CREATE VIRTUAL TABLE IF NOT EXISTS contents_fts USING fts5(
+    title,
     body,
     content=contents,
     content_rowid=id,
@@ -30,16 +31,16 @@ const FTS_AND_TRIGGERS = `
   );
 
   CREATE TRIGGER IF NOT EXISTS contents_ai AFTER INSERT ON contents BEGIN
-    INSERT INTO contents_fts(rowid, body) VALUES (new.id, new.body);
+    INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
   END;
 
   CREATE TRIGGER IF NOT EXISTS contents_ad AFTER DELETE ON contents BEGIN
-    INSERT INTO contents_fts(contents_fts, rowid, body) VALUES ('delete', old.id, old.body);
+    INSERT INTO contents_fts(contents_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
   END;
 
   CREATE TRIGGER IF NOT EXISTS contents_au AFTER UPDATE ON contents BEGIN
-    INSERT INTO contents_fts(contents_fts, rowid, body) VALUES ('delete', old.id, old.body);
-    INSERT INTO contents_fts(rowid, body) VALUES (new.id, new.body);
+    INSERT INTO contents_fts(contents_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
+    INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
   END;
 `;
 
@@ -150,6 +151,35 @@ function runMigrations(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_code_refs_content ON code_refs(content_id);
   `);
+
+  // Migration 6: FTS indexes title column so title matches get BM25 boost
+  const ftsSql = (
+    db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contents_fts'")
+      .get() as { sql: string } | undefined
+  )?.sql ?? "";
+
+  if (!ftsSql.includes("title")) {
+    db.exec(`
+      DROP TRIGGER IF EXISTS contents_ai;
+      DROP TRIGGER IF EXISTS contents_ad;
+      DROP TRIGGER IF EXISTS contents_au;
+      DROP TABLE IF EXISTS contents_fts;
+      CREATE VIRTUAL TABLE contents_fts USING fts5(
+        title, body, content=contents, content_rowid=id, tokenize='unicode61'
+      );
+      CREATE TRIGGER contents_ai AFTER INSERT ON contents BEGIN
+        INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
+      END;
+      CREATE TRIGGER contents_ad AFTER DELETE ON contents BEGIN
+        INSERT INTO contents_fts(contents_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
+      END;
+      CREATE TRIGGER contents_au AFTER UPDATE ON contents BEGIN
+        INSERT INTO contents_fts(contents_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
+        INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
+      END;
+      INSERT INTO contents_fts(contents_fts) VALUES ('rebuild');
+    `);
+  }
 }
 
 function removeCheckConstraint(db: Database.Database): void {

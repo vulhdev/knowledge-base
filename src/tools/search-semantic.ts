@@ -143,7 +143,7 @@ function runFtsSearch(
   if (conditions.length > 0) {
     sql += ` AND ${conditions.join(" AND ")}`;
   }
-  sql += ` ORDER BY bm25(contents_fts) LIMIT ${limit}`;
+  sql += ` ORDER BY bm25(contents_fts, 5.0, 1.0) LIMIT ${limit}`;
 
   try {
     return (db.prepare(sql).all(ftsQuery, ...filterParams) as { id: number }[]).map(r => r.id);

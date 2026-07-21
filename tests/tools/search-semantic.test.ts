@@ -92,4 +92,18 @@ describe("searchSemantic", () => {
     expect(results).toHaveLength(1);
     expect(results[0].body).toContain("FTS5");
   });
+
+  it("title match ranks above equal-body doc without title match", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    // All vec embeddings are identical (mocked). The unique keyword "zebraftsterm" appears
+    // ONLY in the title of the first doc. sqlite-vec breaks ties by rowid DESC (newest first),
+    // so without FTS the second doc (no keyword, higher rowid) would rank first.
+    // After the fix, FTS indexes title and BM25 boosts the title-match doc to rank 1.
+    await createContent(db, "ws-title", "feat", "doc", "identical neutral body", "zebraftsterm feature");
+    await createContent(db, "ws-title", "feat", "doc", "identical neutral body");
+
+    const results = await searchSemantic(db, "zebraftsterm", "ws-title");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].title).toBe("zebraftsterm feature");
+  });
 });
