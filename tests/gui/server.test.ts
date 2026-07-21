@@ -108,6 +108,36 @@ describe("GUI server routes", () => {
       const res = await request(app).get("/ws/proj-a/auth/not-a-number");
       expect(res.status).toBe(404);
     });
+
+    it("renders Export .md link pointing to /export route", async () => {
+      const rows = db
+        .prepare(
+          `SELECT c.id FROM contents c
+           JOIN features f ON c.feature_id = f.id
+           JOIN workspaces w ON f.workspace_id = w.id
+           WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title = 'Auth Spec'`,
+        )
+        .all() as { id: number }[];
+      const id = rows[0].id;
+      const res = await request(app).get(`/ws/proj-a/auth/${id}`);
+      expect(res.text).toContain(`/ws/proj-a/auth/${id}/export`);
+      expect(res.text).toContain("Export .md");
+    });
+
+    it("renders Copy button in meta row", async () => {
+      const rows = db
+        .prepare(
+          `SELECT c.id FROM contents c
+           JOIN features f ON c.feature_id = f.id
+           JOIN workspaces w ON f.workspace_id = w.id
+           WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title = 'Auth Spec'`,
+        )
+        .all() as { id: number }[];
+      const id = rows[0].id;
+      const res = await request(app).get(`/ws/proj-a/auth/${id}`);
+      expect(res.text).toContain("action-btns");
+      expect(res.text).toContain("Copy");
+    });
   });
 
   describe("GET /ws/:workspace/:feature/:id/export", () => {
