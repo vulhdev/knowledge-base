@@ -3,7 +3,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
 import { listWorkspaces } from "../db/workspaces.js";
-import { listFeatures, listWorkspaceSummaries } from "./db.js";
+import { listFeatures, listWorkspaceSummaries, listRecentContents } from "./db.js";
 import { listContents } from "../tools/list-contents.js";
 import { getContent } from "../tools/get-content.js";
 import { getLineage } from "../tools/get-lineage.js";
@@ -28,7 +28,8 @@ export function createApp(db: Database.Database) {
 
   app.get("/", (_req, res) => {
     const workspaces = listWorkspaceSummaries(db);
-    res.send(renderWorkspaceList(workspaces));
+    const recent = listRecentContents(db);
+    res.send(renderWorkspaceList(workspaces, recent));
   });
 
   app.get("/ws/:workspace", (req, res) => {

@@ -1,5 +1,5 @@
 import { parse } from "marked";
-import type { Feature, WorkspaceSummary } from "./db.js";
+import type { Feature, WorkspaceSummary, RecentContent } from "./db.js";
 import type { Content, SearchResult, LineageResult, LinkedContent } from "../types.js";
 import type { ErrorLog } from "../db/error-log.js";
 
@@ -73,6 +73,16 @@ const CUSTOM_CSS = `
   .workspace-card:hover { border-color: #7c3aed; }
   .workspace-card-name { font-weight: 600; font-size: 15px; color: #dae3ee; }
   .workspace-card-meta { font-size: 12px; color: #8b949e; }
+  .recent-section { margin-top: 40px; }
+  .section-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.08em; color: #8b949e; text-transform: uppercase; display: block; margin-bottom: 12px; }
+  .recent-list { list-style: none; padding: 0; margin: 0; }
+  .recent-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #2d363e; gap: 12px; }
+  .recent-row:last-child { border-bottom: none; }
+  .recent-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .recent-left a { color: #d2bbff; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .recent-left a:hover { color: #ffffff; }
+  .recent-path { font-size: 12px; color: #8b949e; white-space: nowrap; }
+  .recent-age { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8b949e; white-space: nowrap; }
 `;
 
 function searchBar(defaultQ = "", defaultWs = ""): string {
@@ -112,7 +122,7 @@ export function layout(title: string, body: string, searchQ = "", searchWs = "")
 </html>`;
 }
 
-export function renderWorkspaceList(workspaces: WorkspaceSummary[]): string {
+export function renderWorkspaceList(workspaces: WorkspaceSummary[], recent: RecentContent[] = []): string {
   const hero = `<div class="hero">
     <h1>Find answers across your workspace.</h1>
   </div>`;
@@ -129,7 +139,7 @@ export function renderWorkspaceList(workspaces: WorkspaceSummary[]): string {
       </a>`;
     })
     .join("\n");
-  const body = `${hero}<div class="workspace-grid">${cards}</div>`;
+  const body = `${hero}<div class="workspace-grid">${cards}</div>${renderRecentSection(recent)}`;
   return layout("Workspaces", body);
 }
 
@@ -287,6 +297,39 @@ export function renderErrorList(errors: ErrorLog[]): string {
   <tbody>${rows}</tbody>
 </table>`;
   return layout("Errors", body);
+}
+
+function renderRecentSection(recent: RecentContent[]): string {
+  if (recent.length === 0) return "";
+  const rows = recent
+    .map((r) => {
+      const href = `/ws/${encodeURIComponent(r.workspace)}/${encodeURIComponent(r.feature)}/${r.id}`;
+      const label = r.title ?? `#${r.id}`;
+      return `<li class="recent-row">
+        <span class="recent-left">
+          ${typeBadge(r.type)}
+          <a href="${href}">${esc(label)}</a>
+          <span class="recent-path">${esc(r.workspace)} / ${esc(r.feature)}</span>
+        </span>
+        <span class="recent-age">${relativeTime(r.touched_at)}</span>
+      </li>`;
+    })
+    .join("\n");
+  return `<section class="recent-section">
+  <span class="section-label">Recently Updated</span>
+  <ul class="recent-list">${rows}</ul>
+</section>`;
+}
+
+export function relativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function esc(text: string): string {
