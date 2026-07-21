@@ -94,6 +94,45 @@ describe("searchSemantic", () => {
     expect(page.results[0].body).toContain("FTS5");
   });
 
+  it("offset=0 gives same results as no offset", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    const pageDefault = await searchSemantic(db, "auth");
+    const pageZero = await searchSemantic(db, "auth", undefined, undefined, 10, 0);
+    expect(pageZero.results).toEqual(pageDefault.results);
+    expect(pageZero.offset).toBe(0);
+  });
+
+  it("offset skips first N results and returns non-overlapping slice", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    const page1 = await searchSemantic(db, "auth", undefined, undefined, 2, 0);
+    const page2 = await searchSemantic(db, "auth", undefined, undefined, 2, 2);
+    const ids1 = new Set(page1.results.map(r => r.id));
+    const ids2 = new Set(page2.results.map(r => r.id));
+    const overlap = [...ids2].filter(id => ids1.has(id));
+    expect(overlap).toHaveLength(0);
+  });
+
+  it("has_more is false when all results fit in one page", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    const page = await searchSemantic(db, "auth", undefined, undefined, 50, 0);
+    expect(page.has_more).toBe(false);
+  });
+
+  it("has_more is true when pool has more results beyond offset + limit", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    // 4 docs in db; requesting limit=1 with internalK=5 — pool holds all 4
+    const page = await searchSemantic(db, "auth", undefined, undefined, 1, 0);
+    expect(page.has_more).toBe(true);
+    expect(page.total_in_pool).toBeGreaterThan(1);
+  });
+
+  it("has_more is false on last page", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    // 4 docs; offset=3, limit=10 — only 1 doc left, no more after
+    const page = await searchSemantic(db, "auth", undefined, undefined, 10, 3);
+    expect(page.has_more).toBe(false);
+  });
+
   it("title match ranks above equal-body doc without title match", async () => {
     const { searchSemantic } = await import("../../src/tools/search-semantic.js");
     // All vec embeddings are identical (mocked). The unique keyword "zebraftsterm" appears
