@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] — 2026-07-22
+
+### Added
+- **PR-style inline review for knowledge-base documents** — after saving a document via `knowledge-base-create`, Claude now offers to open it for review in the GUI; the user can select any passage, add an inline comment, and click "Commit Review" to send all feedback back to Claude in one batch
+- **MCP tool `open_for_review(content_id)`** — creates a review session in SQLite and returns the GUI review URL; does not auto-open a browser (avoids Chrome multi-profile issues); prints the URL for the user to open manually
+- **MCP tool `wait_for_review(content_id, timeout?)`** — long-polls SQLite every 500ms (default 300s timeout) until the user commits the review; on timeout throws with instructions to call `/knowledge-base-resolve-feedback`
+- **MCP tool `get_pending_review(content_id)`** — fetches the most recently committed review with all its comments; used by `knowledge-base-resolve-feedback` to retrieve feedback after a timeout
+- **MCP tool `list_contents_with_pending_review()`** — lists all documents that have at least one committed review, used to pick a document when `content_id` is not in context
+- **Web GUI: review mode** — new route `GET /ws/:workspace/:feature/:id/review?review_id=N` renders the document body alongside a comment sidebar; select text → floating popup → type comment → Add; sidebar lists all comments with quoted passage, text, and timestamp; "✓ Commit Review" button commits the session and notifies the long-polling MCP tool
+- **Web GUI: CSS Highlight API for persistent selection** — selected text stays highlighted in violet (`rgba(124,58,237,0.35)`) while the comment popup is open, using the CSS Custom Highlight API; `mousedown` on the popup prevents native selection from collapsing; highlight clears on cancel or submit
+- **Web GUI: ESC key to cancel comment popup** — pressing Escape while the popup is open dismisses it and clears the highlight, matching standard modal behaviour
+- **`knowledge-base-review` skill** — proactively opens any existing document for inline review (`open_for_review` → `wait_for_review` → hand off to resolve-feedback)
+- **`knowledge-base-resolve-feedback` skill** — classifies each committed comment by intent (`edit_request`, `clarification`, `expand`, `positive`, `general`) and responds: auto-applies edits, asks clarifying questions, or acknowledges positive notes; replaces the previous `knowledge-base-review` skill
+
+### Changed
+- **Web GUI: review sidebar styled as card panel** — sidebar now uses a dark card container (`#141c24`, 8px border-radius) with flex-column layout; comment items are individual cards (`#182028`) instead of border-bottom dividers; blockquotes have a dark background tint; popup shadow updated to `0 8px 24px rgba(0,0,0,0.5)` per design system; Commit button is `height: 40px`, `font-weight: 500`
+- **`knowledge-base-create` skill step 9** — timeout message now references `/knowledge-base-resolve-feedback` instead of the old `/knowledge-base-review`
+
 ## [1.15.0] — 2026-07-21
 
 ### Added
