@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.1] — 2026-07-22
+
+### Added
+- **MCP tool `resolve_comment(comment_id)`** — marks a single review comment as resolved after Claude processes it; sets `resolved_at` timestamp in the database so the GUI can reflect progress in real time
+- **MCP tool `resolve_review(review_id)`** — marks an entire review as `resolved` once all comments have been handled; only succeeds when the review is in `committed` state; resolved reviews are excluded from `list_contents_with_pending_review`
+- **Web GUI: resolved comment badge** — comments marked resolved via `resolve_comment` are displayed at 55% opacity with a green `✓ Resolved` badge (JetBrains Mono, 11px), making it immediately visible which comments Claude has already processed
+
+### Changed
+- **`knowledge-base-resolve-feedback` skill** — now calls `resolve_comment(comment.id)` after processing each comment and `resolve_review(review_id)` after all comments are done; `clarification` comments are resolved only after the user answers and any update is applied
+- **Database schema** — `review_comments` table gains a `resolved_at TEXT` column via Migration 8 (guarded `ALTER TABLE`, safe for existing databases)
+
 ## [1.16.0] — 2026-07-22
 
 ### Added
