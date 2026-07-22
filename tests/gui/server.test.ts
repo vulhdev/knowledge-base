@@ -373,4 +373,115 @@ describe("GUI server routes", () => {
       expect(res.text).not.toContain('<aside class="content-sidebar">');
     });
   });
+
+  describe("GET /ws/:workspace/:feature/:id/review", () => {
+    let contentId: number;
+    let reviewId: number;
+
+    beforeEach(async () => {
+      const c = await createContent(db, "proj-a", "auth", "spec", "## Spec body\n\nSome detail.", "Review Spec");
+      contentId = c.id;
+      db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);
+      const row = db.prepare("SELECT id FROM reviews WHERE content_id = ?").get(contentId) as { id: number };
+      reviewId = row.id;
+    });
+
+    it("returns 200 with content body rendered", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${contentId}/review?review_id=${reviewId}`);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("Spec body");
+    });
+
+    it("renders commit button with id commit-btn", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${contentId}/review?review_id=${reviewId}`);
+      expect(res.text).toContain("id=\"commit-btn\"");
+    });
+
+    it("renders comment popup element", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${contentId}/review?review_id=${reviewId}`);
+      expect(res.text).toContain("id=\"comment-popup\"");
+    });
+
+    it("returns 404 for unknown content id", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/99999/review?review_id=1`);
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 400 when review_id query param is missing", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${contentId}/review`);
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe("POST /ws/:workspace/:feature/:id/review/:reviewId/comments", () => {
+    let contentId: number;
+    let reviewId: number;
+
+    beforeEach(async () => {
+      const c = await createContent(db, "proj-a", "auth", "spec", "body", "Spec");
+      contentId = c.id;
+      db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);
+      const row = db.prepare("SELECT id FROM reviews WHERE content_id = ?").get(contentId) as { id: number };
+      reviewId = row.id;
+    });
+
+    it("returns 201 with comment object", async () => {
+      const res = await request(app)
+        .post(`/ws/proj-a/auth/${contentId}/review/${reviewId}/comments`)
+        .send({ comment: "needs work", selected_text: "some text" });
+      expect(res.status).toBe(201);
+      expect(res.body.comment).toBe("needs work");
+      expect(res.body.selected_text).toBe("some text");
+    });
+
+    it("accepts comment without selected_text", async () => {
+      const res = await request(app)
+        .post(`/ws/proj-a/auth/${contentId}/review/${reviewId}/comments`)
+        .send({ comment: "general note" });
+      expect(res.status).toBe(201);
+      expect(res.body.selected_text).toBeNull();
+    });
+
+    it("returns 400 when comment field is missing", async () => {
+      const res = await request(app)
+        .post(`/ws/proj-a/auth/${contentId}/review/${reviewId}/comments`)
+        .send({ selected_text: "text" });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 404 for unknown reviewId", async () => {
+      const res = await request(app)
+        .post(`/ws/proj-a/auth/${contentId}/review/9999/comments`)
+        .send({ comment: "test" });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("POST /ws/:workspace/:feature/:id/review/:reviewId/commit", () => {
+    let contentId: number;
+    let reviewId: number;
+
+    beforeEach(async () => {
+      const c = await createContent(db, "proj-a", "auth", "spec", "body", "Spec");
+      contentId = c.id;
+      db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);
+      const row = db.prepare("SELECT id FROM reviews WHERE content_id = ?").get(contentId) as { id: number };
+      reviewId = row.id;
+      db.prepare("INSERT INTO review_comments (review_id, comment) VALUES (?, ?)").run(reviewId, "a comment");
+    });
+
+    it("returns 200 with committed review", async () => {
+      const res = await request(app)
+        .post(`/ws/proj-a/auth/${contentId}/review/${reviewId}/commit`);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("committed");
+      expect(res.body.comments).toHaveLength(1);
+    });
+
+    it("returns 404 for unknown reviewId", async () => {
+      const res = await request(app)
+        .post(`/ws/proj-a/auth/${contentId}/review/9999/commit`);
+      expect(res.status).toBe(404);
+    });
+  });
 });

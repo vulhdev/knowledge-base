@@ -14,15 +14,19 @@ import {
   renderFeatureList,
   renderContentList,
   renderContent,
+  renderReview,
   renderSearchResults,
   renderErrorList,
 } from "./render.js";
+import { addComment, commitReview } from "../db/reviews.js";
+import type { ReviewComment } from "../db/reviews.js";
 import { listErrorLogs } from "../db/error-log.js";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 export function createApp(db: Database.Database) {
   const app = express();
+  app.use(express.json());
 
   app.use("/assets", express.static(join(PACKAGE_ROOT, "assets")));
 
@@ -71,6 +75,55 @@ export function createApp(db: Database.Database) {
       res.send(renderContent(content, lineage));
     } catch {
       res.status(404).send("<p>Content not found</p>");
+    }
+  });
+
+  app.get("/ws/:workspace/:feature/:id/review", (req, res) => {
+    const id = Number(req.params.id);
+    const reviewId = Number(req.query.review_id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(404).send("<p>Not found</p>");
+      return;
+    }
+    if (!Number.isInteger(reviewId) || reviewId <= 0) {
+      res.status(400).send("<p>Missing or invalid review_id query parameter</p>");
+      return;
+    }
+    try {
+      const content = getContent(db, id);
+      const comments = db
+        .prepare(
+          "SELECT id, review_id, selected_text, comment, created_at FROM review_comments WHERE review_id = ? ORDER BY id",
+        )
+        .all(reviewId) as ReviewComment[];
+      res.send(renderReview(content, reviewId, comments));
+    } catch {
+      res.status(404).send("<p>Content not found</p>");
+    }
+  });
+
+  app.post("/ws/:workspace/:feature/:id/review/:reviewId/comments", (req, res) => {
+    const reviewId = Number(req.params.reviewId);
+    const { comment, selected_text } = req.body as { comment?: string; selected_text?: string };
+    if (!comment) {
+      res.status(400).json({ error: "comment is required" });
+      return;
+    }
+    try {
+      const result = addComment(db, reviewId, comment, selected_text);
+      res.status(201).json(result);
+    } catch {
+      res.status(404).json({ error: "Review not found" });
+    }
+  });
+
+  app.post("/ws/:workspace/:feature/:id/review/:reviewId/commit", (req, res) => {
+    const reviewId = Number(req.params.reviewId);
+    try {
+      const result = commitReview(db, reviewId);
+      res.status(200).json(result);
+    } catch {
+      res.status(404).json({ error: "Review not found" });
     }
   });
 

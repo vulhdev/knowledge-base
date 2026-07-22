@@ -14,6 +14,10 @@ import { deriveContent } from "./tools/derive-content.js";
 import { getLineage } from "./tools/get-lineage.js";
 import { attachCodeRef } from "./tools/attach-code-ref.js";
 import { getCodeRefs } from "./tools/get-code-refs.js";
+import { openForReview } from "./tools/open-for-review.js";
+import { waitForReview } from "./tools/wait-for-review.js";
+import { getPendingReviewTool } from "./tools/get-pending-review.js";
+import { listContentsWithPendingReview } from "./db/reviews.js";
 import { insertErrorLog } from "./db/error-log.js";
 
 const db = openDb();
@@ -251,6 +255,74 @@ server.tool(
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       insertErrorLog(db, "get_code_refs", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "open_for_review",
+  "Creates a review session for a document and returns a GUI URL where the user can add inline comments. The GUI server must be running: npx @vulhdev/knowledge-base gui",
+  {
+    content_id: z.number().int().positive().describe("ID of the document to review"),
+    port: z.number().int().positive().default(3000).optional().describe("Port the GUI server is running on (default 3000)"),
+  },
+  async ({ content_id, port }) => {
+    try {
+      const result = openForReview(db, content_id, port);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "open_for_review", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "wait_for_review",
+  "Long-polls until the user commits a review for the given document, then returns all comments. Throws with instructions if the timeout is reached.",
+  {
+    content_id: z.number().int().positive().describe("ID of the document being reviewed"),
+    timeout_seconds: z.number().int().positive().default(300).optional().describe("Max seconds to wait before timing out (default 300)"),
+  },
+  async ({ content_id, timeout_seconds }) => {
+    try {
+      const result = await waitForReview(db, content_id, timeout_seconds);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "wait_for_review", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "get_pending_review",
+  "Returns the most recent committed review and its comments for a document. Use in the /knowledge-base-review skill fallback after a wait_for_review timeout.",
+  {
+    content_id: z.number().int().positive().describe("ID of the document to fetch the committed review for"),
+  },
+  async ({ content_id }) => {
+    try {
+      const result = getPendingReviewTool(db, content_id);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "get_pending_review", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "list_contents_with_pending_review",
+  "Lists all documents that have at least one committed (unprocessed) review. Used by the /knowledge-base-review skill to show the user which documents are awaiting feedback processing.",
+  {},
+  async () => {
+    try {
+      const results = listContentsWithPendingReview(db);
+      return { content: [{ type: "text", text: toText(results) }] };
+    } catch (err) {
+      insertErrorLog(db, "list_contents_with_pending_review", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },

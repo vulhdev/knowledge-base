@@ -242,3 +242,67 @@ describe("migration 4: content_links table", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM content_links").get() as { n: number }).toEqual({ n: 1 });
   });
 });
+
+describe("migration 7: reviews and review_comments tables", () => {
+  it("creates reviews table", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    const table = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reviews'")
+      .get() as { name: string } | undefined;
+    expect(table?.name).toBe("reviews");
+  });
+
+  it("creates review_comments table", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    const table = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'review_comments'")
+      .get() as { name: string } | undefined;
+    expect(table?.name).toBe("review_comments");
+  });
+
+  it("migration 7 is idempotent", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+    expect(() => applySchema(db)).not.toThrow();
+  });
+
+  it("CASCADE delete: removing a content deletes its reviews and comments", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
+    const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
+    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'spec', 'body')").run(ftId);
+    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'body'").get() as { id: number };
+
+    db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);
+    const { id: reviewId } = db.prepare("SELECT id FROM reviews WHERE content_id = ?").get(contentId) as { id: number };
+    db.prepare("INSERT INTO review_comments (review_id, comment) VALUES (?, ?)").run(reviewId, "test comment");
+
+    db.prepare("DELETE FROM contents WHERE id = ?").run(contentId);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM reviews").get() as { n: number }).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM review_comments").get() as { n: number }).toEqual({ n: 0 });
+  });
+
+  it("reviews default status is pending", () => {
+    const db = createOldSchemaDb();
+    applySchema(db);
+
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
+    const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
+    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'spec', 'body')").run(ftId);
+    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'body'").get() as { id: number };
+
+    db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);
+    const row = db.prepare("SELECT status FROM reviews WHERE content_id = ?").get(contentId) as { status: string };
+    expect(row.status).toBe("pending");
+  });
+});

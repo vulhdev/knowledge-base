@@ -152,6 +152,27 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_code_refs_content ON code_refs(content_id);
   `);
 
+  // Migration 7: reviews and review_comments tables for GUI inline commenting
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reviews (
+      id           INTEGER PRIMARY KEY,
+      content_id   INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      committed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reviews_content ON reviews(content_id);
+
+    CREATE TABLE IF NOT EXISTS review_comments (
+      id            INTEGER PRIMARY KEY,
+      review_id     INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+      selected_text TEXT,
+      comment       TEXT NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   // Migration 6: FTS indexes title column so title matches get BM25 boost
   const ftsSql = (
     db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contents_fts'")

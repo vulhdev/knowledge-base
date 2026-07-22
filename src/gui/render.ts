@@ -2,6 +2,7 @@ import { parse } from "marked";
 import type { Feature, WorkspaceSummary, RecentContent } from "./db.js";
 import type { Content, SearchResult, LineageResult, LinkedContent } from "../types.js";
 import type { ErrorLog } from "../db/error-log.js";
+import type { ReviewComment } from "../db/reviews.js";
 
 const GOOGLE_FONTS =
   "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap";
@@ -300,6 +301,183 @@ export function renderErrorList(errors: ErrorLog[]): string {
   <tbody>${rows}</tbody>
 </table>`;
   return layout("Errors", body);
+}
+
+export function renderReview(
+  content: Content,
+  reviewId: number,
+  comments: ReviewComment[] = [],
+): string {
+  const crumb = `<p class="breadcrumb">
+    <a href="/">Home</a> /
+    <a href="/ws/${encodeURIComponent(content.workspace)}">${esc(content.workspace)}</a> /
+    <a href="/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}">${esc(content.feature)}</a> /
+    <a href="/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}/${content.id}">#${content.id}</a> /
+    Review
+  </p>`;
+  const title = content.title ?? `#${content.id}`;
+  const renderedBody = parse(content.body) as string;
+  const commentsBasePath = `/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}/${content.id}/review/${reviewId}`;
+
+  const commentItems = comments.length
+    ? comments
+        .map(
+          (c) => `<li class="review-comment-item">
+            ${c.selected_text ? `<blockquote class="review-quote">${esc(c.selected_text)}</blockquote>` : ""}
+            <p class="review-comment-text">${esc(c.comment)}</p>
+            <p class="review-comment-ts">${formatDate(c.created_at)}</p>
+          </li>`,
+        )
+        .join("")
+    : `<li class="review-comment-empty">No comments yet.<br>Select text above to add one.</li>`;
+
+  const sidebar = `<aside class="review-sidebar">
+    <span class="section-label">Comments</span>
+    <ul id="review-comment-list" class="review-comment-list">${commentItems}</ul>
+    <button id="commit-btn" class="action-btn review-commit-btn" data-path="${esc(commentsBasePath)}">
+      ✓ Commit Review
+    </button>
+  </aside>`;
+
+  const popup = `<div id="comment-popup" class="review-popup" style="display:none">
+    <textarea id="comment-input" class="review-popup-input" placeholder="Add a comment…" rows="3"></textarea>
+    <div class="review-popup-actions">
+      <button id="comment-submit" class="action-btn">Add</button>
+      <button id="comment-cancel" class="action-btn">Cancel</button>
+    </div>
+  </div>`;
+
+  const reviewScript = `<script>
+(function() {
+  var basePath = ${JSON.stringify(commentsBasePath)};
+  var popup = document.getElementById('comment-popup');
+  var input = document.getElementById('comment-input');
+  var list = document.getElementById('review-comment-list');
+  var selectedText = '';
+  var savedRange = null;
+
+  function setHighlight(range) {
+    if (typeof CSS !== 'undefined' && CSS.highlights) {
+      CSS.highlights.set('comment-pending', new Highlight(range));
+    }
+  }
+
+  function clearHighlight() {
+    if (typeof CSS !== 'undefined' && CSS.highlights) {
+      CSS.highlights.delete('comment-pending');
+    }
+    savedRange = null;
+  }
+
+  // Prevent popup mousedown from collapsing native selection
+  popup.addEventListener('mousedown', function(e) { e.preventDefault(); });
+
+  document.getElementById('content-body').addEventListener('mouseup', function() {
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return;
+    var text = sel.toString().trim();
+    if (!text) return;
+    selectedText = text;
+    savedRange = sel.getRangeAt(0).cloneRange();
+    var rect = savedRange.getBoundingClientRect();
+    setHighlight(savedRange);
+    popup.style.top = (window.scrollY + rect.bottom + 8) + 'px';
+    popup.style.left = rect.left + 'px';
+    popup.style.display = 'block';
+    input.value = '';
+    input.focus();
+  });
+
+  function cancelPopup() {
+    popup.style.display = 'none';
+    selectedText = '';
+    clearHighlight();
+  }
+
+  document.getElementById('comment-cancel').addEventListener('click', cancelPopup);
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && popup.style.display !== 'none') cancelPopup();
+  });
+
+  document.getElementById('comment-submit').addEventListener('click', function() {
+    var comment = input.value.trim();
+    if (!comment) return;
+    fetch(basePath + '/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment: comment, selected_text: selectedText || undefined })
+    }).then(function(r) { return r.json(); }).then(function(c) {
+      var li = document.createElement('li');
+      li.className = 'review-comment-item';
+      if (c.selected_text) {
+        li.innerHTML = '<blockquote class="review-quote">' + c.selected_text.replace(/</g,'&lt;') + '</blockquote>';
+      }
+      var p = document.createElement('p');
+      p.className = 'review-comment-text';
+      p.textContent = c.comment;
+      li.appendChild(p);
+      var ts = document.createElement('p');
+      ts.className = 'review-comment-ts';
+      ts.textContent = new Date().toLocaleString();
+      li.appendChild(ts);
+      var empty = list.querySelector('.review-comment-empty');
+      if (empty) empty.remove();
+      list.appendChild(li);
+      popup.style.display = 'none';
+      selectedText = '';
+      clearHighlight();
+    });
+  });
+
+  document.getElementById('commit-btn').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Committing…';
+    fetch(basePath + '/commit', { method: 'POST' })
+      .then(function() {
+        btn.textContent = 'Review committed ✓';
+      })
+      .catch(function() {
+        btn.disabled = false;
+        btn.textContent = '✓ Commit Review';
+      });
+  });
+})();
+</script>`;
+
+  const reviewCSS = `<style>
+  .review-layout { display: grid; grid-template-columns: 1fr 300px; gap: 32px; align-items: start; margin-top: 24px; }
+  .review-sidebar { background: #141c24; border: 1px solid #2d363e; border-radius: 8px; padding: 16px; position: sticky; top: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .review-comment-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .review-comment-item { background: #182028; border-radius: 8px; padding: 12px; }
+  .review-comment-empty { font-size: 13px; color: #8b949e; text-align: center; padding: 12px 0; }
+  .review-quote { border-left: 3px solid #7c3aed; background: #0b141c; border-radius: 0 4px 4px 0; padding: 4px 8px; font-size: 12px; color: #8b949e; font-style: italic; margin: 0 0 8px 0; word-break: break-word; }
+  .review-comment-text { font-size: 13px; color: #dae3ee; margin: 0; line-height: 20px; }
+  .review-comment-ts { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b949e; margin: 6px 0 0 0; }
+  .review-commit-btn { width: 100%; justify-content: center; background: #7c3aed; border-color: #7c3aed; color: #fff; height: 40px; font-size: 14px; font-weight: 500; }
+  .review-commit-btn:hover { background: #6d28d9; border-color: #6d28d9; }
+  .review-commit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .review-popup { position: absolute; z-index: 100; background: #141c24; border: 1px solid #7c3aed; border-radius: 8px; padding: 12px; width: 300px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+  .review-popup-input { width: 100%; background: #0b141c; border: 1px solid #2d363e; border-radius: 4px; color: #dae3ee; font-size: 13px; font-family: inherit; padding: 8px; resize: vertical; box-sizing: border-box; }
+  .review-popup-actions { display: flex; gap: 8px; margin-top: 8px; }
+  #content-body ::selection { background: rgba(124, 58, 237, 0.3); }
+  ::highlight(comment-pending) { background: rgba(124, 58, 237, 0.35); }
+  </style>`;
+
+  const body = `${crumb}
+<h1>${esc(title)} — Review</h1>
+<p class="meta"><span>${typeBadge(content.type)}&nbsp; Reviewing #${content.id}</span></p>
+<hr />
+${reviewCSS}
+${popup}
+<div class="review-layout">
+  <div id="content-body" class="content-body">${renderedBody}</div>
+  ${sidebar}
+</div>
+${reviewScript}`;
+
+  return layout(`Review: ${title}`, body);
 }
 
 function renderRecentSection(recent: RecentContent[]): string {
