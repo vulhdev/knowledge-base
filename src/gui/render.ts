@@ -354,6 +354,23 @@ export function renderReview(
   var input = document.getElementById('comment-input');
   var list = document.getElementById('review-comment-list');
   var selectedText = '';
+  var savedRange = null;
+
+  function setHighlight(range) {
+    if (typeof CSS !== 'undefined' && CSS.highlights) {
+      CSS.highlights.set('comment-pending', new Highlight(range));
+    }
+  }
+
+  function clearHighlight() {
+    if (typeof CSS !== 'undefined' && CSS.highlights) {
+      CSS.highlights.delete('comment-pending');
+    }
+    savedRange = null;
+  }
+
+  // Prevent popup mousedown from collapsing native selection
+  popup.addEventListener('mousedown', function(e) { e.preventDefault(); });
 
   document.getElementById('content-body').addEventListener('mouseup', function() {
     var sel = window.getSelection();
@@ -361,8 +378,9 @@ export function renderReview(
     var text = sel.toString().trim();
     if (!text) return;
     selectedText = text;
-    var range = sel.getRangeAt(0);
-    var rect = range.getBoundingClientRect();
+    savedRange = sel.getRangeAt(0).cloneRange();
+    var rect = savedRange.getBoundingClientRect();
+    setHighlight(savedRange);
     popup.style.top = (window.scrollY + rect.bottom + 8) + 'px';
     popup.style.left = rect.left + 'px';
     popup.style.display = 'block';
@@ -370,9 +388,16 @@ export function renderReview(
     input.focus();
   });
 
-  document.getElementById('comment-cancel').addEventListener('click', function() {
+  function cancelPopup() {
     popup.style.display = 'none';
     selectedText = '';
+    clearHighlight();
+  }
+
+  document.getElementById('comment-cancel').addEventListener('click', cancelPopup);
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && popup.style.display !== 'none') cancelPopup();
   });
 
   document.getElementById('comment-submit').addEventListener('click', function() {
@@ -392,11 +417,16 @@ export function renderReview(
       p.className = 'review-comment-text';
       p.textContent = c.comment;
       li.appendChild(p);
+      var ts = document.createElement('p');
+      ts.className = 'review-comment-ts';
+      ts.textContent = new Date().toLocaleString();
+      li.appendChild(ts);
       var empty = list.querySelector('.review-comment-empty');
       if (empty) empty.remove();
       list.appendChild(li);
       popup.style.display = 'none';
       selectedText = '';
+      clearHighlight();
     });
   });
 
@@ -410,7 +440,7 @@ export function renderReview(
       })
       .catch(function() {
         btn.disabled = false;
-        btn.textContent = 'Commit Review';
+        btn.textContent = '✓ Commit Review';
       });
   });
 })();
@@ -432,6 +462,7 @@ export function renderReview(
   .review-popup-input { width: 100%; background: #0b141c; border: 1px solid #2d363e; border-radius: 4px; color: #dae3ee; font-size: 13px; font-family: inherit; padding: 8px; resize: vertical; box-sizing: border-box; }
   .review-popup-actions { display: flex; gap: 8px; margin-top: 8px; }
   #content-body ::selection { background: rgba(124, 58, 237, 0.3); }
+  ::highlight(comment-pending) { background: rgba(124, 58, 237, 0.35); }
   </style>`;
 
   const body = `${crumb}

@@ -1,83 +1,59 @@
 ---
 name: knowledge-base:review
-description: Process committed inline review comments for a knowledge-base document. Use when the user says they finished reviewing, or after a wait_for_review timeout. Fetches comments, classifies intent, and responds appropriately (auto-fix, ask for clarification, or expand content).
+description: Proactively open a knowledge-base document for inline review in the GUI. Use when the user wants to review an existing document — picks a doc, opens a review session, waits for feedback, then hands off to knowledge-base:resolve-feedback to process comments.
 ---
 
 # knowledge-base:review
 
-Process the committed inline review comments for a knowledge-base document and respond intelligently.
+Open an existing knowledge-base document for inline review in the GUI. The user annotates it with comments, commits the review, and Claude processes the feedback.
 
 ## When to use
 
-- The user says "I finished the review", "review is done", "process the review", or similar
-- A `wait_for_review` call timed out and Claude printed instructions to call this skill
+- The user says "I want to review [doc]", "open this for review", "let me annotate this", or similar
 - The user explicitly invokes `/knowledge-base-review`
 
 ## Steps
 
-### 1. Determine content_id
+### 1. Determine which document to review
 
-**If content_id is available in conversation context** (e.g. from a previous `open_for_review` call or timeout message) — use it directly. Skip to Step 2.
+**If content_id is already in context** (e.g. user references a specific doc ID or title) — confirm and skip to Step 2.
 
-**If content_id is not known:**
-1. Call `list_contents_with_pending_review()` — returns documents with at least one committed review
-2. If empty → tell the user: "No committed reviews found. Open a review session first by saving a document via `/knowledge-base-create`."
-3. If one result → use it directly
-4. If multiple results → present the list and ask the user which document to process:
+**If not specified:**
+1. Call `list_contents(workspace=WORKSPACE)` to browse available documents
+2. Ask the user which document to open:
 
 ```
-Which document's review should I process?
-  ● #42 · content-review/spec "PR-Style Inline Commenting"
-  ○ #17 · auth/plan "Auth Implementation Plan"
+Which document do you want to review?
+  ● #67 · content-review/plan "PR-Style Inline Commenting Plan"
+  ○ #66 · content-review/spec "PR-Style Inline Commenting"
+  ○ #44 · semantic-search/spec "Spec: Semantic Search"
 ```
 
-Use `AskUserQuestion` with one option per document.
+Use `AskUserQuestion` with the most recently updated docs as options (up to 4).
 
-### 2. Fetch the committed review
+### 2. Open a review session
 
-Call `get_pending_review(content_id)`.
+Call `open_for_review(content_id)`.
 
-If it throws ("No committed review found") → tell the user: "No committed review found for that document. Make sure you clicked 'Commit Review' in the GUI."
-
-### 3. Classify each comment
-
-For each comment in `result.comments`, classify the intent:
-
-| Intent | Signals | Action |
-|--------|---------|--------|
-| `edit_request` | "change", "replace", "fix", "reword", "rename", "should be", "instead of" | Apply the edit directly to content body |
-| `clarification` | "what does", "unclear", "confusing", "don't understand", "explain", "why" | Ask the user to elaborate, then optionally update |
-| `expand` | "more detail", "add", "missing", "elaborate", "too brief" | Expand that section inline |
-| `positive` | "good", "correct", "keep", "looks good", thumbs up | Acknowledge, no action needed |
-| `general` | anything else | Summarize and ask the user what to do |
-
-### 4. Process comments
-
-**For `edit_request` and `expand` comments:**
-- Locate the `selected_text` (or the section it refers to) in the document body
-- Propose the change inline. If multiple edits exist, group them and apply all at once via `update_content(id, new_body)`
-- Tell the user what was changed
-
-**For `clarification` comments:**
-- Present the question(s) to the user
-- Wait for answers before updating
-
-**For `positive` comments:**
-- Briefly acknowledge ("Noted — keeping that section as-is")
-
-**For `general` comments:**
-- Summarize and ask: "How would you like me to handle this?"
-
-### 5. Summary report
-
-After processing all comments:
-
+Print the returned URL clearly:
 ```
-✓ Review processed for #<id> · <feature>/<type> "<title>"
-  Comments: <N> total
-  ✏ Edited: <list of sections changed>
-  ❓ Clarifications needed: <list, if any>
-  ✓ Kept as-is: <count of positive comments>
+Review URL: http://localhost:3000/ws/.../review?review_id=<N>
+Note: Start the GUI server first if not running: npx @vulhdev/knowledge-base gui
 ```
 
-If the content was updated, remind the user the doc has been saved in the knowledge base.
+### 3. Wait for the review to be committed
+
+Call `wait_for_review(content_id)` (default timeout 300s).
+
+**If review commits within timeout:** receive the comments and hand off to Step 4.
+
+**If timeout:** print:
+```
+Review not committed within the wait window.
+When you're done reviewing, call /knowledge-base-resolve-feedback to process the feedback.
+```
+Then stop.
+
+### 4. Process the committed feedback
+
+Follow the steps in `/knowledge-base-resolve-feedback` (Steps 3–5) to classify and respond to each comment.

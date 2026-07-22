@@ -220,7 +220,7 @@ After printing the Step 8 report, ask the user:
 5. **If timeout:** print:
    ```
    Review not committed within the wait window.
-   When you're done reviewing, call /knowledge-base-review to process the feedback.
+   When you're done reviewing, call /knowledge-base-resolve-feedback to process the feedback.
    ```
 
 **If no (or user skips):** done.
