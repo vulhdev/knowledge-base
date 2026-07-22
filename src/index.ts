@@ -17,7 +17,7 @@ import { getCodeRefs } from "./tools/get-code-refs.js";
 import { openForReview } from "./tools/open-for-review.js";
 import { waitForReview } from "./tools/wait-for-review.js";
 import { getPendingReviewTool } from "./tools/get-pending-review.js";
-import { listContentsWithPendingReview } from "./db/reviews.js";
+import { listContentsWithPendingReview, resolveComment, resolveReview } from "./db/reviews.js";
 import { insertErrorLog } from "./db/error-log.js";
 
 const db = openDb();
@@ -323,6 +323,36 @@ server.tool(
       return { content: [{ type: "text", text: toText(results) }] };
     } catch (err) {
       insertErrorLog(db, "list_contents_with_pending_review", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "resolve_comment",
+  "Marks a single review comment as resolved after Claude has processed it (applied an edit, answered a clarification, etc.). Call once per comment in the /knowledge-base-resolve-feedback flow.",
+  { comment_id: z.number().int().positive().describe("ID of the review_comment to mark resolved") },
+  async ({ comment_id }) => {
+    try {
+      const result = resolveComment(db, comment_id);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "resolve_comment", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "resolve_review",
+  "Marks an entire review as resolved after all comments have been processed. Call at the end of the /knowledge-base-resolve-feedback flow.",
+  { review_id: z.number().int().positive().describe("ID of the review to mark resolved") },
+  async ({ review_id }) => {
+    try {
+      const result = resolveReview(db, review_id);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "resolve_review", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },

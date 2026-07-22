@@ -53,20 +53,30 @@ For each comment in `result.comments`, classify the intent:
 
 ### 4. Process comments
 
+For each comment, process it **then immediately call `resolve_comment(comment_id)`** to mark it resolved in the DB — this lets the GUI show progress in real time.
+
 **For `edit_request` and `expand` comments:**
 - Locate the `selected_text` (or the section it refers to) in the document body
 - Propose the change inline. If multiple edits exist, group them and apply all at once via `update_content(id, new_body)`
+- Call `resolve_comment(comment.id)` after applying the edit
 - Tell the user what was changed
 
 **For `clarification` comments:**
 - Present the question(s) to the user
 - Wait for answers before updating
+- Call `resolve_comment(comment.id)` only after the clarification is answered and any update applied
 
 **For `positive` comments:**
 - Briefly acknowledge ("Noted — keeping that section as-is")
+- Call `resolve_comment(comment.id)` immediately
 
 **For `general` comments:**
 - Summarize and ask: "How would you like me to handle this?"
+- Call `resolve_comment(comment.id)` after the user decides
+
+### 4b. Mark review resolved
+
+After all comments are processed, call `resolve_review(review_id)` to set the review status to `resolved`. This updates the badge in the GUI review page.
 
 ### 5. Summary report
 

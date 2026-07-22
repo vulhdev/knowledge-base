@@ -173,6 +173,14 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
+  // Migration 8: add resolved_at to review_comments for per-comment resolution tracking
+  const hasResolvedAt = (
+    db.prepare("SELECT name FROM pragma_table_info('review_comments') WHERE name = 'resolved_at'").get()
+  );
+  if (!hasResolvedAt) {
+    db.exec(`ALTER TABLE review_comments ADD COLUMN resolved_at TEXT`);
+  }
+
   // Migration 6: FTS indexes title column so title matches get BM25 boost
   const ftsSql = (
     db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contents_fts'")

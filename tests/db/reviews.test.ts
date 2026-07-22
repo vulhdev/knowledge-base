@@ -7,6 +7,8 @@ import {
   commitReview,
   getPendingReview,
   listContentsWithPendingReview,
+  resolveComment,
+  resolveReview,
 } from "../../src/db/reviews.js";
 
 async function seedContent(db: Database.Database): Promise<number> {
@@ -146,6 +148,73 @@ describe("getPendingReview", () => {
 
     const result = getPendingReview(db, contentId);
     expect(result!.comments[0].comment).toBe("second review");
+  });
+});
+
+describe("resolveComment", () => {
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    db = createTestDb();
+  });
+
+  it("sets resolved_at on the comment and returns it", async () => {
+    const contentId = await seedContent(db);
+    const review = createReview(db, contentId);
+    const comment = addComment(db, review.id, "needs work");
+    expect(comment.resolved_at).toBeNull();
+
+    const resolved = resolveComment(db, comment.id);
+    expect(resolved.id).toBe(comment.id);
+    expect(resolved.resolved_at).not.toBeNull();
+  });
+
+  it("throws when comment_id does not exist", async () => {
+    expect(() => resolveComment(db, 9999)).toThrow("Review comment not found");
+  });
+
+  it("resolved_at is included in getPendingReview comments", async () => {
+    const contentId = await seedContent(db);
+    const review = createReview(db, contentId);
+    const comment = addComment(db, review.id, "fix this");
+    resolveComment(db, comment.id);
+    commitReview(db, review.id);
+
+    const pending = getPendingReview(db, contentId);
+    expect(pending?.comments[0].resolved_at).not.toBeNull();
+  });
+});
+
+describe("resolveReview", () => {
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    db = createTestDb();
+  });
+
+  it("sets review status to resolved", async () => {
+    const contentId = await seedContent(db);
+    const review = createReview(db, contentId);
+    commitReview(db, review.id);
+
+    const resolved = resolveReview(db, review.id);
+    expect(resolved.status).toBe("resolved");
+  });
+
+  it("throws when review is not in committed state", async () => {
+    const contentId = await seedContent(db);
+    const review = createReview(db, contentId); // still pending
+    expect(() => resolveReview(db, review.id)).toThrow("not in committed state");
+  });
+
+  it("resolved review is no longer returned by listContentsWithPendingReview", async () => {
+    const contentId = await seedContent(db);
+    const review = createReview(db, contentId);
+    commitReview(db, review.id);
+    expect(listContentsWithPendingReview(db)).toHaveLength(1);
+
+    resolveReview(db, review.id);
+    expect(listContentsWithPendingReview(db)).toHaveLength(0);
   });
 });
 

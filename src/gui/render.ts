@@ -322,7 +322,8 @@ export function renderReview(
   const commentItems = comments.length
     ? comments
         .map(
-          (c) => `<li class="review-comment-item">
+          (c) => `<li class="review-comment-item${c.resolved_at ? " review-comment-resolved" : ""}">
+            ${c.resolved_at ? `<span class="review-resolved-badge">✓ Resolved</span>` : ""}
             ${c.selected_text ? `<blockquote class="review-quote">${esc(c.selected_text)}</blockquote>` : ""}
             <p class="review-comment-text">${esc(c.comment)}</p>
             <p class="review-comment-ts">${formatDate(c.created_at)}</p>
@@ -455,6 +456,8 @@ export function renderReview(
   .review-quote { border-left: 3px solid #7c3aed; background: #0b141c; border-radius: 0 4px 4px 0; padding: 4px 8px; font-size: 12px; color: #8b949e; font-style: italic; margin: 0 0 8px 0; word-break: break-word; }
   .review-comment-text { font-size: 13px; color: #dae3ee; margin: 0; line-height: 20px; }
   .review-comment-ts { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b949e; margin: 6px 0 0 0; }
+  .review-comment-resolved { opacity: 0.55; }
+  .review-resolved-badge { display: inline-block; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #22c55e; margin-bottom: 6px; }
   .review-commit-btn { width: 100%; justify-content: center; background: #7c3aed; border-color: #7c3aed; color: #fff; height: 40px; font-size: 14px; font-weight: 500; }
   .review-commit-btn:hover { background: #6d28d9; border-color: #6d28d9; }
   .review-commit-btn:disabled { opacity: 0.6; cursor: not-allowed; }

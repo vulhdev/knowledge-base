@@ -14,6 +14,7 @@ export interface ReviewComment {
   selected_text: string | null;
   comment: string;
   created_at: string;
+  resolved_at: string | null;
 }
 
 export interface CommittedReview extends Review {
@@ -52,7 +53,7 @@ export function addComment(
   return db
     .prepare(
       `INSERT INTO review_comments (review_id, comment, selected_text) VALUES (?, ?, ?)
-       RETURNING id, review_id, selected_text, comment, created_at`,
+       RETURNING id, review_id, selected_text, comment, created_at, resolved_at`,
     )
     .get(reviewId, comment, selectedText ?? null) as ReviewComment;
 }
@@ -69,7 +70,7 @@ export function commitReview(db: Database.Database, reviewId: number): Committed
   if (!review) throw new Error(`Review not found: id=${reviewId}`);
 
   const comments = db
-    .prepare("SELECT id, review_id, selected_text, comment, created_at FROM review_comments WHERE review_id = ? ORDER BY id")
+    .prepare("SELECT id, review_id, selected_text, comment, created_at, resolved_at FROM review_comments WHERE review_id = ? ORDER BY id")
     .all(reviewId) as ReviewComment[];
 
   return { ...review, comments };
@@ -87,10 +88,36 @@ export function getPendingReview(db: Database.Database, contentId: number): Comm
   if (!review) return null;
 
   const comments = db
-    .prepare("SELECT id, review_id, selected_text, comment, created_at FROM review_comments WHERE review_id = ? ORDER BY id")
+    .prepare("SELECT id, review_id, selected_text, comment, created_at, resolved_at FROM review_comments WHERE review_id = ? ORDER BY id")
     .all(review.id) as ReviewComment[];
 
   return { ...review, comments };
+}
+
+export function resolveComment(db: Database.Database, commentId: number): ReviewComment {
+  const comment = db
+    .prepare(
+      `UPDATE review_comments SET resolved_at = datetime('now')
+       WHERE id = ?
+       RETURNING id, review_id, selected_text, comment, created_at, resolved_at`,
+    )
+    .get(commentId) as ReviewComment | undefined;
+
+  if (!comment) throw new Error(`Review comment not found: id=${commentId}`);
+  return comment;
+}
+
+export function resolveReview(db: Database.Database, reviewId: number): Review {
+  const review = db
+    .prepare(
+      `UPDATE reviews SET status = 'resolved'
+       WHERE id = ? AND status = 'committed'
+       RETURNING id, content_id, status, created_at, committed_at`,
+    )
+    .get(reviewId) as Review | undefined;
+
+  if (!review) throw new Error(`Review not found or not in committed state: id=${reviewId}`);
+  return review;
 }
 
 export function listContentsWithPendingReview(db: Database.Database): ContentWithReview[] {
