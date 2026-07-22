@@ -17,7 +17,8 @@ workspace → feature → content (idea | spec | plan | digest | doc)
 - **Code grounding** — link plan documents to git commits at task granularity; `attach_code_ref` records which commit implements which task, `get_code_refs` returns the full coverage map, `get_content` includes a `has_code_refs` signal so Claude knows to fetch refs without a round-trip
 - **Error log viewer** — every unhandled MCP tool exception is captured to SQLite and viewable in the GUI at `/errors`
 - **SQLite-backed** — single file database via `better-sqlite3`, no external services
-- **Claude Code skills** — 11 slash commands for create, list, search, get, update, delete, import, export, explore, digest, and doc analysis
+- **Inline review** — after saving a document, Claude opens a review session in the GUI; select any passage to add an inline comment, commit the review, and Claude processes each comment (edit, clarify, or expand) and marks it resolved — resolved comments are shown with a green badge in the GUI
+- **Claude Code skills** — 13 slash commands for create, list, search, get, update, delete, import, export, explore, digest, doc analysis, review, and resolve feedback
 - **Claude Code agents** — reusable agent personas installed alongside skills; `kb-conflict-resolver` provides deep conflict analysis when `semantic_contradiction` is detected
 
 ## Requirements
@@ -82,7 +83,7 @@ To explore your knowledge base in a browser, run:
 npx @vulhdev/knowledge-base gui
 ```
 
-Opens a read-only web UI at `http://localhost:3000` (override with `PORT=<n>`). Browse workspaces → features → documents, search across all content, or open the **Errors** tab to inspect recent MCP tool failures.
+Opens a web UI at `http://localhost:3000` (override with `PORT=<n>`). Browse workspaces → features → documents, search across all content, open the **Errors** tab to inspect recent MCP tool failures, or view a **review session** with inline comments when opened via `open_for_review`.
 
 ## Claude Code Skills
 
@@ -101,6 +102,8 @@ Skills use colon namespace notation — type the part after the colon to get aut
 | `/explore` → `knowledge-base:explore` | Proactively load feature context before starting work |
 | `/digest` → `knowledge-base:digest` | Build a TL;DR + index summary for a feature |
 | `/doc` → `knowledge-base:doc` | Analyze a codebase feature and save structured docs (DB schema, backend flow, frontend) |
+| `/review` → `knowledge-base:review` | Proactively open an existing document for inline review in the GUI — creates a review session, prints the URL, waits for the user to commit, then hands off to resolve-feedback |
+| `/resolve-feedback` → `knowledge-base:resolve-feedback` | Process committed inline review comments — classifies each comment by intent (`edit_request`, `clarification`, `expand`, `positive`) and responds accordingly; marks each comment resolved via `resolve_comment` and the review via `resolve_review` |
 
 ## Claude Code Agents
 
@@ -229,6 +232,62 @@ title      — (optional) short label
 
 Returns the full `CreateContentResult` plus a `parent_id` field confirming the link. The response also includes `suggested_parents` in case additional related documents exist worth linking.
 
+---
+
+### `open_for_review`
+
+Creates a review session for a document and returns the GUI URL. The user opens the URL, selects text, adds inline comments, and clicks "Commit Review".
+
+```
+content_id  — ID of the document to review
+port        — (optional) GUI server port, default 3000
+```
+
+Returns `{ review_id, url, note }`. Does not auto-open a browser — print the URL for the user to open manually. Start the GUI server first with `npx @vulhdev/knowledge-base gui`.
+
+### `wait_for_review`
+
+Long-polls SQLite every 500 ms until the user commits the review or the timeout expires.
+
+```
+content_id       — ID of the document being reviewed
+timeout_seconds  — (optional) max wait time in seconds, default 300
+```
+
+Returns the committed review with all comments on success. Throws with instructions to call `/knowledge-base-resolve-feedback` on timeout.
+
+### `get_pending_review`
+
+Fetches the most recently committed review for a document, including all comments with their `resolved_at` state.
+
+```
+content_id  — ID of the document to fetch the review for
+```
+
+Throws if no committed review exists for the document.
+
+### `list_contents_with_pending_review`
+
+Lists all documents that have at least one committed (unprocessed) review. Used by `/knowledge-base-review` when `content_id` is not in context. Returns an empty array when nothing is pending.
+
+### `resolve_comment`
+
+Marks a single review comment as resolved after Claude has processed it. Sets `resolved_at` in the database — the GUI immediately shows the comment with a green "✓ Resolved" badge.
+
+```
+comment_id  — ID of the review_comment to mark resolved
+```
+
+### `resolve_review`
+
+Marks an entire review as `resolved` after all comments have been processed. Only succeeds when the review is in `committed` state.
+
+```
+review_id  — ID of the review to mark resolved
+```
+
+---
+
 ### `get_lineage`
 
 Returns the full ancestry chain for a document — all ancestors (nearest → oldest) and all descendants (BFS order, nearest first).
@@ -332,6 +391,25 @@ CREATE TABLE error_logs (
   message   TEXT NOT NULL,
   severity  TEXT NOT NULL DEFAULT 'error'
 );
+
+-- Review sessions created by open_for_review (Migration 7)
+CREATE TABLE reviews (
+  id           INTEGER PRIMARY KEY,
+  content_id   INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  status       TEXT NOT NULL DEFAULT 'pending',  -- "pending" | "committed" | "resolved"
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  committed_at TEXT
+);
+
+-- Inline comments added by the user in the GUI review page (Migration 7)
+CREATE TABLE review_comments (
+  id            INTEGER PRIMARY KEY,
+  review_id     INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+  selected_text TEXT,            -- passage the user highlighted (null = general comment)
+  comment       TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at   TEXT             -- set by resolve_comment after Claude processes it (Migration 8)
+);
 ```
 
 Existing databases are automatically migrated on startup:
@@ -341,6 +419,8 @@ Existing databases are automatically migrated on startup:
 - `content_links` table added if missing (Migration 4)
 - `code_refs` table added if missing (Migration 5)
 - FTS index rebuilt to include `title` column alongside `body`, with 5× BM25 column weight on title (Migration 6)
+- `reviews` and `review_comments` tables added if missing (Migration 7)
+- `resolved_at` column added to `review_comments` if missing (Migration 8)
 - Legacy database at `~/.claude/knowledge-base.db` automatically moved to `~/.claude/knowledge-base/knowledge-base.db` on first startup
 
 ## Development
