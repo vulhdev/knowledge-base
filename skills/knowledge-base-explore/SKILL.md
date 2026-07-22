@@ -63,7 +63,25 @@ search_semantic(query=<feature>, workspace=WORKSPACE, type="digest", limit=3)
 
 ---
 
-## Step 2: Fallback — full-text search
+## Step 2: Fallback — search by raw user input
+
+Search using the full original user message (not the extracted feature name):
+
+```
+search_semantic(query=<raw user input>, workspace=WORKSPACE, limit=5)
+```
+
+**If results are found:**
+- Present them in the intent-appropriate format (see Output format below)
+- If `has_more` is true, tell the user: *"X more results available — want to dig deeper?"* and wait for confirmation before calling Step 3.
+- If user confirms, proceed to Step 3 with `offset=5`.
+- Otherwise stop here.
+
+**If no results found** → proceed to Step 3.
+
+---
+
+## Step 3: Fallback — full-text search by feature name
 
 **For bug mode**, run two searches in parallel:
 
@@ -73,6 +91,24 @@ search_semantic(query=<symptom>, workspace=WORKSPACE, limit=5)   ← secondary s
 ```
 
 Merge all results, deduplicate by ID. Symptom results are shown in a separate group.
+
+After merging, call `get_code_refs` in parallel for every content ID in the result set:
+
+```
+get_code_refs(content_id=<id>)   ← one call per result, all in parallel
+```
+
+For any content where `refs` is non-empty, surface the linked commits:
+
+```
+🔗 Code refs found on [#<id> · <type>] "<title>":
+  - <commit_hash> (<task_ref or "no task">) — <file_paths list>
+  ...
+```
+
+Then ask: *"Found code refs on N doc(s) — want me to read the relevant files at those commits to help trace the root cause?"*
+
+If the user confirms, run `git show <commit_hash>:<file_path>` (scoped to the `start`–`end` line range when available) for each ref and include the output in the bug context.
 
 **For upgrade mode and feature mode**, run one search:
 
@@ -90,9 +126,11 @@ get_lineage(id=<content_id>)
 
 Add any newly discovered IDs not already in the result set. Load their bodies if directly relevant to the task (any type).
 
+**If `has_more` is true after any search in this step**, tell the user: *"X more results available — want to dig deeper?"* and wait for confirmation before fetching the next page with `offset` incremented by `limit`.
+
 ---
 
-## Step 3: Deep mode (only when explicitly needed)
+## Step 4: Deep mode (only when explicitly needed)
 
 Enter deep mode when:
 - Quick mode returned a digest index but you need the **full body** of a specific spec, plan, or doc
@@ -198,12 +236,15 @@ If nothing found:
 | Situation | Action |
 |---|---|
 | Bug mode + digest found | Present: known issues group, related decisions, stop (quick) |
-| Bug mode + no digest | Parallel search: feature + symptom; merge results; call `get_lineage` on top results |
+| Bug mode + no digest + raw input hit | Search by raw user input; present results; stop |
+| Bug mode + no digest + no raw input hit | Parallel search: feature + symptom; merge results; call `get_lineage` on top results |
 | Bug mode + nothing found | Note it: may be a new/undocumented issue |
 | Upgrade mode + digest found | Present: current state docs, past decisions, open questions |
-| Upgrade mode + no digest | Load full bodies (any type) + `get_lineage`; present decisions, open questions, linked docs |
+| Upgrade mode + no digest + raw input hit | Search by raw user input; present results; stop |
+| Upgrade mode + no digest + no raw input hit | Load full bodies (any type) + `get_lineage`; present decisions, open questions, linked docs |
 | Feature mode + digest found | Present TL;DR + index table, stop (quick) |
-| Feature mode + no digest | Load full bodies (any type) + `get_lineage`; present raw results and linked docs |
+| Feature mode + no digest + raw input hit | Search by raw user input; present results; stop |
+| Feature mode + no digest + no raw input hit | Load full bodies (any type) + `get_lineage`; present raw results and linked docs |
 | Nothing found (any mode) | Note it briefly, proceed with task |
 | Workspace not configured | Skip silently |
 | Already explored this session | Skip — don't call again |
