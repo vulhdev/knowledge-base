@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.3] — 2026-07-22
+
+### Changed
+- **`knowledge-base:explore` skill — richer search flow**: added Step 2 that searches by raw user input before falling back to feature-name search; any step that returns `has_more=true` now asks the user if they want to load more results
+- **`knowledge-base:explore` skill — bug mode code refs**: after merging search results, calls `get_code_refs` in parallel on every matched doc; surfaces linked commit hashes and file paths, then offers to run `git show <hash>:<file>` to pull the actual code into the bug investigation context
+
 ## [1.16.2] — 2026-07-22
 
 ### Changed
