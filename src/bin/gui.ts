@@ -26,7 +26,7 @@ try {
   process.exit(1);
 }
 
-const preferredPort = Number(process.env.PORT ?? 3000);
+const preferredPort = Number(process.env.PORT ?? 57891);
 const port = await findAvailablePort(preferredPort);
 
 if (port !== preferredPort) {

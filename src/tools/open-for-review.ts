@@ -11,7 +11,7 @@ export interface OpenForReviewResult {
 export function openForReview(
   db: Database.Database,
   contentId: number,
-  port = 3000,
+  port = 57891,
 ): OpenForReviewResult {
   const content = getContent(db, contentId);
   const review = createReview(db, contentId);

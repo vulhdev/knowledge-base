@@ -265,7 +265,7 @@ server.tool(
   "Creates a review session for a document and returns a GUI URL where the user can add inline comments. The GUI server must be running: npx @vulhdev/knowledge-base gui",
   {
     content_id: z.number().int().positive().describe("ID of the document to review"),
-    port: z.number().int().positive().default(3000).optional().describe("Port the GUI server is running on (default 3000)"),
+    port: z.number().int().positive().default(57891).optional().describe("Port the GUI server is running on (default 57891)"),
   },
   async ({ content_id, port }) => {
     try {

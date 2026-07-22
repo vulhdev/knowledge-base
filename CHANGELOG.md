@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.2] — 2026-07-22
+
+### Changed
+- **GUI server default port** — changed from `3000` to `57891` to avoid conflicts with common dev servers (React, Next.js, Express); `open_for_review` tool default updated to match
+
 ## [1.16.1] — 2026-07-22
 
 ### Added
