@@ -37,7 +37,7 @@ Call `open_for_review(content_id)`.
 
 Print the returned URL clearly:
 ```
-Review URL: http://localhost:3000/ws/.../review?review_id=<N>
+Review URL: http://localhost:57891/ws/.../review?review_id=<N>
 Note: Start the GUI server first if not running: npx @vulhdev/knowledge-base gui
 ```
 

@@ -212,7 +212,7 @@ After printing the Step 8 report, ask the user:
 1. Call `open_for_review(content_id)` with the ID from Step 8
 2. Print the returned URL clearly:
    ```
-   Review URL: http://localhost:3000/ws/.../review?review_id=<N>
+   Review URL: http://localhost:57891/ws/.../review?review_id=<N>
    Note: Start GUI server first if not running: npx @vulhdev/knowledge-base gui
    ```
 3. Call `wait_for_review(content_id)` (default timeout 300s)
