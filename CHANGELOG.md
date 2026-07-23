@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.5] — 2026-07-23
+
+### Fixed
+- **`attach_code_ref`: idempotent on duplicate calls** — tool now uses `INSERT OR IGNORE` and returns the existing row when the same `(content_id, commit_hash)` pair is submitted twice; previously a raw `UNIQUE constraint failed` error was logged every time Claude re-attached a commit across sessions
+- **`create_content`: descriptive error for duplicate digest** — attempting to create a second `digest` for the same feature now throws *"A digest already exists for feature '...'. Use update_content (id=X) to modify it."* instead of the opaque SQLite error `UNIQUE constraint failed: contents.feature_id`
+- **`wait_for_review`: timeout logged as warning, not error** — the 300s review timeout is expected behavior; it is now recorded with `severity='warning'` so it no longer appears alongside genuine failures in the GUI error log; `insertErrorLog` gains an optional `severity` parameter (default `'error'`)
+
 ## [1.16.3] — 2026-07-22
 
 ### Changed
