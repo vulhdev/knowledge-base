@@ -11,13 +11,17 @@ export function attachCodeRef(
   const exists = db.prepare("SELECT id FROM contents WHERE id = ?").get(contentId);
   if (!exists) throw new Error(`Content not found: id=${contentId}`);
 
+  db.prepare(
+    `INSERT OR IGNORE INTO code_refs (content_id, task_ref, commit_hash, file_paths)
+     VALUES (?, ?, ?, ?)`,
+  ).run(contentId, taskRef ?? null, commitHash, JSON.stringify(filePaths));
+
   const row = db
     .prepare(
-      `INSERT INTO code_refs (content_id, task_ref, commit_hash, file_paths)
-       VALUES (?, ?, ?, ?)
-       RETURNING id, content_id, task_ref, commit_hash, file_paths, created_at`,
+      `SELECT id, content_id, task_ref, commit_hash, file_paths, created_at
+       FROM code_refs WHERE content_id = ? AND commit_hash = ?`,
     )
-    .get(contentId, taskRef ?? null, commitHash, JSON.stringify(filePaths)) as {
+    .get(contentId, commitHash) as {
     id: number;
     content_id: number;
     task_ref: string | null;

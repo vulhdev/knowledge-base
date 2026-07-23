@@ -77,6 +77,13 @@ describe("createContent", () => {
     expect(result.title).toBeNull();
   });
 
+  it("throws a descriptive error when creating a second digest for the same feature", async () => {
+    await createContent(db, "ws", "ft", "digest", "first digest body");
+    await expect(createContent(db, "ws", "ft", "digest", "second digest body")).rejects.toThrow(
+      /digest already exists for feature/i,
+    );
+  });
+
   it("allows multiple doc rows in the same feature", async () => {
     await createContent(db, "ws", "ft", "doc", "db schema doc", "DB Schema");
     await createContent(db, "ws", "ft", "doc", "backend flow doc", "Backend Flow");

@@ -27,6 +27,12 @@ describe("error-log", () => {
     expect(logs[0].timestamp).toBeTruthy();
   });
 
+  it("inserts a warning with severity='warning' when specified", () => {
+    insertErrorLog(db, "wait_for_review", "Review not committed within 300s", "warning");
+    const logs = listErrorLogs(db);
+    expect(logs[0].severity).toBe("warning");
+  });
+
   it("lists entries in reverse-insert order (newest first)", () => {
     insertErrorLog(db, "tool_a", "first");
     insertErrorLog(db, "tool_b", "second");

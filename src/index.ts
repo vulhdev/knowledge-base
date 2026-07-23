@@ -290,7 +290,9 @@ server.tool(
       const result = await waitForReview(db, content_id, timeout_seconds);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "wait_for_review", err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      const isTimeout = msg.includes("not committed within");
+      insertErrorLog(db, "wait_for_review", msg, isTimeout ? "warning" : "error");
       return errorContent(err);
     }
   },

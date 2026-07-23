@@ -46,9 +46,11 @@ describe("attachCodeRef", () => {
     expect(result.commit_hash).toBe("bbb0002");
   });
 
-  it("throws on duplicate (content_id, commit_hash)", () => {
-    attachCodeRef(db, contentId, "abc1234", [{ path: "src/foo.ts" }]);
-    expect(() => attachCodeRef(db, contentId, "abc1234", [{ path: "src/bar.ts" }])).toThrow();
+  it("is idempotent — calling with same (content_id, commit_hash) returns the existing row", () => {
+    const first = attachCodeRef(db, contentId, "abc1234", [{ path: "src/foo.ts" }], "Task 1");
+    const second = attachCodeRef(db, contentId, "abc1234", [{ path: "src/bar.ts" }], "Task 2");
+    expect(second.id).toBe(first.id);
+    expect(second.file_paths).toEqual([{ path: "src/foo.ts" }]);
   });
 
   it("round-trips file_paths including optional start/end", () => {

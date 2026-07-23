@@ -96,6 +96,17 @@ export async function createContent(
   db.prepare("INSERT OR IGNORE INTO features (workspace_id, name) VALUES (?, ?)").run(ws.id, feature);
   const ft = db.prepare("SELECT id FROM features WHERE workspace_id = ? AND name = ?").get(ws.id, feature) as { id: number };
 
+  if (type === "digest") {
+    const existing = db
+      .prepare("SELECT id FROM contents WHERE feature_id = ? AND type = 'digest'")
+      .get(ft.id) as { id: number } | undefined;
+    if (existing) {
+      throw new Error(
+        `A digest already exists for feature '${feature}'. Use update_content (id=${existing.id}) to modify it.`,
+      );
+    }
+  }
+
   const { lastInsertRowid } = db
     .prepare("INSERT INTO contents (feature_id, type, title, body) VALUES (?, ?, ?, ?)")
     .run(ft.id, type, title ?? null, body);

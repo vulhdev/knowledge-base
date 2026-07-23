@@ -12,9 +12,10 @@ export function insertErrorLog(
   db: Database.Database,
   toolName: string,
   message: string,
+  severity: "error" | "warning" = "error",
 ): void {
   try {
-    db.prepare("INSERT INTO error_logs (tool_name, message) VALUES (?, ?)").run(toolName, message);
+    db.prepare("INSERT INTO error_logs (tool_name, message, severity) VALUES (?, ?, ?)").run(toolName, message, severity);
     pruneErrorLogs(db);
   } catch {
     console.error(`[error-log] ${toolName}: ${message}`);
