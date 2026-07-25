@@ -33,19 +33,30 @@ workspace → feature → content (idea | spec | plan | digest | doc)
 
 ## Setup
 
-### 1. Add the MCP server
+### 1. Install the plugin
 
-Run this once in any terminal:
+**Recommended — via the Claude Code plugin marketplace:**
+
+```
+/plugin marketplace add vulhdev/knowledge-base
+/plugin install knowledge-base
+```
+
+This registers the MCP server and installs the bundled Claude Code skills and agents in one step. Restart Claude Code afterward to pick them up.
+
+**Manual — MCP server only:**
 
 ```bash
 claude mcp add knowledge-base -- npx -y @vulhdev/knowledge-base
 ```
 
-That's it. On first run the server creates `~/.claude/knowledge-base/settings.json` and stores the database at `~/.claude/knowledge-base/knowledge-base.db`.
+Use this if you're not using plugin marketplaces, or want to install skills and agents yourself via `init` (step 2) instead of getting them bundled automatically.
+
+Either way, on first run the server creates `~/.claude/knowledge-base/settings.json` and stores the database at `~/.claude/knowledge-base/knowledge-base.db`.
 
 ### 2. (Optional) Initialize a workspace
 
-To link a Claude Code project to a specific workspace and install skills, run:
+To link a Claude Code project to a specific workspace, download the embedding model, and (if you used the manual install above) install skills, run:
 
 ```bash
 npx @vulhdev/knowledge-base init
