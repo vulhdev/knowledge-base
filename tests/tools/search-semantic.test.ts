@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
+import { runFtsSearch } from "../../src/tools/search-semantic.js";
 
 vi.mock("../../src/embedding/model.js", () => ({
   isModelReady: vi.fn().mockReturnValue(true),
@@ -197,5 +198,25 @@ describe("searchSemantic", () => {
     const page = await searchSemantic(db, "zebraftsterm", "ws-title");
     expect(page.results.length).toBeGreaterThan(0);
     expect(page.results[0].title).toBe("zebraftsterm feature");
+  });
+
+  it("AND join: multi-word query matches only docs containing all tokens", async () => {
+    const idFull    = (await createContent(db, "ws-and", "feat", "doc", "conflict detection algorithm")).id;
+    const idPartial = (await createContent(db, "ws-and", "feat", "doc", "conflict resolution strategy")).id;
+    const idOther   = (await createContent(db, "ws-and", "feat", "doc", "anomaly detection system")).id;
+
+    const ids = runFtsSearch(db, "conflict detection", [], [], 10);
+    expect(ids).toContain(idFull);
+    expect(ids).not.toContain(idPartial);
+    expect(ids).not.toContain(idOther);
+  });
+
+  it("AND join: falls back to OR when no doc contains all tokens", async () => {
+    const idApple  = (await createContent(db, "ws-fallback", "feat", "doc", "apple tree orchard")).id;
+    const idBanana = (await createContent(db, "ws-fallback", "feat", "doc", "banana split dessert")).id;
+
+    const ids = runFtsSearch(db, "apple banana", [], [], 10);
+    expect(ids).toContain(idApple);
+    expect(ids).toContain(idBanana);
   });
 });

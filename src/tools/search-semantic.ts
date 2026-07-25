@@ -137,7 +137,7 @@ export async function searchSemantic(
   }
 }
 
-function runFtsSearch(
+export function runFtsSearch(
   db: Database.Database,
   query: string,
   conditions: string[],
@@ -151,7 +151,7 @@ function runFtsSearch(
 
   if (tokens.length === 0) return [];
 
-  const ftsQuery = tokens.join(" OR ");
+  const andQuery = tokens.length === 1 ? tokens[0] : tokens.join(" AND ");
 
   let sql = `
     SELECT c.id
@@ -167,7 +167,12 @@ function runFtsSearch(
   sql += ` ORDER BY bm25(contents_fts, 5.0, 1.0) LIMIT ${limit}`;
 
   try {
-    return (db.prepare(sql).all(ftsQuery, ...filterParams) as { id: number }[]).map(r => r.id);
+    const stmt = db.prepare(sql);
+    const andResults = (stmt.all(andQuery, ...filterParams) as { id: number }[]).map(r => r.id);
+    if (andResults.length > 0 || tokens.length === 1) return andResults;
+    // AND returned nothing — fall back to OR to preserve recall
+    const orQuery = tokens.join(" OR ");
+    return (stmt.all(orQuery, ...filterParams) as { id: number }[]).map(r => r.id);
   } catch {
     return [];
   }
