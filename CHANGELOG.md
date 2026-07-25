@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.7] — 2026-07-25
+
+### Added
+- **Claude Code marketplace catalog** — added `.claude-plugin/marketplace.json` to declare the plugin for the Claude Code plugin marketplace, enabling discovery and installation via the marketplace catalog
+
 ## [1.16.6] — 2026-07-25
 
 ### Added
