@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.6] — 2026-07-25
+
+### Added
+- **`update_content`: conflict detection on edits** — `update_content` now runs the same `detectConflicts` pipeline (ANN similarity + LLM sampling) as `create_content` after recomputing the embedding for the new body, and returns a `conflicts[]` array in the response (same shape as `create_content`); previously conflicts introduced by editing an existing doc were never surfaced
+
+### Changed
+- **`search_semantic`: AND-first FTS matching with OR fallback** — multi-token full-text queries now require all tokens to match (`AND`) for higher precision, and automatically fall back to the previous `OR` behavior when the `AND` query returns zero results, preserving recall when no single doc contains every token
+
+### Fixed
+- **`search_semantic`: `has_code_refs` now populated correctly** — was hardcoded to `false` for every result; now computed via an `EXISTS` subquery against `code_refs`, matching the logic already used by `get_content`
+- **Missing index on `contents.feature_id`** — SQLite does not create implicit indexes for FK columns, so every read tool (`list_contents`, `search_semantic`, `get_content`, ...) was doing a full table scan on `contents` when joining to `features`; added via a new guarded migration
+- **`update_content`: TypeScript build error from `has_code_refs` type collision** — casting the raw DB row directly to `Content & { has_code_refs: number }` collapsed to `never` because `Content.has_code_refs` is `boolean`; introduced a local `RawRow` type (same pattern already used in `search-semantic.ts`) to keep the cast valid
+
 ## [1.16.5] — 2026-07-23
 
 ### Fixed
