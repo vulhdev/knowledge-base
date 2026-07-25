@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.8] — 2026-07-26
+
+### Fixed
+- **Plugin marketplace install now actually starts the server** — `.claude-plugin/plugin.json` launched the MCP server via `node ${CLAUDE_PLUGIN_ROOT}/dist/index.js`, but `dist/` is gitignored and never committed, so a fresh install via `/plugin marketplace add` cloned a repo without that file and the server failed to start; now runs via `npx -y @vulhdev/knowledge-base@latest` against the published npm package instead. Also drops the hardcoded `DB_PATH` env var, which overrode the path written by `knowledge-base init` on every startup.
+
+### Changed
+- **README: documented the plugin marketplace install path** — added `/plugin marketplace add` + `/plugin install` as the recommended setup method, alongside the existing manual `claude mcp add` instructions
+
 ## [1.16.7] — 2026-07-25
 
 ### Added
