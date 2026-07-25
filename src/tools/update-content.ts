@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
 import type { Content, ContentType, ConflictResult, UpdateContentResult } from "../types.js";
+
+type RawRow = Omit<Content, "has_code_refs"> & { has_code_refs: number };
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 
@@ -48,7 +50,7 @@ export async function updateContent(
        JOIN workspaces w ON f.workspace_id = w.id
        WHERE c.id = ?`,
     )
-    .get(id) as Content & { has_code_refs: number };
+    .get(id) as RawRow;
 
   let conflicts: ConflictResult[] = [];
   if (requestSampling && embeddingBlob) {
