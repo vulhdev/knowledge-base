@@ -72,6 +72,9 @@ export function applySchema(db: Database.Database): void {
 
     CREATE UNIQUE INDEX IF NOT EXISTS uq_feature_digest
       ON contents(feature_id) WHERE type = 'digest';
+
+    CREATE INDEX IF NOT EXISTS idx_contents_feature_id
+      ON contents(feature_id);
   `);
 
   db.exec(FTS_AND_TRIGGERS);
