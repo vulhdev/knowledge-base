@@ -1,0 +1,15 @@
+{
+  "$schema": "https://code.claude.com/schemas/marketplace.json",
+  "name": "knowledge-base-marketplace",
+  "version": "1.0.0",
+  "description": "Persistent document storage MCP plugin for Claude Code",
+  "owner": { "name": "vulhdev" },
+  "plugins": [
+    {
+      "name": "knowledge-base",
+      "description": "Persistent document storage with SQLite, semantic search, and inline review",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

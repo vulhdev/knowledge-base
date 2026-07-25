@@ -1,6 +1,7 @@
 # Claude Code
 CLAUDE.md
 docs/
+.claude/skills/
 
 # Dependencies
 node_modules/
