@@ -91,16 +91,18 @@ server.tool(
 
 server.tool(
   "list_contents",
-  "Lists documents in a workspace. Optionally filter by feature and/or type.",
+  "Lists documents in a workspace. Optionally filter by feature and/or type. Supports pagination via limit/offset.",
   {
     workspace: z.string().min(1).describe("Workspace to list documents from"),
     feature: z.string().optional().describe("Filter to a specific feature"),
     type: contentTypeSchema.optional().describe("Filter by type. Suggested: idea | spec | plan | digest | doc. Any non-empty string is accepted."),
+    limit: z.number().int().positive().max(200).default(50).describe("Max results to return (1–200, default 50)"),
+    offset: z.number().int().min(0).default(0).describe("Skip first N results (for pagination)"),
   },
-  async ({ workspace, feature, type }) => {
+  async ({ workspace, feature, type, limit, offset }) => {
     try {
-      const results = listContents(db, workspace, feature, type);
-      return { content: [{ type: "text", text: toText(results) }] };
+      const result = listContents(db, workspace, feature, type, limit, offset);
+      return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       insertErrorLog(db, "list_contents", err instanceof Error ? err.message : String(err));
       return errorContent(err);

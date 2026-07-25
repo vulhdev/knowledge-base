@@ -22,6 +22,14 @@ export type SearchPage = {
   limit: number;
 };
 
+export type ListPage = {
+  results: Content[];
+  has_more: boolean;
+  total: number;
+  offset: number;
+  limit: number;
+};
+
 export type ConflictType = "semantic_contradiction" | "risk_shadow";
 
 export type ConflictResult = {

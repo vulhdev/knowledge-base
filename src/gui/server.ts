@@ -58,7 +58,7 @@ export function createApp(db: Database.Database) {
       res.status(404).send(`<p>Feature not found: ${workspace}/${feature}</p>`);
       return;
     }
-    const contents = listContents(db, workspace, feature);
+    const { results: contents } = listContents(db, workspace, feature);
     res.send(renderContentList(workspace, feature, contents));
   });
 

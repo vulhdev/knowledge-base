@@ -39,14 +39,14 @@ describe("digest type", () => {
   it("list_contents without type filter does not return digest rows", async () => {
     await createContent(db, "ws", "ft", "idea", "an idea");
     await createContent(db, "ws", "ft", "digest", "## TL;DR\nA digest");
-    const results = listContents(db, "ws");
+    const { results } = listContents(db, "ws");
     expect(results.every((r) => r.type !== "digest")).toBe(true);
   });
 
   it("list_contents with type='digest' returns only digest rows", async () => {
     await createContent(db, "ws", "ft", "idea", "an idea");
     await createContent(db, "ws", "ft", "digest", "## TL;DR\nA digest");
-    const results = listContents(db, "ws", undefined, "digest");
+    const { results } = listContents(db, "ws", undefined, "digest");
     expect(results).toHaveLength(1);
     expect(results[0].type).toBe("digest");
   });
