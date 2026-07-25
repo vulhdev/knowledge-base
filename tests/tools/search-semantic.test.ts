@@ -160,6 +160,31 @@ describe("searchSemantic", () => {
     expect(page.results[0].id).toBe(recentId);
   });
 
+  it("has_code_refs is true for results that have attached code refs", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    const content = await createContent(db, "proj-refs", "feat", "doc", "unique coderef sentinel document");
+    db.prepare(
+      "INSERT INTO code_refs (content_id, commit_hash, file_paths) VALUES (?, ?, ?)",
+    ).run(content.id, "deadbeef01", JSON.stringify([{ path: "src/foo.ts", start: 1, end: 5 }]));
+
+    const page = await searchSemantic(db, "unique coderef sentinel", "proj-refs");
+    expect(page.results.length).toBeGreaterThan(0);
+    const hit = page.results.find(r => r.id === content.id);
+    expect(hit).toBeDefined();
+    expect(hit!.has_code_refs).toBe(true);
+  });
+
+  it("has_code_refs is false for results without any code refs", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    const content = await createContent(db, "proj-norefs", "feat", "doc", "unique noref sentinel document");
+
+    const page = await searchSemantic(db, "unique noref sentinel", "proj-norefs");
+    expect(page.results.length).toBeGreaterThan(0);
+    const hit = page.results.find(r => r.id === content.id);
+    expect(hit).toBeDefined();
+    expect(hit!.has_code_refs).toBe(false);
+  });
+
   it("title match ranks above equal-body doc without title match", async () => {
     const { searchSemantic } = await import("../../src/tools/search-semantic.js");
     // All vec embeddings are identical (mocked). The unique keyword "zebraftsterm" appears

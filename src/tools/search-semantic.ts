@@ -16,7 +16,7 @@ function recencyFactor(updatedAt: string): number {
   return 1 / (1 + ageDays / RECENCY_HALF_LIFE_DAYS);
 }
 
-type RawRow = Omit<SearchResult, "has_code_refs" | "score">;
+type RawRow = Omit<SearchResult, "has_code_refs" | "score"> & { has_code_refs: number };
 
 export async function searchSemantic(
   db: Database.Database,
@@ -59,7 +59,8 @@ export async function searchSemantic(
     // --- Vector search (ANN) ---
     let vecSql = `
       SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.title, c.body,
-             c.created_at, c.updated_at
+             c.created_at, c.updated_at,
+             EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
       FROM vec_contents v
       JOIN contents c ON v.rowid = c.id
       JOIN features f ON c.feature_id = f.id
@@ -89,7 +90,8 @@ export async function searchSemantic(
       const placeholders = ftsOnlyIds.map(() => "?").join(",");
       const extraRows = db.prepare(`
         SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.title, c.body,
-               c.created_at, c.updated_at
+               c.created_at, c.updated_at,
+               EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
         FROM contents c
         JOIN features f ON c.feature_id = f.id
         JOIN workspaces w ON f.workspace_id = w.id
@@ -115,7 +117,7 @@ export async function searchSemantic(
         (ftsRank !== undefined ? 1 / (RRF_K + ftsRank) : 0);
 
       const boostedScore = rrfScore * (1 + RECENCY_WEIGHT * recencyFactor(content.updated_at));
-      scored.push({ ...content, has_code_refs: false, score: boostedScore });
+      scored.push({ ...content, has_code_refs: content.has_code_refs === 1, score: boostedScore });
     }
 
     scored.sort((a, b) => b.score - a.score);
