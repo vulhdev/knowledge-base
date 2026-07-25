@@ -131,7 +131,7 @@ server.tool(
 
 server.tool(
   "update_content",
-  "Updates the body (and optionally the type and title) of an existing document by its numeric ID. Returns the full updated document.",
+  "Updates the body (and optionally the type and title) of an existing document by its numeric ID. Returns the full updated document including a conflicts array (same format as create_content) when the new body contradicts or shadows other documents in the workspace.",
   {
     id: z.number().int().positive().describe("Document ID returned by create_content or search_content"),
     body: z.string().min(1).describe("New document body text (replaces existing body)"),
@@ -140,7 +140,7 @@ server.tool(
   },
   async ({ id, body, type, title }) => {
     try {
-      const result = await updateContent(db, id, body, type, title);
+      const result = await updateContent(db, id, body, type, title, requestSampling);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       insertErrorLog(db, "update_content", err instanceof Error ? err.message : String(err));

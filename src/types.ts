@@ -70,6 +70,10 @@ export type CreateContentResult = {
   suggested_parents: SuggestedParent[];
 };
 
+export type UpdateContentResult = Content & {
+  conflicts: ConflictResult[];
+};
+
 export type CodeRefFile = {
   path: string;
   start?: number;
