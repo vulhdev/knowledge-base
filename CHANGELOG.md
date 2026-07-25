@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.9] — 2026-07-26
+
+### Changed
+- **`list_contents`: pagination via `limit`/`offset`** — the tool now returns a `ListPage` object (`results`, `has_more`, `total`, `offset`, `limit`) instead of an unbounded array; defaults to 50 results per page (max 200) with a `COUNT` query for an accurate total, preventing context overflow when a feature has hundreds of documents
+
 ## [1.16.8] — 2026-07-26
 
 ### Fixed
