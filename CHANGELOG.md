@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.10] — 2026-07-31
+
+### Added
+- **Clickable document links in terminal** — MCP tool outputs (`create_content`, `get_content`, `list_contents`, `search_semantic`, `update_content`, `derive_content`) now include a `gui_url` field (`http://localhost:57891/content/:id`) and append OSC 8 hyperlinks so document references like `idea#123` are Cmd+clickable in iTerm2, VS Code terminal, Warp, and macOS Terminal.app without showing the raw URL
+- **GUI `/content/:id` redirect** — short URL `http://localhost:57891/content/123` looks up the document's workspace and feature and redirects to the full `/ws/:workspace/:feature/:id` page, so links stay stable even if a document's feature is renamed
+- **CLAUDE.md instruction for doc references** — `npx @vulhdev/knowledge-base init` now writes an instruction telling Claude to append `gui_url` when referencing documents by ID, making links Cmd+clickable in terminal responses
+
 ## [1.16.9] — 2026-07-26
 
 ### Changed
