@@ -51,6 +51,38 @@ function errorContent(err: unknown) {
   return { content: [{ type: "text" as const, text: `Error: ${message}` }], isError: true };
 }
 
+const GUI_PORT = Number(process.env.KB_GUI_PORT ?? 57891);
+
+function contentUrl(id: number): string {
+  return `http://localhost:${GUI_PORT}/content/${id}`;
+}
+
+// OSC 8 hyperlink — shows `label` as clickable text in terminals that support it
+function osc8(id: number, label: string): string {
+  const url = contentUrl(id);
+  return `\x1b]8;;${url}\x07${label}\x1b]8;;\x07`;
+}
+
+function formatSingle(item: object): string {
+  const { id, type } = item as { id: number; type: string };
+  const withUrl = { ...(item as object), gui_url: contentUrl(id) };
+  const json = JSON.stringify(withUrl, null, 2);
+  return `${json}\n\n${osc8(id, `${type}#${id}`)}`;
+}
+
+type Linkable = { id: number; type: string; title?: string | null };
+
+function formatPage(page: object, items: Linkable[]): string {
+  const resultsWithUrl = items.map(r => ({ ...r, gui_url: contentUrl(r.id) }));
+  const enriched = { ...(page as Record<string, unknown>), results: resultsWithUrl };
+  const json = JSON.stringify(enriched, null, 2);
+  if (items.length === 0) return json;
+  const links = items
+    .map(r => `  ${osc8(r.id, `${r.type}#${r.id}`)}${r.title ? `  ${r.title}` : ""}`)
+    .join("\n");
+  return `${json}\n\n${links}`;
+}
+
 server.tool(
   "create_content",
   "Creates a document in the knowledge base. Auto-creates the workspace and feature if they don't exist.",
@@ -64,7 +96,7 @@ server.tool(
   async ({ workspace, feature, type, title, body }) => {
     try {
       const result = await createContent(db, workspace, feature, type, body, title, requestSampling);
-      return { content: [{ type: "text", text: toText(result) }] };
+      return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "create_content", err instanceof Error ? err.message : String(err));
       return errorContent(err);
@@ -81,7 +113,7 @@ server.tool(
   async ({ id }) => {
     try {
       const result = getContent(db, id);
-      return { content: [{ type: "text", text: toText(result) }] };
+      return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "get_content", err instanceof Error ? err.message : String(err));
       return errorContent(err);
@@ -102,7 +134,7 @@ server.tool(
   async ({ workspace, feature, type, limit, offset }) => {
     try {
       const result = listContents(db, workspace, feature, type, limit, offset);
-      return { content: [{ type: "text", text: toText(result) }] };
+      return { content: [{ type: "text", text: formatPage(result, result.results) }] };
     } catch (err) {
       insertErrorLog(db, "list_contents", err instanceof Error ? err.message : String(err));
       return errorContent(err);
@@ -123,7 +155,7 @@ server.tool(
   async ({ query, workspace, type, limit, offset }) => {
     try {
       const page = await searchSemantic(db, query, workspace, type, limit, offset);
-      return { content: [{ type: "text", text: toText(page) }] };
+      return { content: [{ type: "text", text: formatPage(page, page.results) }] };
     } catch (err) {
       insertErrorLog(db, "search_semantic", err instanceof Error ? err.message : String(err));
       return errorContent(err);
@@ -143,7 +175,7 @@ server.tool(
   async ({ id, body, type, title }) => {
     try {
       const result = await updateContent(db, id, body, type, title, requestSampling);
-      return { content: [{ type: "text", text: toText(result) }] };
+      return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "update_content", err instanceof Error ? err.message : String(err));
       return errorContent(err);
@@ -198,7 +230,7 @@ server.tool(
   async ({ parent_id, type, body, title }) => {
     try {
       const result = await deriveContent(db, parent_id, type, body, title);
-      return { content: [{ type: "text", text: toText(result) }] };
+      return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "derive_content", err instanceof Error ? err.message : String(err));
       return errorContent(err);

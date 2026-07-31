@@ -78,6 +78,20 @@ export function createApp(db: Database.Database) {
     }
   });
 
+  app.get("/content/:id", (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(404).send("<p>Not found</p>");
+      return;
+    }
+    try {
+      const content = getContent(db, id);
+      res.redirect(`/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}/${id}`);
+    } catch {
+      res.status(404).send("<p>Content not found</p>");
+    }
+  });
+
   app.get("/ws/:workspace/:feature/:id/review", (req, res) => {
     const id = Number(req.params.id);
     const reviewId = Number(req.query.review_id);

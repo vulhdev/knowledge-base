@@ -35,6 +35,7 @@ This project is linked to workspace **${workspace}**. Use the \`knowledge-base\`
 - **After creating a git commit** — if the current session has an active plan doc, call \`attach_code_ref\` to link the commit to that plan. Read the session context to find the plan's \`content_id\` and the matching \`task_ref\` (e.g. the task description that was just implemented), then call \`attach_code_ref(content_id, commit_hash, file_paths, task_ref)\`. Skip silently if no plan doc is active in the session.
 - **Before starting a bug fix**, ask: *"Search knowledge-base for prior context first?"* If user agrees, call \`search_semantic(query="...", workspace="${workspace}")\`.
 - **Before starting a new feature**, silently call \`list_contents(workspace="${workspace}")\` and surface any relevant prior docs if found.
+- **When referencing a document by ID** — always include the \`gui_url\` from the tool result to make it Cmd+clickable. Format: \`type#id (gui_url)\`. Example: \`idea#123 (http://localhost:57891/content/123)\`.
 
 ## Never Do
 
