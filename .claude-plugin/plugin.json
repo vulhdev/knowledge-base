@@ -1,6 +1,6 @@
 {
   "name": "knowledge-base",
-  "version": "1.16.10",
+  "version": "1.16.11",
   "description": "Persistent document storage for Claude Code",
   "mcpServers": {
     "knowledge-base": {
