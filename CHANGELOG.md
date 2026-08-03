@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.11] — 2026-08-03
+
+### Changed
+- **CLAUDE.md: never include KB doc IDs in commits, PRs, or comments** — `npx @vulhdev/knowledge-base init` now writes a rule explicitly forbidding knowledge-base document IDs from appearing in git commit messages, PR descriptions, or code comments, since these numeric IDs are internal to the tool and carry no meaning outside it
+
 ## [1.16.10] — 2026-07-31
 
 ### Added
