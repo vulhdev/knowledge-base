@@ -42,6 +42,7 @@ This project is linked to workspace **${workspace}**. Use the \`knowledge-base\`
 - NEVER save without user confirmation (\`search_semantic\` and \`list_contents\` are always safe to call).
 - NEVER create a duplicate — if a doc on the same topic exists, use \`update_content\` instead.
 - NEVER call \`create_content\` directly for user-initiated saves — always invoke \`/knowledge-base-create\` so the full save flow runs (conflict detection, link suggestion).
+- NEVER include knowledge-base document IDs in git commit messages, PR descriptions, or code comments — these IDs are internal and meaningless outside the knowledge-base tool.
 
 ## Skills & MCP Tools
 
