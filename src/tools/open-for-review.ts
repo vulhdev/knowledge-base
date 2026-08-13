@@ -17,8 +17,7 @@ export function openForReview(
   const review = createReview(db, contentId);
 
   const ws = encodeURIComponent(content.workspace);
-  const feat = encodeURIComponent(content.feature);
-  const url = `http://localhost:${port}/ws/${ws}/${feat}/${contentId}/review?review_id=${review.id}`;
+  const url = `http://localhost:${port}/ws/${ws}/doc/${contentId}/review?review_id=${review.id}`;
 
   return {
     review_id: review.id,

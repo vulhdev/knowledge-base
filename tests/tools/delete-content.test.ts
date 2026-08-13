@@ -18,17 +18,17 @@ describe("deleteContent", () => {
   });
 
   it("returns the deleted document", async () => {
-    const created = await createContent(db, "proj", "auth", "spec", "spec body");
+    const created = await createContent(db, "proj", ["auth"], "spec", "spec body");
     const deleted = deleteContent(db, created.id);
     expect(deleted.id).toBe(created.id);
     expect(deleted.workspace).toBe("proj");
-    expect(deleted.feature).toBe("auth");
+    expect(deleted.features).toEqual(["auth"]);
     expect(deleted.type).toBe("spec");
     expect(deleted.body).toBe("spec body");
   });
 
   it("removes the document from the database", async () => {
-    const created = await createContent(db, "proj", "auth", "idea", "some idea");
+    const created = await createContent(db, "proj", ["auth"], "idea", "some idea");
     deleteContent(db, created.id);
     expect(() => getContent(db, created.id)).toThrow(/not found/i);
   });
@@ -38,8 +38,8 @@ describe("deleteContent", () => {
   });
 
   it("deletes only the targeted document when multiple exist", async () => {
-    const a = await createContent(db, "ws", "ft", "idea", "idea a");
-    const b = await createContent(db, "ws", "ft", "plan", "plan b");
+    const a = await createContent(db, "ws", ["ft"], "idea", "idea a");
+    const b = await createContent(db, "ws", ["ft"], "plan", "plan b");
     deleteContent(db, a.id);
     expect(() => getContent(db, a.id)).toThrow(/not found/i);
     expect(getContent(db, b.id).body).toBe("plan b");

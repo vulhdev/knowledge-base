@@ -13,8 +13,10 @@ function seed(db: Database.Database, workspace = "ws", feature = "ft"): number {
 }
 
 function insert(db: Database.Database, featureId: number, type: string, body: string): number {
-  const { lastInsertRowid } = db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, ?, ?)").run(featureId, type, body);
-  return Number(lastInsertRowid);
+  const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run(type, body);
+  const id = Number(lastInsertRowid);
+  db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(id, featureId);
+  return id;
 }
 
 describe("getLineage", () => {
@@ -109,7 +111,7 @@ describe("getLineage", () => {
     expect("body" in result.root).toBe(false);
     expect(result.root.id).toBeTruthy();
     expect(result.root.workspace).toBe("ws");
-    expect(result.root.feature).toBe("ft");
+    expect(result.root.features).toContain("ft");
     expect(result.root.type).toBe("idea");
   });
 

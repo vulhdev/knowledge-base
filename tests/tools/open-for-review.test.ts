@@ -15,14 +15,14 @@ describe("openForReview", () => {
 
   beforeEach(async () => {
     db = createTestDb();
-    const c = await createContent(db, "my-ws", "my-feat", "spec", "body text", "My Spec");
+    const c = await createContent(db, "my-ws", ["my-feat"], "spec", "body text", "My Spec");
     contentId = c.id;
   });
 
   it("returns review_id, url and note", () => {
     const result = openForReview(db, contentId);
     expect(result.review_id).toBeTypeOf("number");
-    expect(result.url).toContain(`/ws/my-ws/my-feat/${contentId}/review`);
+    expect(result.url).toContain(`/ws/my-ws/doc/${contentId}/review`);
     expect(result.note).toContain("npx @vulhdev/knowledge-base gui");
   });
 

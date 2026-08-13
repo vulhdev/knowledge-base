@@ -17,26 +17,26 @@ describe("updateContent", () => {
   });
 
   it("updates body and returns the full document", async () => {
-    const created = await createContent(db, "proj", "auth", "idea", "original body");
+    const created = await createContent(db, "proj", ["auth"], "idea", "original body");
     const result = await updateContent(db, created.id, "revised body");
     expect(result.id).toBe(created.id);
     expect(result.body).toBe("revised body");
     expect(result.type).toBe("idea");
     expect(result.workspace).toBe("proj");
-    expect(result.feature).toBe("auth");
+    expect(result.features).toEqual(["auth"]);
     expect(result.created_at).toBe(created.created_at);
     expect(result.updated_at).toBeTruthy();
   });
 
   it("updates body and type when type is provided", async () => {
-    const created = await createContent(db, "proj", "auth", "idea", "original body");
+    const created = await createContent(db, "proj", ["auth"], "idea", "original body");
     const result = await updateContent(db, created.id, "now a spec", "spec");
     expect(result.type).toBe("spec");
     expect(result.body).toBe("now a spec");
   });
 
   it("preserves existing type when type is not provided", async () => {
-    const created = await createContent(db, "proj", "auth", "plan", "plan body");
+    const created = await createContent(db, "proj", ["auth"], "plan", "plan body");
     const result = await updateContent(db, created.id, "updated plan body");
     expect(result.type).toBe("plan");
   });
@@ -46,43 +46,43 @@ describe("updateContent", () => {
   });
 
   it("throws for empty body", async () => {
-    const created = await createContent(db, "proj", "auth", "idea", "body");
+    const created = await createContent(db, "proj", ["auth"], "idea", "body");
     await expect(updateContent(db, created.id, "")).rejects.toThrow(/body must not be empty/);
     await expect(updateContent(db, created.id, "   ")).rejects.toThrow(/body must not be empty/);
   });
 
   it("accepts custom type string", async () => {
-    const created = await createContent(db, "proj", "auth", "idea", "body");
+    const created = await createContent(db, "proj", ["auth"], "idea", "body");
     const result = await updateContent(db, created.id, "body", "issue" as any);
     expect(result.type).toBe("issue");
   });
 
   it("updates title when provided", async () => {
-    const created = await createContent(db, "proj", "auth", "doc", "body", "Old Title");
+    const created = await createContent(db, "proj", ["auth"], "doc", "body", "Old Title");
     const result = await updateContent(db, created.id, "body", undefined, "New Title");
     expect(result.title).toBe("New Title");
   });
 
   it("preserves existing title when title is omitted", async () => {
-    const created = await createContent(db, "proj", "auth", "doc", "body", "Keep This");
+    const created = await createContent(db, "proj", ["auth"], "doc", "body", "Keep This");
     const result = await updateContent(db, created.id, "updated body");
     expect(result.title).toBe("Keep This");
   });
 
   it("title is null when never set and not updated", async () => {
-    const created = await createContent(db, "proj", "auth", "idea", "body");
+    const created = await createContent(db, "proj", ["auth"], "idea", "body");
     const result = await updateContent(db, created.id, "updated body");
     expect(result.title).toBeNull();
   });
 
   it("accepts doc type", async () => {
-    const created = await createContent(db, "proj", "auth", "idea", "body");
+    const created = await createContent(db, "proj", ["auth"], "idea", "body");
     const result = await updateContent(db, created.id, "body", "doc");
     expect(result.type).toBe("doc");
   });
 
   it("FTS reflects new body after update", async () => {
-    const created = await createContent(db, "proj", "auth", "idea", "old keyword alphazulu");
+    const created = await createContent(db, "proj", ["auth"], "idea", "old keyword alphazulu");
     await updateContent(db, created.id, "new keyword betafox");
     const oldMatch = db.prepare("SELECT rowid FROM contents_fts WHERE contents_fts MATCH ?").all("alphazulu");
     const newMatch = db.prepare("SELECT rowid FROM contents_fts WHERE contents_fts MATCH ?").all("betafox");
@@ -91,7 +91,7 @@ describe("updateContent", () => {
   });
 
   it("always returns conflicts: [] when requestSampling is not provided", async () => {
-    const created = await createContent(db, "proj", "auth", "idea", "body");
+    const created = await createContent(db, "proj", ["auth"], "idea", "body");
     const result = await updateContent(db, created.id, "updated body");
     expect(result.conflicts).toEqual([]);
   });
@@ -101,9 +101,9 @@ describe("updateContent", () => {
     vi.mocked(isModelReady).mockReturnValue(true);
     vi.mocked(getEmbedding).mockResolvedValue(new Float32Array(384).fill(0.1));
 
-    const created = await createContent(db, "proj", "auth", "idea", "body");
+    const created = await createContent(db, "proj", ["auth"], "idea", "body");
 
-    const mockConflict = [{ content_id: 999, feature: "auth", type: "semantic_contradiction", reason: "contradicts" }];
+    const mockConflict = [{ content_id: 999, features: ["auth"], type: "semantic_contradiction", reason: "contradicts" }];
     const requestSampling = vi.fn().mockResolvedValue(JSON.stringify(mockConflict));
 
     // detectConflicts needs candidates — without real ANN matches it returns []
@@ -115,7 +115,7 @@ describe("updateContent", () => {
   });
 
   it("returns conflicts: [] when model is not ready (no embedding)", async () => {
-    const created = await createContent(db, "proj", "auth", "idea", "body");
+    const created = await createContent(db, "proj", ["auth"], "idea", "body");
     const requestSampling = vi.fn().mockResolvedValue("[]");
     const result = await updateContent(db, created.id, "updated body", undefined, undefined, requestSampling);
     expect(result.conflicts).toEqual([]);
@@ -127,7 +127,7 @@ describe("updateContent", () => {
     vi.mocked(isModelReady).mockReturnValue(true);
     vi.mocked(getEmbedding).mockResolvedValue(new Float32Array(384).fill(0.1));
 
-    const created = await createContent(db, "proj", "auth", "idea", "body");
+    const created = await createContent(db, "proj", ["auth"], "idea", "body");
     const requestSampling = vi.fn().mockRejectedValue(new Error("sampling failed"));
 
     const result = await updateContent(db, created.id, "updated body", undefined, undefined, requestSampling);

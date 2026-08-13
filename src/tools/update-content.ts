@@ -3,8 +3,9 @@ import type { Content, ContentType, ConflictResult, UpdateContentResult } from "
 
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
+import { fetchFeatures } from "./_helpers.js";
 
-type RawRow = Omit<Content, "has_code_refs"> & { has_code_refs: number };
+type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
 
 export async function updateContent(
   db: Database.Database,
@@ -44,23 +45,27 @@ export async function updateContent(
 
   const row = db
     .prepare(
-      `SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.title, c.body, c.created_at, c.updated_at,
+      `SELECT c.id, w.name AS workspace, c.type, c.title, c.body, c.created_at, c.updated_at,
               EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
        FROM contents c
-       JOIN features f ON c.feature_id = f.id
+       JOIN content_features cf ON cf.content_id = c.id
+       JOIN features f ON cf.feature_id = f.id
        JOIN workspaces w ON f.workspace_id = w.id
-       WHERE c.id = ?`,
+       WHERE c.id = ?
+       LIMIT 1`,
     )
     .get(id) as RawRow;
+
+  const features = fetchFeatures(db, id);
 
   let conflicts: ConflictResult[] = [];
   if (requestSampling && embeddingBlob) {
     try {
-      conflicts = await detectConflicts(db, id, row.workspace, row.feature, row.type, body, embeddingBlob, requestSampling);
+      conflicts = await detectConflicts(db, id, row.workspace, features, row.type, body, embeddingBlob, requestSampling);
     } catch {
       // conflict detection failure must not prevent content update
     }
   }
 
-  return { ...row, has_code_refs: row.has_code_refs === 1, conflicts };
+  return { ...row, features, has_code_refs: row.has_code_refs === 1, conflicts };
 }

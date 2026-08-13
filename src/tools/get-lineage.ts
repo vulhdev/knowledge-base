@@ -1,16 +1,26 @@
 import type Database from "better-sqlite3";
 import type { LinkedContent, LineageResult } from "../types.js";
+import { fetchFeatures } from "./_helpers.js";
 
-const SELECT_LINKED_CONTENT = `
-  SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.title
-  FROM contents c
-  JOIN features f ON c.feature_id = f.id
-  JOIN workspaces w ON f.workspace_id = w.id
-  WHERE c.id = ?
-`;
+function fetchLinkedContent(db: Database.Database, id: number): LinkedContent | undefined {
+  type RawRow = Omit<LinkedContent, "features">;
+  const row = db
+    .prepare(
+      `SELECT c.id, w.name AS workspace, c.type, c.title
+       FROM contents c
+       JOIN content_features cf ON cf.content_id = c.id
+       JOIN features f ON cf.feature_id = f.id
+       JOIN workspaces w ON f.workspace_id = w.id
+       WHERE c.id = ?
+       LIMIT 1`,
+    )
+    .get(id) as RawRow | undefined;
+  if (!row) return undefined;
+  return { ...row, features: fetchFeatures(db, id) };
+}
 
 export function getLineage(db: Database.Database, contentId: number): LineageResult {
-  const root = db.prepare(SELECT_LINKED_CONTENT).get(contentId) as LinkedContent | undefined;
+  const root = fetchLinkedContent(db, contentId);
   if (!root) throw new Error(`Content not found: id=${contentId}`);
 
   const ancestors = walkAncestors(db, contentId);
@@ -32,7 +42,8 @@ function walkAncestors(db: Database.Database, startId: number): LinkedContent[] 
     if (!parentRow || visited.has(parentRow.parent_id)) break;
 
     visited.add(parentRow.parent_id);
-    const ancestor = db.prepare(SELECT_LINKED_CONTENT).get(parentRow.parent_id) as LinkedContent;
+    const ancestor = fetchLinkedContent(db, parentRow.parent_id);
+    if (!ancestor) break;
     ancestors.push(ancestor);
     currentId = parentRow.parent_id;
   }
@@ -54,7 +65,8 @@ function walkDescendants(db: Database.Database, startId: number): LinkedContent[
     for (const { child_id } of children) {
       if (visited.has(child_id)) continue;
       visited.add(child_id);
-      const child = db.prepare(SELECT_LINKED_CONTENT).get(child_id) as LinkedContent;
+      const child = fetchLinkedContent(db, child_id);
+      if (!child) continue;
       descendants.push(child);
       queue.push(child_id);
     }

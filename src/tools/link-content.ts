@@ -12,9 +12,11 @@ export function linkContent(
     .prepare(
       `SELECT c.id, c.type, w.name AS workspace
        FROM contents c
-       JOIN features f ON c.feature_id = f.id
+       JOIN content_features cf ON cf.content_id = c.id
+       JOIN features f ON cf.feature_id = f.id
        JOIN workspaces w ON f.workspace_id = w.id
-       WHERE c.id = ?`,
+       WHERE c.id = ?
+       LIMIT 1`,
     )
     .get(parentId) as { id: number; type: string; workspace: string } | undefined;
 
@@ -24,9 +26,11 @@ export function linkContent(
     .prepare(
       `SELECT c.id, c.type, w.name AS workspace
        FROM contents c
-       JOIN features f ON c.feature_id = f.id
+       JOIN content_features cf ON cf.content_id = c.id
+       JOIN features f ON cf.feature_id = f.id
        JOIN workspaces w ON f.workspace_id = w.id
-       WHERE c.id = ?`,
+       WHERE c.id = ?
+       LIMIT 1`,
     )
     .get(childId) as { id: number; type: string; workspace: string } | undefined;
 
