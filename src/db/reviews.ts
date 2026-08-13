@@ -123,13 +123,15 @@ export function resolveReview(db: Database.Database, reviewId: number): Review {
 export function listContentsWithPendingReview(db: Database.Database): ContentWithReview[] {
   return db
     .prepare(
-      `SELECT DISTINCT c.id, c.title, c.type, w.name AS workspace, f.name AS feature
+      `SELECT c.id, c.title, c.type, w.name AS workspace, MIN(f.name) AS feature
        FROM contents c
-       JOIN features f ON f.id = c.feature_id
-       JOIN workspaces w ON w.id = f.workspace_id
+       JOIN content_features cf ON cf.content_id = c.id
+       JOIN features f ON cf.feature_id = f.id
+       JOIN workspaces w ON f.workspace_id = w.id
        JOIN reviews r ON r.content_id = c.id
        WHERE r.status = 'committed'
-       ORDER BY r.committed_at DESC`,
+       GROUP BY c.id, c.title, c.type, w.name
+       ORDER BY MAX(r.committed_at) DESC`,
     )
     .all() as ContentWithReview[];
 }

@@ -198,10 +198,11 @@ export function renderContentList(
 }
 
 export function renderContent(content: Content, lineage?: LineageResult): string {
+  const primaryFeature = content.features[0] ?? "";
   const crumb = `<p class="breadcrumb">
     <a href="/">Home</a> /
     <a href="/ws/${encodeURIComponent(content.workspace)}">${esc(content.workspace)}</a> /
-    <a href="/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}">${esc(content.feature)}</a> /
+    <a href="/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(primaryFeature)}">${esc(primaryFeature)}</a> /
     #${content.id}
   </p>`;
   const title = content.title ?? `#${content.id}`;
@@ -211,7 +212,7 @@ export function renderContent(content: Content, lineage?: LineageResult): string
   const contentArea = sidebar
     ? `<div class="content-layout">${mainContent}${sidebar}</div>`
     : mainContent;
-  const exportUrl = `/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}/${content.id}/export`;
+  const exportUrl = `/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(primaryFeature)}/${content.id}/export`;
   const escapedBody = JSON.stringify(content.body);
   const copyScript = `(function(b){navigator.clipboard.writeText(b).then(function(){var el=document.getElementById('copy-btn-${content.id}');el.textContent='Copied!';setTimeout(function(){el.textContent='Copy';},2000);})})(${escapedBody})`;
   const actions = `<span class="action-btns">
@@ -243,7 +244,7 @@ function renderLinkedSidebar(lineage: LineageResult): string {
   const { ancestors, descendants } = lineage;
   if (ancestors.length === 0 && descendants.length === 0) return "";
   const item = (c: LinkedContent) =>
-    `<li>${typeBadge(c.type)}&nbsp;<a href="/ws/${encodeURIComponent(c.workspace)}/${encodeURIComponent(c.feature)}/${c.id}">${esc(c.title ?? `#${c.id}`)}</a></li>`;
+    `<li>${typeBadge(c.type)}&nbsp;<a href="/ws/${encodeURIComponent(c.workspace)}/${encodeURIComponent(c.features[0] ?? "")}/${c.id}">${esc(c.title ?? `#${c.id}`)}</a></li>`;
   const parents = ancestors.length
     ? `<span class="section-label">PARENTS</span><ul>${ancestors.map(item).join("")}</ul>` : "";
   const children = descendants.length
@@ -262,12 +263,14 @@ export function renderSearchResults(
   }
   const rows = results
     .map(
-      (r) =>
-        `<tr>
-          <td><a href="/ws/${encodeURIComponent(r.workspace)}/${encodeURIComponent(r.feature)}/${r.id}">${esc(r.title ?? `#${r.id}`)}</a></td>
-          <td>${esc(r.workspace)} / ${esc(r.feature)}</td>
+      (r) => {
+        const feat = r.features[0] ?? "";
+        return `<tr>
+          <td><a href="/ws/${encodeURIComponent(r.workspace)}/${encodeURIComponent(feat)}/${r.id}">${esc(r.title ?? `#${r.id}`)}</a></td>
+          <td>${esc(r.workspace)} / ${esc(feat)}</td>
           <td>${typeBadge(r.type)}</td>
-        </tr>`,
+        </tr>`;
+      }
     )
     .join("\n");
   const body = `${heading}
@@ -308,16 +311,17 @@ export function renderReview(
   reviewId: number,
   comments: ReviewComment[] = [],
 ): string {
+  const primaryFeat = content.features[0] ?? "";
   const crumb = `<p class="breadcrumb">
     <a href="/">Home</a> /
     <a href="/ws/${encodeURIComponent(content.workspace)}">${esc(content.workspace)}</a> /
-    <a href="/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}">${esc(content.feature)}</a> /
-    <a href="/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}/${content.id}">#${content.id}</a> /
+    <a href="/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(primaryFeat)}">${esc(primaryFeat)}</a> /
+    <a href="/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(primaryFeat)}/${content.id}">#${content.id}</a> /
     Review
   </p>`;
   const title = content.title ?? `#${content.id}`;
   const renderedBody = parse(content.body) as string;
-  const commentsBasePath = `/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}/${content.id}/review/${reviewId}`;
+  const commentsBasePath = `/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(primaryFeat)}/${content.id}/review/${reviewId}`;
 
   const commentItems = comments.length
     ? comments

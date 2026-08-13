@@ -35,11 +35,13 @@ export function listRecentContents(db: Database.Database, limit = 5): RecentCont
     .prepare(
       `SELECT c.id, c.title, c.type,
          w.name AS workspace,
-         f.name AS feature,
+         MIN(f.name) AS feature,
          MAX(c.created_at, c.updated_at) AS touched_at
        FROM contents c
-       JOIN features f ON c.feature_id = f.id
+       JOIN content_features cf ON cf.content_id = c.id
+       JOIN features f ON cf.feature_id = f.id
        JOIN workspaces w ON f.workspace_id = w.id
+       GROUP BY c.id, c.title, c.type, w.name
        ORDER BY touched_at DESC
        LIMIT ?`,
     )
@@ -54,7 +56,8 @@ export function listWorkspaceSummaries(db: Database.Database): WorkspaceSummary[
          MAX(c.updated_at)     AS last_updated
        FROM workspaces w
        LEFT JOIN features f ON f.workspace_id = w.id
-       LEFT JOIN contents c ON c.feature_id   = f.id
+       LEFT JOIN content_features cf ON cf.feature_id = f.id
+       LEFT JOIN contents c ON cf.content_id = c.id
        GROUP BY w.id, w.name
        ORDER BY w.name ASC`,
     )

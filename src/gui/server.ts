@@ -86,7 +86,7 @@ export function createApp(db: Database.Database) {
     }
     try {
       const content = getContent(db, id);
-      res.redirect(`/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.feature)}/${id}`);
+      res.redirect(`/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(content.features[0] ?? "")}/${id}`);
     } catch {
       res.status(404).send("<p>Content not found</p>");
     }
@@ -189,7 +189,7 @@ function buildExportBody(content: Content): string {
     "---",
     `title: ${content.title ?? ""}`,
     `type: ${content.type}`,
-    `feature: ${content.feature}`,
+    `feature: ${content.features[0] ?? ""}`,
     `workspace: ${content.workspace}`,
     `exported: ${exported}`,
     "---",

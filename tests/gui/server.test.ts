@@ -16,16 +16,29 @@ vi.mock("../../src/tools/search-semantic.js", () => ({
   searchSemantic: vi.fn().mockResolvedValue({ results: [], has_more: false, total_in_pool: 0, offset: 0, limit: 10 }),
 }));
 
+function getIdByTitle(db: Database.Database, workspace: string, feature: string, title: string): number {
+  const rows = db
+    .prepare(
+      `SELECT c.id FROM contents c
+       JOIN content_features cf ON cf.content_id = c.id
+       JOIN features f ON cf.feature_id = f.id
+       JOIN workspaces w ON f.workspace_id = w.id
+       WHERE w.name = ? AND f.name = ? AND c.title = ?`,
+    )
+    .all(workspace, feature, title) as { id: number }[];
+  return rows[0].id;
+}
+
 describe("GUI server routes", () => {
   let db: Database.Database;
   let app: ReturnType<typeof createApp>;
 
   beforeEach(async () => {
     db = createTestDb();
-    await createContent(db, "proj-a", "auth", "spec", "## Auth\n\nUses **JWT** tokens.", "Auth Spec");
-    await createContent(db, "proj-a", "auth", "idea", "Some auth idea");
-    await createContent(db, "proj-a", "search", "plan", "Search plan body");
-    await createContent(db, "proj-b", "payments", "idea", "Payments idea");
+    await createContent(db, "proj-a", ["auth"], "spec", "## Auth\n\nUses **JWT** tokens.", "Auth Spec");
+    await createContent(db, "proj-a", ["auth"], "idea", "Some auth idea");
+    await createContent(db, "proj-a", ["search"], "plan", "Search plan body");
+    await createContent(db, "proj-b", ["payments"], "idea", "Payments idea");
     app = createApp(db);
   });
 
@@ -60,15 +73,7 @@ describe("GUI server routes", () => {
     });
 
     it("renders recent-row with correct href to content detail", async () => {
-      const rows = db
-        .prepare(
-          `SELECT c.id FROM contents c
-           JOIN features f ON c.feature_id = f.id
-           JOIN workspaces w ON f.workspace_id = w.id
-           WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title = 'Auth Spec'`,
-        )
-        .all() as { id: number }[];
-      const id = rows[0].id;
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
       const res = await request(app).get("/");
       expect(res.text).toContain(`/ws/proj-a/auth/${id}`);
     });
@@ -116,15 +121,7 @@ describe("GUI server routes", () => {
 
   describe("GET /ws/:workspace/:feature/:id", () => {
     it("returns 200 and renders Markdown body as HTML", async () => {
-      const contents = db
-        .prepare(
-          `SELECT c.id FROM contents c
-           JOIN features f ON c.feature_id = f.id
-           JOIN workspaces w ON f.workspace_id = w.id
-           WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title = 'Auth Spec'`,
-        )
-        .all() as { id: number }[];
-      const id = contents[0].id;
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
 
       const res = await request(app).get(`/ws/proj-a/auth/${id}`);
       expect(res.status).toBe(200);
@@ -143,30 +140,14 @@ describe("GUI server routes", () => {
     });
 
     it("renders Export .md link pointing to /export route", async () => {
-      const rows = db
-        .prepare(
-          `SELECT c.id FROM contents c
-           JOIN features f ON c.feature_id = f.id
-           JOIN workspaces w ON f.workspace_id = w.id
-           WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title = 'Auth Spec'`,
-        )
-        .all() as { id: number }[];
-      const id = rows[0].id;
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
       const res = await request(app).get(`/ws/proj-a/auth/${id}`);
       expect(res.text).toContain(`/ws/proj-a/auth/${id}/export`);
       expect(res.text).toContain("Export .md");
     });
 
     it("renders Copy button in meta row", async () => {
-      const rows = db
-        .prepare(
-          `SELECT c.id FROM contents c
-           JOIN features f ON c.feature_id = f.id
-           JOIN workspaces w ON f.workspace_id = w.id
-           WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title = 'Auth Spec'`,
-        )
-        .all() as { id: number }[];
-      const id = rows[0].id;
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
       const res = await request(app).get(`/ws/proj-a/auth/${id}`);
       expect(res.text).toContain("action-btns");
       expect(res.text).toContain("Copy");
@@ -177,15 +158,7 @@ describe("GUI server routes", () => {
     let contentId: number;
 
     beforeEach(async () => {
-      const rows = db
-        .prepare(
-          `SELECT c.id FROM contents c
-           JOIN features f ON c.feature_id = f.id
-           JOIN workspaces w ON f.workspace_id = w.id
-           WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title = 'Auth Spec'`,
-        )
-        .all() as { id: number }[];
-      contentId = rows[0].id;
+      contentId = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
     });
 
     it("returns 200 with text/markdown content-type", async () => {
@@ -234,7 +207,8 @@ describe("GUI server routes", () => {
       const rows = db
         .prepare(
           `SELECT c.id FROM contents c
-           JOIN features f ON c.feature_id = f.id
+           JOIN content_features cf ON cf.content_id = c.id
+           JOIN features f ON cf.feature_id = f.id
            JOIN workspaces w ON f.workspace_id = w.id
            WHERE w.name = 'proj-a' AND f.name = 'auth' AND c.title IS NULL`,
         )
@@ -331,8 +305,8 @@ describe("GUI server routes", () => {
 
   describe("linked content sidebar", () => {
     it("shows sidebar with parents and children when content has links", async () => {
-      const parent = await createContent(db, "proj-a", "auth", "idea", "Parent idea body", "Parent Idea");
-      const child = await createContent(db, "proj-a", "auth", "spec", "Child spec body", "Child Spec");
+      const parent = await createContent(db, "proj-a", ["auth"], "idea", "Parent idea body", "Parent Idea");
+      const child = await createContent(db, "proj-a", ["auth"], "spec", "Child spec body", "Child Spec");
       linkContent(db, child.id, parent.id);
 
       const res = await request(app).get(`/ws/proj-a/auth/${child.id}`);
@@ -346,7 +320,8 @@ describe("GUI server routes", () => {
       const contents = db
         .prepare(
           `SELECT c.id, c.type FROM contents c
-           JOIN features f ON c.feature_id = f.id
+           JOIN content_features cf ON cf.content_id = c.id
+           JOIN features f ON cf.feature_id = f.id
            JOIN workspaces w ON f.workspace_id = w.id
            WHERE w.name = 'proj-a' AND f.name = 'auth'`,
         )
@@ -359,14 +334,14 @@ describe("GUI server routes", () => {
     });
 
     it("does not show sidebar when content has no links", async () => {
-      const solo = await createContent(db, "proj-a", "auth", "idea", "Solo idea body", "Solo Idea");
+      const solo = await createContent(db, "proj-a", ["auth"], "idea", "Solo idea body", "Solo Idea");
       const res = await request(app).get(`/ws/proj-a/auth/${solo.id}`);
       expect(res.status).toBe(200);
       expect(res.text).not.toContain('<aside class="content-sidebar">');
     });
 
     it("renders page normally when getLineage throws", async () => {
-      const result = await createContent(db, "proj-a", "auth", "idea", "Some idea", "Crash Test");
+      const result = await createContent(db, "proj-a", ["auth"], "idea", "Some idea", "Crash Test");
       db.prepare("DROP TABLE content_links").run();
       const res = await request(app).get(`/ws/proj-a/auth/${result.id}`);
       expect(res.status).toBe(200);
@@ -379,7 +354,7 @@ describe("GUI server routes", () => {
     let reviewId: number;
 
     beforeEach(async () => {
-      const c = await createContent(db, "proj-a", "auth", "spec", "## Spec body\n\nSome detail.", "Review Spec");
+      const c = await createContent(db, "proj-a", ["auth"], "spec", "## Spec body\n\nSome detail.", "Review Spec");
       contentId = c.id;
       db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);
       const row = db.prepare("SELECT id FROM reviews WHERE content_id = ?").get(contentId) as { id: number };
@@ -418,7 +393,7 @@ describe("GUI server routes", () => {
     let reviewId: number;
 
     beforeEach(async () => {
-      const c = await createContent(db, "proj-a", "auth", "spec", "body", "Spec");
+      const c = await createContent(db, "proj-a", ["auth"], "spec", "body", "Spec");
       contentId = c.id;
       db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);
       const row = db.prepare("SELECT id FROM reviews WHERE content_id = ?").get(contentId) as { id: number };
@@ -462,7 +437,7 @@ describe("GUI server routes", () => {
     let reviewId: number;
 
     beforeEach(async () => {
-      const c = await createContent(db, "proj-a", "auth", "spec", "body", "Spec");
+      const c = await createContent(db, "proj-a", ["auth"], "spec", "body", "Spec");
       contentId = c.id;
       db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);
       const row = db.prepare("SELECT id FROM reviews WHERE content_id = ?").get(contentId) as { id: number };

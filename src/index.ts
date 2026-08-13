@@ -18,6 +18,8 @@ import { openForReview } from "./tools/open-for-review.js";
 import { waitForReview } from "./tools/wait-for-review.js";
 import { getPendingReviewTool } from "./tools/get-pending-review.js";
 import { listContentsWithPendingReview, resolveComment, resolveReview } from "./db/reviews.js";
+import { attachFeature } from "./tools/attach-feature.js";
+import { detachFeature } from "./tools/detach-feature.js";
 import { insertErrorLog } from "./db/error-log.js";
 
 const db = openDb();
@@ -88,17 +90,55 @@ server.tool(
   "Creates a document in the knowledge base. Auto-creates the workspace and feature if they don't exist.",
   {
     workspace: z.string().min(1).describe("Workspace name (e.g. project slug)"),
-    feature: z.string().min(1).describe("Feature or area name within the workspace"),
+    features: z.array(z.string().min(1)).min(1).describe("One or more feature/area names within the workspace"),
     type: contentTypeSchema.describe("Document type. Suggested: idea | spec | plan | digest | doc. Any non-empty string is accepted."),
     title: z.string().min(1).optional().describe("Short label for the document (optional, displayed in list/search results)"),
     body: z.string().min(1).describe("Document body text"),
   },
-  async ({ workspace, feature, type, title, body }) => {
+  async ({ workspace, features, type, title, body }) => {
     try {
-      const result = await createContent(db, workspace, feature, type, body, title, requestSampling);
+      const result = await createContent(db, workspace, features, type, body, title, requestSampling);
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "create_content", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "attach_feature",
+  "Adds a feature to an existing document. Creates the feature if it does not exist. No-op if already attached.",
+  {
+    id: z.number().int().positive().describe("Document ID"),
+    workspace: z.string().min(1).describe("Workspace the document belongs to"),
+    feature: z.string().min(1).describe("Feature name to attach"),
+  },
+  ({ id, workspace, feature }) => {
+    try {
+      const result = attachFeature(db, id, workspace, feature);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      insertErrorLog(db, "attach_feature", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "detach_feature",
+  "Removes a feature from a document. Throws if it would be the last feature.",
+  {
+    id: z.number().int().positive().describe("Document ID"),
+    workspace: z.string().min(1).describe("Workspace the document belongs to"),
+    feature: z.string().min(1).describe("Feature name to detach"),
+  },
+  ({ id, workspace, feature }) => {
+    try {
+      const result = detachFeature(db, id, workspace, feature);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      insertErrorLog(db, "detach_feature", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },

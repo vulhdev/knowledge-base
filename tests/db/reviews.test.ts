@@ -16,8 +16,9 @@ async function seedContent(db: Database.Database): Promise<number> {
   const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
   db.exec(`INSERT OR IGNORE INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
   const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
-  db.prepare("INSERT INTO contents (feature_id, type, title, body) VALUES (?, 'spec', 'My Spec', 'body text')").run(ftId);
-  const { id } = db.prepare("SELECT id FROM contents ORDER BY id DESC LIMIT 1").get() as { id: number };
+  const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, title, body) VALUES ('spec', 'My Spec', 'body text')").run();
+  const id = Number(lastInsertRowid);
+  db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(id, ftId);
   return id;
 }
 

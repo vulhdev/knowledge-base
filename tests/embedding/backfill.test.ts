@@ -20,7 +20,7 @@ describe("startBackfill", () => {
     const db = createTestDb();
 
     // Create content while model is not ready — no embedding stored
-    await createContent(db, "ws", "ft", "idea", "some body");
+    await createContent(db, "ws", ["ft"], "idea", "some body");
     const before = db.prepare("SELECT embedding FROM contents WHERE body = 'some body'").get() as { embedding: Buffer | null };
     expect(before.embedding).toBeNull();
 
@@ -45,7 +45,9 @@ describe("startBackfill", () => {
     const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
     db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
     const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
-    db.prepare("INSERT INTO contents (feature_id, type, body, embedding) VALUES (?, 'idea', 'already embedded', ?)").run(ftId, fakeVec);
+    const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, body, embedding) VALUES ('idea', 'already embedded', ?)").run(fakeVec);
+    const contentId = Number(lastInsertRowid);
+    db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(contentId, ftId);
 
     const { startBackfill } = await import("../../src/embedding/backfill.js");
     await new Promise<void>((resolve) => {
@@ -58,7 +60,7 @@ describe("startBackfill", () => {
   it("does nothing when model is not ready", async () => {
     const { getEmbedding } = await import("../../src/embedding/model.js");
     const db = createTestDb();
-    await createContent(db, "ws", "ft", "idea", "needs embedding");
+    await createContent(db, "ws", ["ft"], "idea", "needs embedding");
 
     const { startBackfill } = await import("../../src/embedding/backfill.js");
     await new Promise<void>((resolve) => {
