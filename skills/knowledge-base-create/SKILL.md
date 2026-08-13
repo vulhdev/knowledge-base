@@ -33,16 +33,18 @@ custom types from the DB. Default to `idea` if the user skips.
 
 Take the most recent substantial document that the AI produced in this conversation — the last large structured block (markdown sections, lists, code blocks). Do NOT re-generate or summarize it. Use it verbatim.
 
-### 4. Determine feature
+### 4. Determine features
+
+A document can belong to one or more features. Most documents belong to one.
 
 **Step A — Infer from context:**
-Based on the conversation topic (what was being designed, discussed, or built), propose a short feature name (e.g. `auth`, `search`, `onboarding`).
+Based on the conversation topic (what was being designed, discussed, or built), propose one or more short feature names (e.g. `auth`, `search`, `onboarding`).
 
 **Step B — Cross-check with DB:**
 Call `list_contents(workspace=WORKSPACE)` to retrieve existing entries. Extract the unique feature names from the results.
 
 **Step C — Ask the user:**
-Present an `AskUserQuestion` with:
+Present an `AskUserQuestion` (multiSelect: true) with:
 - Up to 3 existing features that are most relevant to the inferred topic (prefer exact or partial match)
 - A "Create new feature" option
 
@@ -50,7 +52,7 @@ If the inferred feature exactly matches an existing one, put it first.
 
 Example:
 ```
-Which feature to save under?
+Which feature(s) to save under?
   ● auth (existing)
   ○ api
   ○ search
@@ -113,8 +115,10 @@ derive_content(parent_id=PARENT_ID, type=TYPE, body=CONTENT, title=TITLE)
 **Otherwise:**
 
 ```
-create_content(workspace=WORKSPACE, feature=FEATURE, type=TYPE, body=CONTENT, title=TITLE)
+create_content(workspace=WORKSPACE, features=FEATURES, type=TYPE, body=CONTENT, title=TITLE)
 ```
+
+`FEATURES` is an array of one or more feature names (e.g. `["auth"]` or `["auth", "api"]`).
 
 Omit `title` if not set in either case.
 
@@ -153,7 +157,7 @@ If yes, spawn `kb-conflict-resolver` via the Agent tool:
 - Present the memo to the user before proceeding to the link step
 
 4. Use `AskUserQuestion` (multiSelect: true) to ask which conflicting docs to link:
-   - One option per conflicting doc: `#<id> · <feature>/<type> "<title>"`
+   - One option per conflicting doc: `#<id> · <features[0]>/<type> "<title>"`
    - Plus: `"Do not link any"`
 
 5. For each confirmed link, call `link_content` — all in parallel. Direction: conflicting doc is typically the parent (older); new doc is the child.
@@ -191,7 +195,7 @@ For each confirmed doc, call `link_content` with the correct direction:
 ```
 ✓ Saved to knowledge base
   Workspace : <WORKSPACE>
-  Feature   : <feature>
+  Features  : <feature1>, <feature2>   ← comma-separated if multiple
   Type      : <type>
   Title     : <title or (none)>
   ID        : <id>
@@ -231,5 +235,5 @@ After printing the Step 8 report, ask the user:
 - "Save this spec" → type=spec from keyword
 - "Save this plan to the knowledge base" → type=plan from keyword
 - "Save the DB schema doc for the posts feature" → type=doc, ask for title (suggest "DB Schema"), save
-- `/knowledge-base-create spec auth` → type and feature explicit, skip to step 5
+- `/knowledge-base-create spec auth` → type and feature explicit, skip to step 5 (features=["auth"])
 - Session already saved idea #42, now saving a spec → Step 5b detects the idea, asks to link → use `derive_content(parent_id=42, ...)`

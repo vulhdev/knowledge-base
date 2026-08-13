@@ -95,7 +95,7 @@ Omit `type` or `title` from the call when keeping the existing value — passing
 ```
 ✓ Đã cập nhật document #<id>
   Workspace : <WORKSPACE>
-  Feature   : <feature>
+  Features  : <features[0]>, ...   ← comma-separated if multiple
   Type      : <type>
   Title     : <title or (unchanged)>
   Updated   : <updated_at>

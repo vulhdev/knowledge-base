@@ -83,7 +83,7 @@ After all comments are processed, call `resolve_review(review_id)` to set the re
 After processing all comments:
 
 ```
-✓ Review processed for #<id> · <feature>/<type> "<title>"
+✓ Review processed for #<id> · <features[0]>/<type> "<title>"
   Comments: <N> total
   ✏ Edited: <list of sections changed>
   ❓ Clarifications needed: <list, if any>

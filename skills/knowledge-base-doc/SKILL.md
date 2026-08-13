@@ -194,9 +194,9 @@ Based on user choices:
 
 **Separate docs per section:**
 ```
-create_content(workspace=WORKSPACE, feature=FEATURE, type="doc", title="DB Schema", body=<db_section>)
-create_content(workspace=WORKSPACE, feature=FEATURE, type="doc", title="Backend Flow", body=<backend_section>)
-create_content(workspace=WORKSPACE, feature=FEATURE, type="doc", title="Frontend", body=<frontend_section>)
+create_content(workspace=WORKSPACE, features=[FEATURE], type="doc", title="DB Schema", body=<db_section>)
+create_content(workspace=WORKSPACE, features=[FEATURE], type="doc", title="Backend Flow", body=<backend_section>)
+create_content(workspace=WORKSPACE, features=[FEATURE], type="doc", title="Frontend", body=<frontend_section>)
 ```
 
 Or for overwrite:
@@ -206,7 +206,7 @@ update_content(id=<existing_id>, body=<new_body>, title=<title>)
 
 **Single combined doc:**
 ```
-create_content(workspace=WORKSPACE, feature=FEATURE, type="doc", title="<Feature> — Full Doc", body=<combined>)
+create_content(workspace=WORKSPACE, features=[FEATURE], type="doc", title="<Feature> — Full Doc", body=<combined>)
 ```
 
 ---

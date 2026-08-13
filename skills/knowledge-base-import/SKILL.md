@@ -41,7 +41,7 @@ Always pass a title — never leave it null for imported files.
 Then call:
 
 ```
-create_content(workspace=WORKSPACE, feature=FEATURE, type=TYPE, body=<file content>, title=<title>)
+create_content(workspace=WORKSPACE, features=[FEATURE], type=TYPE, body=<file content>, title=<title>)
 ```
 
 Use the same type for all files unless the user specified different types per file.

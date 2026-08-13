@@ -91,7 +91,7 @@ Leave the `Title` cell empty (``) for contents without a title.
 ### 8. Save the digest
 
 - If `digestRow` exists → call `update_content(id=digestRow.id, body=newBody)`
-- If not → call `create_content(workspace=WORKSPACE, feature=FEATURE, type='digest', body=newBody)`
+- If not → call `create_content(workspace=WORKSPACE, features=[FEATURE], type='digest', body=newBody)`
 
 ### 9. Respond to the user
 
