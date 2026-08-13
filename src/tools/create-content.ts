@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import type { ContentType, ConflictResult, CreateContentResult, SuggestedParent } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
+import { fetchFeatures } from "./_helpers.js";
 
 const PARENT_TYPE: Record<string, string> = { spec: "idea", plan: "spec" };
 const SUGGEST_LIMIT = 3;
@@ -25,7 +26,8 @@ async function suggestParents(
           `SELECT c.id, c.type, c.title, v.distance AS score
            FROM vec_contents v
            JOIN contents c ON v.rowid = c.id
-           JOIN features f ON c.feature_id = f.id
+           JOIN content_features cf ON cf.content_id = c.id
+           JOIN features f ON cf.feature_id = f.id
            JOIN workspaces w ON f.workspace_id = w.id
            WHERE v.embedding MATCH ? AND k = ?
              AND c.type = ?
@@ -62,7 +64,8 @@ async function suggestParents(
         `SELECT c.id, c.type, c.title
          FROM contents_fts fts
          JOIN contents c ON fts.rowid = c.id
-         JOIN features f ON c.feature_id = f.id
+         JOIN content_features cf ON cf.content_id = c.id
+         JOIN features f ON cf.feature_id = f.id
          JOIN workspaces w ON f.workspace_id = w.id
          WHERE contents_fts MATCH ?
            AND c.type = ?
@@ -80,7 +83,7 @@ async function suggestParents(
 export async function createContent(
   db: Database.Database,
   workspace: string,
-  feature: string,
+  features: string[],
   type: ContentType,
   body: string,
   title?: string,
@@ -89,29 +92,46 @@ export async function createContent(
   if (!body.trim()) {
     throw new Error("body must not be empty");
   }
+  if (features.length === 0) {
+    throw new Error("features must not be empty");
+  }
 
   db.prepare("INSERT OR IGNORE INTO workspaces (name) VALUES (?)").run(workspace);
   const ws = db.prepare("SELECT id FROM workspaces WHERE name = ?").get(workspace) as { id: number };
 
-  db.prepare("INSERT OR IGNORE INTO features (workspace_id, name) VALUES (?, ?)").run(ws.id, feature);
-  const ft = db.prepare("SELECT id FROM features WHERE workspace_id = ? AND name = ?").get(ws.id, feature) as { id: number };
+  const featureIds: number[] = [];
+  for (const featureName of features) {
+    db.prepare("INSERT OR IGNORE INTO features (workspace_id, name) VALUES (?, ?)").run(ws.id, featureName);
+    const ft = db.prepare("SELECT id FROM features WHERE workspace_id = ? AND name = ?").get(ws.id, featureName) as { id: number };
+    featureIds.push(ft.id);
+  }
 
   if (type === "digest") {
-    const existing = db
-      .prepare("SELECT id FROM contents WHERE feature_id = ? AND type = 'digest'")
-      .get(ft.id) as { id: number } | undefined;
-    if (existing) {
-      throw new Error(
-        `A digest already exists for feature '${feature}'. Use update_content (id=${existing.id}) to modify it.`,
-      );
+    for (let i = 0; i < featureIds.length; i++) {
+      const existing = db
+        .prepare(
+          `SELECT c.id FROM content_features cf
+           JOIN contents c ON cf.content_id = c.id
+           WHERE cf.feature_id = ? AND c.type = 'digest'`,
+        )
+        .get(featureIds[i]) as { id: number } | undefined;
+      if (existing) {
+        throw new Error(
+          `A digest already exists for feature '${features[i]}'. Use update_content (id=${existing.id}) to modify it.`,
+        );
+      }
     }
   }
 
   const { lastInsertRowid } = db
-    .prepare("INSERT INTO contents (feature_id, type, title, body) VALUES (?, ?, ?, ?)")
-    .run(ft.id, type, title ?? null, body);
+    .prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)")
+    .run(type, title ?? null, body);
 
   const contentId = Number(lastInsertRowid);
+
+  for (const featureId of featureIds) {
+    db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(contentId, featureId);
+  }
 
   let embeddingBlob: Buffer | null = null;
 
@@ -125,10 +145,12 @@ export async function createContent(
     }
   }
 
+  const featureNamesSorted = fetchFeatures(db, contentId);
+
   let conflicts: ConflictResult[] = [];
   if (requestSampling && embeddingBlob) {
     try {
-      conflicts = await detectConflicts(db, contentId, workspace, feature, type, body, embeddingBlob, requestSampling);
+      conflicts = await detectConflicts(db, contentId, workspace, featureNamesSorted, type, body, embeddingBlob, requestSampling);
     } catch {
       // conflict detection failure must not prevent content creation
     }
@@ -140,5 +162,5 @@ export async function createContent(
 
   const suggested_parents = await suggestParents(db, workspace, type, body, embeddingBlob);
 
-  return { id: row.id, workspace, feature, type, title: row.title, created_at: row.created_at, conflicts, suggested_parents };
+  return { id: row.id, workspace, features: featureNamesSorted, type, title: row.title, created_at: row.created_at, conflicts, suggested_parents };
 }
