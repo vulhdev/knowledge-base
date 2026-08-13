@@ -81,15 +81,10 @@ describe("schema migrations", () => {
 
   it("after migration, doc type can be inserted", () => {
     const db = createOldSchemaDb();
-    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
-    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
-    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
-    const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
-
     applySchema(db);
 
     expect(() =>
-      db.exec(`INSERT INTO contents (feature_id, type, body) VALUES (${ftId}, 'doc', 'doc body')`)
+      db.exec(`INSERT INTO contents (type, body) VALUES ('doc', 'doc body')`)
     ).not.toThrow();
   });
 
@@ -108,7 +103,7 @@ describe("schema migrations", () => {
     expect(matches).toHaveLength(1);
 
     // New inserts should also be indexed
-    db.exec(`INSERT INTO contents (feature_id, type, body) VALUES (${ftId}, 'doc', 'postmigration keyword')`);
+    db.exec(`INSERT INTO contents (type, body) VALUES ('doc', 'postmigration keyword')`);
     const newMatches = db.prepare("SELECT rowid FROM contents_fts WHERE contents_fts MATCH 'postmigration'").all();
     expect(newMatches).toHaveLength(1);
   });
@@ -143,7 +138,7 @@ describe("migration 3: embedding column + vec_contents", () => {
     const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
 
     const fakeVec = Buffer.alloc(384 * 4, 0);
-    db.prepare("INSERT INTO contents (feature_id, type, body, embedding) VALUES (?, 'idea', 'hello', ?)").run(ftId, fakeVec);
+    db.prepare("INSERT INTO contents (type, body, embedding) VALUES ('idea', 'hello', ?)").run(fakeVec);
     const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'hello'").get() as { id: number };
 
     const row = db.prepare("SELECT rowid FROM vec_contents WHERE rowid = ?").get(contentId);
@@ -160,7 +155,7 @@ describe("migration 3: embedding column + vec_contents", () => {
     const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
 
     const fakeVec = Buffer.alloc(384 * 4, 0);
-    db.prepare("INSERT INTO contents (feature_id, type, body, embedding) VALUES (?, 'idea', 'to-delete', ?)").run(ftId, fakeVec);
+    db.prepare("INSERT INTO contents (type, body, embedding) VALUES ('idea', 'to-delete', ?)").run(fakeVec);
     const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'to-delete'").get() as { id: number };
     db.prepare("DELETE FROM contents WHERE id = ?").run(contentId);
 
@@ -211,9 +206,9 @@ describe("migration 4: content_links table", () => {
     db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
     const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
 
-    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'idea', 'parent')").run(ftId);
+    db.prepare("INSERT INTO contents (type, body) VALUES ('idea', 'parent')").run();
     const parent = db.prepare("SELECT id FROM contents WHERE body = 'parent'").get() as { id: number };
-    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'spec', 'child')").run(ftId);
+    db.prepare("INSERT INTO contents (type, body) VALUES ('spec', 'child')").run();
     const child = db.prepare("SELECT id FROM contents WHERE body = 'child'").get() as { id: number };
 
     db.prepare("INSERT INTO content_links (parent_id, child_id) VALUES (?, ?)").run(parent.id, child.id);
@@ -232,9 +227,9 @@ describe("migration 4: content_links table", () => {
     db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
     const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
 
-    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'idea', 'p')").run(ftId);
+    db.prepare("INSERT INTO contents (type, body) VALUES ('idea', 'p')").run();
     const p = db.prepare("SELECT id FROM contents WHERE body = 'p'").get() as { id: number };
-    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'spec', 'c')").run(ftId);
+    db.prepare("INSERT INTO contents (type, body) VALUES ('spec', 'c')").run();
     const c = db.prepare("SELECT id FROM contents WHERE body = 'c'").get() as { id: number };
 
     db.prepare("INSERT INTO content_links (parent_id, child_id) VALUES (?, ?)").run(p.id, c.id);
@@ -278,7 +273,7 @@ describe("migration 7: reviews and review_comments tables", () => {
     const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
     db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
     const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
-    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'spec', 'body')").run(ftId);
+    db.prepare("INSERT INTO contents (type, body) VALUES ('spec', 'body')").run();
     const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'body'").get() as { id: number };
 
     db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);
@@ -298,7 +293,7 @@ describe("migration 7: reviews and review_comments tables", () => {
     const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
     db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
     const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
-    db.prepare("INSERT INTO contents (feature_id, type, body) VALUES (?, 'spec', 'body')").run(ftId);
+    db.prepare("INSERT INTO contents (type, body) VALUES ('spec', 'body')").run();
     const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'body'").get() as { id: number };
 
     db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);

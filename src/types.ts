@@ -3,7 +3,7 @@ export type ContentType = string;
 export type Content = {
   id: number;
   workspace: string;
-  feature: string;
+  features: string[];
   type: ContentType;
   title: string | null;
   body: string;
@@ -34,7 +34,7 @@ export type ConflictType = "semantic_contradiction" | "risk_shadow";
 
 export type ConflictResult = {
   content_id: number;
-  feature: string;
+  features: string[];
   type: ConflictType;
   reason: string;
 };
@@ -42,7 +42,7 @@ export type ConflictResult = {
 export type LinkedContent = {
   id: number;
   workspace: string;
-  feature: string;
+  features: string[];
   type: ContentType;
   title: string | null;
 };
@@ -70,7 +70,7 @@ export type LinkResult = {
 export type CreateContentResult = {
   id: number;
   workspace: string;
-  feature: string;
+  features: string[];
   type: ContentType;
   title: string | null;
   created_at: string;

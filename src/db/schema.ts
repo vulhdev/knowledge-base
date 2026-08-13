@@ -62,7 +62,6 @@ export function applySchema(db: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS contents (
       id         INTEGER PRIMARY KEY,
-      feature_id INTEGER NOT NULL REFERENCES features(id) ON DELETE CASCADE,
       type       TEXT NOT NULL,
       title      TEXT,
       body       TEXT NOT NULL,
@@ -70,11 +69,14 @@ export function applySchema(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_feature_digest
-      ON contents(feature_id) WHERE type = 'digest';
+    CREATE TABLE IF NOT EXISTS content_features (
+      content_id INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+      feature_id INTEGER NOT NULL REFERENCES features(id) ON DELETE CASCADE,
+      PRIMARY KEY (content_id, feature_id)
+    );
 
-    CREATE INDEX IF NOT EXISTS idx_contents_feature_id
-      ON contents(feature_id);
+    CREATE INDEX IF NOT EXISTS idx_content_features_feature
+      ON content_features(feature_id);
   `);
 
   db.exec(FTS_AND_TRIGGERS);
@@ -184,6 +186,17 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE review_comments ADD COLUMN resolved_at TEXT`);
   }
 
+  // Migration 9: replace feature_id with content_features junction table
+  const hasFeatureId = (
+    db
+      .prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'feature_id'")
+      .get() as { cnt: number }
+  ).cnt > 0;
+
+  if (hasFeatureId) {
+    removeFeatureIdColumn(db);
+  }
+
   // Migration 6: FTS indexes title column so title matches get BM25 boost
   const ftsSql = (
     db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contents_fts'")
@@ -212,6 +225,54 @@ function runMigrations(db: Database.Database): void {
       INSERT INTO contents_fts(contents_fts) VALUES ('rebuild');
     `);
   }
+}
+
+function removeFeatureIdColumn(db: Database.Database): void {
+  // SQLite cannot DROP COLUMN with FK dependencies — requires full table recreation.
+  // foreign_keys must be off during the swap; PRAGMA cannot change inside a transaction.
+  db.exec("PRAGMA foreign_keys = OFF");
+
+  db.exec(`
+    BEGIN;
+
+    CREATE TABLE IF NOT EXISTS content_features (
+      content_id INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+      feature_id INTEGER NOT NULL REFERENCES features(id) ON DELETE CASCADE,
+      PRIMARY KEY (content_id, feature_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_content_features_feature ON content_features(feature_id);
+
+    INSERT OR IGNORE INTO content_features (content_id, feature_id)
+      SELECT id, feature_id FROM contents;
+
+    DROP TRIGGER IF EXISTS contents_ai;
+    DROP TRIGGER IF EXISTS contents_ad;
+    DROP TRIGGER IF EXISTS contents_au;
+    DROP TABLE IF EXISTS contents_fts;
+
+    CREATE TABLE contents_new (
+      id         INTEGER PRIMARY KEY,
+      type       TEXT NOT NULL,
+      title      TEXT,
+      body       TEXT NOT NULL,
+      embedding  BLOB,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    INSERT INTO contents_new (id, type, title, body, embedding, created_at, updated_at)
+      SELECT id, type, title, body, embedding, created_at, updated_at FROM contents;
+
+    DROP TABLE contents;
+    ALTER TABLE contents_new RENAME TO contents;
+
+    COMMIT;
+  `);
+
+  db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
+  db.exec("INSERT INTO contents_fts(contents_fts) VALUES ('rebuild')");
+
+  db.exec("PRAGMA foreign_keys = ON");
 }
 
 function removeCheckConstraint(db: Database.Database): void {
