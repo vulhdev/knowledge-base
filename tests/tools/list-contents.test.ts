@@ -14,10 +14,10 @@ describe("listContents", () => {
 
   beforeEach(async () => {
     db = createTestDb();
-    await createContent(db, "proj-a", "auth", "idea", "auth idea");
-    await createContent(db, "proj-a", "auth", "spec", "auth spec");
-    await createContent(db, "proj-a", "search", "plan", "search plan");
-    await createContent(db, "proj-b", "auth", "idea", "other project idea");
+    await createContent(db, "proj-a", ["auth"], "idea", "auth idea");
+    await createContent(db, "proj-a", ["auth"], "spec", "auth spec");
+    await createContent(db, "proj-a", ["search"], "plan", "search plan");
+    await createContent(db, "proj-b", ["auth"], "idea", "other project idea");
   });
 
   it("returns all contents for a workspace", () => {
@@ -34,7 +34,7 @@ describe("listContents", () => {
   it("filters by feature", () => {
     const { results } = listContents(db, "proj-a", "auth");
     expect(results).toHaveLength(2);
-    expect(results.every((r) => r.feature === "auth")).toBe(true);
+    expect(results.every((r) => r.features.includes("auth"))).toBe(true);
   });
 
   it("filters by type", () => {
@@ -66,19 +66,19 @@ describe("listContents", () => {
   });
 
   it("includes doc type in default listing", async () => {
-    await createContent(db, "proj-a", "auth", "doc", "some doc body", "Auth Doc");
+    await createContent(db, "proj-a", ["auth"], "doc", "some doc body", "Auth Doc");
     const { results } = listContents(db, "proj-a");
     expect(results.some((r) => r.type === "doc")).toBe(true);
   });
 
   it("returns title value when set", async () => {
-    await createContent(db, "proj-a", "auth", "doc", "doc body", "Titled Doc");
+    await createContent(db, "proj-a", ["auth"], "doc", "doc body", "Titled Doc");
     const { results } = listContents(db, "proj-a", "auth", "doc");
     expect(results[0].title).toBe("Titled Doc");
   });
 
   it("filters by custom type string", async () => {
-    await createContent(db, "proj-a", "auth", "issue" as any, "a bug report");
+    await createContent(db, "proj-a", ["auth"], "issue" as any, "a bug report");
     const { results } = listContents(db, "proj-a", undefined, "issue" as any);
     expect(results).toHaveLength(1);
     expect(results[0].type).toBe("issue");

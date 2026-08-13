@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import type { ContentType, SearchResult, SearchPage } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
+import { fetchFeatures } from "./_helpers.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -16,7 +17,7 @@ function recencyFactor(updatedAt: string): number {
   return 1 / (1 + ageDays / RECENCY_HALF_LIFE_DAYS);
 }
 
-type RawRow = Omit<SearchResult, "has_code_refs" | "score"> & { has_code_refs: number };
+type RawRow = Omit<SearchResult, "features" | "has_code_refs" | "score"> & { has_code_refs: number };
 
 export async function searchSemantic(
   db: Database.Database,
@@ -58,12 +59,13 @@ export async function searchSemantic(
 
     // --- Vector search (ANN) ---
     let vecSql = `
-      SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.title, c.body,
+      SELECT DISTINCT c.id, w.name AS workspace, c.type, c.title, c.body,
              c.created_at, c.updated_at,
              EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
       FROM vec_contents v
       JOIN contents c ON v.rowid = c.id
-      JOIN features f ON c.feature_id = f.id
+      JOIN content_features cf ON cf.content_id = c.id
+      JOIN features f ON cf.feature_id = f.id
       JOIN workspaces w ON f.workspace_id = w.id
       WHERE v.embedding MATCH ? AND k = ?
     `;
@@ -89,11 +91,12 @@ export async function searchSemantic(
     if (ftsOnlyIds.length > 0) {
       const placeholders = ftsOnlyIds.map(() => "?").join(",");
       const extraRows = db.prepare(`
-        SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.title, c.body,
+        SELECT DISTINCT c.id, w.name AS workspace, c.type, c.title, c.body,
                c.created_at, c.updated_at,
                EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
         FROM contents c
-        JOIN features f ON c.feature_id = f.id
+        JOIN content_features cf ON cf.content_id = c.id
+        JOIN features f ON cf.feature_id = f.id
         JOIN workspaces w ON f.workspace_id = w.id
         WHERE c.id IN (${placeholders})
       `).all(...ftsOnlyIds) as RawRow[];
@@ -117,7 +120,7 @@ export async function searchSemantic(
         (ftsRank !== undefined ? 1 / (RRF_K + ftsRank) : 0);
 
       const boostedScore = rrfScore * (1 + RECENCY_WEIGHT * recencyFactor(content.updated_at));
-      scored.push({ ...content, has_code_refs: content.has_code_refs === 1, score: boostedScore });
+      scored.push({ ...content, features: fetchFeatures(db, id), has_code_refs: content.has_code_refs === 1, score: boostedScore });
     }
 
     scored.sort((a, b) => b.score - a.score);
@@ -154,10 +157,11 @@ export function runFtsSearch(
   const andQuery = tokens.length === 1 ? tokens[0] : tokens.join(" AND ");
 
   let sql = `
-    SELECT c.id
+    SELECT DISTINCT c.id
     FROM contents_fts fts
     JOIN contents c ON fts.rowid = c.id
-    JOIN features f ON c.feature_id = f.id
+    JOIN content_features cf ON cf.content_id = c.id
+    JOIN features f ON cf.feature_id = f.id
     JOIN workspaces w ON f.workspace_id = w.id
     WHERE contents_fts MATCH ?
   `;

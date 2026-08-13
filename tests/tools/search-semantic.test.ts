@@ -141,12 +141,13 @@ describe("searchSemantic", () => {
     // sqlite-vec breaks ties by rowid DESC (newest insertion first).
     // docRecent gets lower id; docOld gets higher id and would win the tie without recency boost.
     // After recency boost, docRecent (updated today) outscores docOld (updated 90 days ago).
-    await createContent(db, "ws-recency", "feat", "doc", "identical recency test body"); // lower id = docRecent
-    await createContent(db, "ws-recency", "feat", "doc", "identical recency test body"); // higher id = docOld
+    await createContent(db, "ws-recency", ["feat"], "doc", "identical recency test body"); // lower id = docRecent
+    await createContent(db, "ws-recency", ["feat"], "doc", "identical recency test body"); // higher id = docOld
 
     const ids = (db
       .prepare(`SELECT c.id FROM contents c
-        JOIN features f ON c.feature_id = f.id
+        JOIN content_features cf ON cf.content_id = c.id
+        JOIN features f ON cf.feature_id = f.id
         JOIN workspaces w ON f.workspace_id = w.id
         WHERE w.name = 'ws-recency' ORDER BY c.id ASC`)
       .all() as { id: number }[]).map(r => r.id);

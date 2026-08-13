@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { Content, ContentType, ListPage } from "../types.js";
+import { fetchFeatures } from "./_helpers.js";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -36,24 +37,28 @@ export function listContents(
   const where = `WHERE ${conditions.join(" AND ")}`;
 
   const countSql = `
-    SELECT COUNT(*) AS total
+    SELECT COUNT(DISTINCT c.id) AS total
     FROM contents c
-    JOIN features f ON c.feature_id = f.id
+    JOIN content_features cf ON cf.content_id = c.id
+    JOIN features f ON cf.feature_id = f.id
     JOIN workspaces w ON f.workspace_id = w.id
     ${where}
   `;
   const { total } = db.prepare(countSql).get(...params) as { total: number };
 
   const dataSql = `
-    SELECT c.id, w.name AS workspace, f.name AS feature, c.type, c.title, c.body, c.created_at, c.updated_at
+    SELECT DISTINCT c.id, w.name AS workspace, c.type, c.title, c.body, c.created_at, c.updated_at
     FROM contents c
-    JOIN features f ON c.feature_id = f.id
+    JOIN content_features cf ON cf.content_id = c.id
+    JOIN features f ON cf.feature_id = f.id
     JOIN workspaces w ON f.workspace_id = w.id
     ${where}
     ORDER BY c.created_at DESC
     LIMIT ? OFFSET ?
   `;
-  const results = db.prepare(dataSql).all(...params, clampedLimit, clampedOffset) as Content[];
+  type RawRow = Omit<Content, "features" | "has_code_refs">;
+  const rows = db.prepare(dataSql).all(...params, clampedLimit, clampedOffset) as RawRow[];
+  const results = rows.map((row) => ({ ...row, features: fetchFeatures(db, row.id) })) as Content[];
 
   return {
     results,
