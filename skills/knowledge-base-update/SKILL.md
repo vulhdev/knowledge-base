@@ -64,7 +64,31 @@ If the user explicitly mentions a new type (`spec`, `plan`, `idea`, `digest`, `d
 
 If the user mentions a new title or the content's subject has changed significantly, propose an updated title. Otherwise, omit `title` from the call to preserve the existing value.
 
-### 7. Confirm before writing
+### 7. Choose the right write tool
+
+Before writing, determine which tool minimizes token cost:
+
+| Situation | Tool to use |
+|---|---|
+| Fixing a specific phrase, bullet, or word (exact old text known) | `patch_content` |
+| Adding new content to the end (log entry, note, new task) | `append_content` |
+| Rewriting the full body (major restructure, wholesale update) | `update_content` |
+| Changing only title or type (body unchanged) | `update_content` (body=existing body) |
+
+**When using `patch_content`** — skip the merge step; instead call directly:
+```
+patch_content(id=<id>, old_string=<exact text to replace>, new_string=<replacement>)
+```
+No need to send the full body. Use `replace_all=true` if the same phrase appears multiple times.
+
+**When using `append_content`** — skip the merge step; call:
+```
+append_content(id=<id>, text=<text to add>)
+```
+
+**When using `update_content`** — proceed to Step 8 as normal.
+
+### 8. Confirm before writing
 
 Show the merged result to the user and ask for confirmation:
 
@@ -81,7 +105,7 @@ Use `AskUserQuestion` with options: **Xác nhận cập nhật** / **Huỷ**.
 
 If the user cancels, stop without writing.
 
-### 8. Write the update
+### 9. Write the update
 
 Call:
 ```
@@ -90,7 +114,7 @@ update_content(id=<id>, body=<merged body>, type=<type if changed>, title=<title
 
 Omit `type` or `title` from the call when keeping the existing value — passing them preserves the existing value only for `type`; omitting `title` also preserves it.
 
-### 9. Report
+### 10. Report
 
 ```
 ✓ Đã cập nhật document #<id>

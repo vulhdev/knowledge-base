@@ -57,7 +57,9 @@ For each comment, process it **then immediately call `resolve_comment(comment_id
 
 **For `edit_request` and `expand` comments:**
 - Locate the `selected_text` (or the section it refers to) in the document body
-- Propose the change inline. If multiple edits exist, group them and apply all at once via `update_content(id, new_body)`
+- Choose the write tool based on the edit scope:
+  - **If `selected_text` is available** (exact span known) → use `patch_content(id, old_string=selected_text, new_string=<revised>)` — avoids re-sending the full body
+  - **If editing multiple unrelated sections, or no `selected_text`** → group all changes and apply in one call via `update_content(id, new_body)`
 - Call `resolve_comment(comment.id)` after applying the edit
 - Tell the user what was changed
 
