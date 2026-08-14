@@ -20,6 +20,8 @@ import { getPendingReviewTool } from "./tools/get-pending-review.js";
 import { listContentsWithPendingReview, resolveComment, resolveReview } from "./db/reviews.js";
 import { attachFeature } from "./tools/attach-feature.js";
 import { detachFeature } from "./tools/detach-feature.js";
+import { patchContent } from "./tools/patch-content.js";
+import { appendContent } from "./tools/append-content.js";
 import { insertErrorLog } from "./db/error-log.js";
 
 const db = openDb();
@@ -218,6 +220,44 @@ server.tool(
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "update_content", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "patch_content",
+  "Replaces a specific substring in a document body without re-sending the full body. Finds old_string in the current body and replaces it with new_string. Use replace_all=true if old_string appears multiple times. Fails clearly if old_string is not found or if multiple matches exist and replace_all is not set. Prefer this over update_content for small, targeted edits.",
+  {
+    id: z.number().int().positive().describe("Document ID"),
+    old_string: z.string().min(1).describe("Exact substring to find in the body"),
+    new_string: z.string().describe("Replacement text (may be empty string to delete the substring)"),
+    replace_all: z.boolean().optional().default(false).describe("Replace all occurrences (default: false — fails if multiple matches found)"),
+  },
+  async ({ id, old_string, new_string, replace_all }) => {
+    try {
+      const result = await patchContent(db, id, old_string, new_string, replace_all);
+      return { content: [{ type: "text", text: formatSingle(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "patch_content", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "append_content",
+  "Appends text to the end of a document body without re-sending the full body. Adds a newline separator automatically if the body does not already end with one. Prefer this over update_content for adding log entries, notes, or new tasks.",
+  {
+    id: z.number().int().positive().describe("Document ID"),
+    text: z.string().min(1).describe("Text to append"),
+  },
+  async ({ id, text }) => {
+    try {
+      const result = await appendContent(db, id, text);
+      return { content: [{ type: "text", text: formatSingle(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "append_content", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },
