@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0] — 2026-08-14
+
+### Added
+- **`patch_content` tool — targeted string replace without re-sending the full body** — replaces an exact `old_string` substring in a document body with `new_string`; fails clearly if the string is not found or matches multiple times (use `replace_all=true` to replace all occurrences); eliminates the token cost of round-tripping the entire body for small edits like fixing a single bullet or checking off a task
+- **`append_content` tool — zero-ambiguity text append** — appends `text` to the end of a document body with an automatic newline separator; avoids any match-ambiguity that `patch_content` carries and is the right tool for log entries, new tasks, and incremental notes
+- **`attach_feature` and `detach_feature` tools** — a document can now belong to multiple features simultaneously; `attach_feature(content_id, feature)` adds a feature to an existing document (no-op if already attached; blocks a second `digest` per feature), and `detach_feature(content_id, feature)` removes one (throws if it would leave the document with no features)
+
+### Changed
+- **Content now supports multiple features (M2M)** — replaced the single `feature_id` column on `contents` with a `content_features(content_id, feature_id)` junction table (Migration 9); all tools (`create_content`, `get_content`, `list_contents`, `search_semantic`, `update_content`, `derive_content`, `get_lineage`, `conflict-detection`, …) now accept and return `features: string[]` instead of a single `feature` string; existing data is backfilled automatically on first startup
+- **`knowledge-base-update` skill: tool decision guide** — added a decision table before the write step so Claude knows when to use `patch_content`, `append_content`, or `update_content` — reducing token cost for common small-edit flows
+- **`knowledge-base-resolve-feedback` skill: targeted edits via `patch_content`** — when a review comment carries a `selected_text` span, the skill now calls `patch_content` instead of re-sending the full body via `update_content`
+
 ## [1.16.11] — 2026-08-03
 
 ### Changed
