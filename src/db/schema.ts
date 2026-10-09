@@ -299,6 +299,25 @@ function runMigrations(db: Database.Database): void {
       heading, body, content='', contentless_delete=1, tokenize='unicode61'
     );
   `);
+
+  // Migration 13: provenance of imported rows — source_key (unique when set) and source_sha
+  const hasSourceKey = (
+    db
+      .prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'source_key'")
+      .get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasSourceKey) {
+    db.exec("ALTER TABLE contents ADD COLUMN source_key TEXT");
+  }
+  const hasSourceSha = (
+    db
+      .prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'source_sha'")
+      .get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasSourceSha) {
+    db.exec("ALTER TABLE contents ADD COLUMN source_sha TEXT");
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_contents_source_key ON contents(source_key) WHERE source_key IS NOT NULL");
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {

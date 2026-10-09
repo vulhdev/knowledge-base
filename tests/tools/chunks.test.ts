@@ -111,7 +111,6 @@ describe("_chunks", () => {
   });
 
   it("never creates doc sections for an SOT card", async () => {
-    db.exec("ALTER TABLE contents ADD COLUMN source_key TEXT");
     const id = seed(db);
     db.prepare("UPDATE contents SET source_key = 'sot:ws-sot:docs/F-001.md' WHERE id = ?").run(id);
     expect(isSotCard(db, id)).toBe(true);

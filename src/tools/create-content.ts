@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { ContentType, ConflictResult, CreateContentResult, SuggestedParent } from "../types.js";
+import type { ContentType, ConflictResult, CreateContentResult, SuggestedParent, Provenance } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
@@ -95,6 +95,7 @@ export async function createContent(
   body: string,
   title?: string,
   requestSampling?: RequestSampling,
+  provenance?: Provenance,
 ): Promise<CreateContentResult> {
   if (!body.trim()) {
     throw new Error("body must not be empty");
@@ -135,9 +136,14 @@ export async function createContent(
   const sections = await prepareSections(body);
 
   const contentId = db.transaction(() => {
-    const { lastInsertRowid } = db
-      .prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)")
-      .run(type, title ?? null, body);
+    // provenance is written in the same INSERT, so an interrupted import never leaves a keyless copy
+    const { lastInsertRowid } = provenance
+      ? db
+          .prepare("INSERT INTO contents (type, title, body, source_key, source_sha) VALUES (?, ?, ?, ?, ?)")
+          .run(type, title ?? null, body, provenance.source_key, provenance.source_sha)
+      : db
+          .prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)")
+          .run(type, title ?? null, body);
 
     const id = Number(lastInsertRowid);
 

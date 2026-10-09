@@ -23,6 +23,9 @@ export type MatchedSection = {
 
 export type SearchResult = Content & { score: number; matched_sections?: MatchedSection[] };
 
+/** Where an imported row came from: `doc:<ws>:<relPath>[#fork-residue]` or `sot:<sot-ws>:<repoPath>`. */
+export type Provenance = { source_key: string; source_sha: string };
+
 export type SearchPage = {
   results: SearchResult[];
   has_more: boolean;
