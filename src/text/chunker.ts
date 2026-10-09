@@ -233,3 +233,32 @@ export function breadcrumb(title: string | null | undefined, headingPath: string
 export function sliceByLines(text: string, startLine: number, endLine: number): string {
   return text.split("\n").slice(startLine - 1, endLine).join("\n");
 }
+
+export type OutlineEntry = { key: string; heading: string; level: number; start_line: number; end_line: number };
+
+/** Headings #–#### with their subtree line ranges (1-based inclusive), keyed like chunkMarkdown. */
+export function outlineMarkdown(text: string): OutlineEntry[] {
+  const lines = splitLines(text);
+  const inFence = fenceMask(lines);
+  const out: OutlineEntry[] = [];
+  const stack: { level: number; n: number }[] = [];
+  const childCounts: number[] = [0];
+  for (let i = 0; i < lines.length; i++) {
+    const m = inFence[i] ? null : HEADING.exec(lines[i].text);
+    if (!m || m[1].length > 4) continue;
+    const level = m[1].length;
+    while (stack.length > 0 && stack[stack.length - 1].level >= level) stack.pop();
+    const depth = stack.length;
+    childCounts.length = depth + 1;
+    childCounts[depth] = (childCounts[depth] ?? 0) + 1;
+    stack.push({ level, n: childCounts[depth] });
+    childCounts[depth + 1] = 0;
+    out.push({ key: stack.map((s) => s.n).join("."), heading: m[2].trim(), level, start_line: i + 1, end_line: 0 });
+  }
+  const last = lines.length > 1 && lines[lines.length - 1].text === "" ? lines.length - 1 : lines.length;
+  for (let k = 0; k < out.length; k++) {
+    const next = out.slice(k + 1).find((e) => e.level <= out[k].level);
+    out[k].end_line = next ? next.start_line - 1 : last;
+  }
+  return out;
+}
