@@ -67,3 +67,14 @@ describe("import/git", () => {
     expect(hist[0].date).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });
+
+describe("import/git — non-ASCII paths", () => {
+  it("lists Japanese file names verbatim (no C-quoting)", () => {
+    repo = makeRepo();
+    repo.write("docs/原価検討書.md", "a");
+    repo.write("docs/plain.md", "b");
+    const c = repo.commit("init");
+    expect(listTrackedAtRef(repo.dir, c, "docs").sort()).toEqual(["docs/plain.md", "docs/原価検討書.md"].sort());
+    expect(showAtCommit(repo.dir, c, "docs/原価検討書.md")).toBe("a");
+  });
+});

@@ -32,11 +32,11 @@ export function resolveRef(root: string, override?: string): { ref: string; comm
   return { ref, commit };
 }
 
-/** Files tracked at `commit` under `relDir` (repo-relative paths). */
+/** Files tracked at `commit` under `relDir` (repo-relative paths). -z keeps non-ASCII names verbatim. */
 export function listTrackedAtRef(root: string, commit: string, relDir: string): string[] {
-  const args = ["ls-tree", "-r", "--name-only", commit];
+  const args = ["ls-tree", "-r", "-z", "--name-only", commit];
   if (relDir && relDir !== ".") args.push("--", relDir);
-  return git(root, args)!.split("\n").filter((l) => l !== "");
+  return git(root, args)!.split("\0").filter((l) => l !== "");
 }
 
 export function isIgnored(root: string, relPath: string): boolean {
