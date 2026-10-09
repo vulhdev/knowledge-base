@@ -2,6 +2,7 @@
 CLAUDE.md
 docs/
 .claude/skills/
+.claude/claude/
 
 # Dependencies
 node_modules/
@@ -19,3 +20,8 @@ dist/
 
 # OS
 .DS_Store
+
+.cursor/
+.vscode/
+.specify/
+
