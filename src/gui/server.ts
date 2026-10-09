@@ -7,6 +7,7 @@ import { listFeatures, listWorkspaceSummaries, listRecentContents } from "./db.j
 import { listContents } from "../tools/list-contents.js";
 import { getContent } from "../tools/get-content.js";
 import { getLineage } from "../tools/get-lineage.js";
+import { listVersions } from "../tools/list-versions.js";
 import { searchSemantic } from "../tools/search-semantic.js";
 import type { LineageResult, Content } from "../types.js";
 import {
@@ -73,7 +74,12 @@ export function createApp(db: Database.Database) {
       const content = getContent(db, id);
       let lineage: LineageResult | undefined;
       try { lineage = getLineage(db, id); } catch { /* no links or db error */ }
-      res.send(renderContent(content, lineage));
+      let versions;
+      try {
+        const vr = listVersions(db, id);
+        if (vr.versions.length >= 2) versions = vr.versions;
+      } catch { /* single-version or db error — no widget */ }
+      res.send(renderContent(content, lineage, versions));
     } catch {
       res.status(404).send("<p>Content not found</p>");
     }
