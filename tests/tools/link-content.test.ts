@@ -107,6 +107,54 @@ describe("linkContent", () => {
     expect(result.direction_warning).toBeUndefined();
   });
 
+  it("does NOT emit direction_warning for the first link between custom types (cold start)", () => {
+    const ftId = seed(db, "ws", "ft");
+    const anaId = insertContent(db, ftId, "analyze", "an analyze");
+    const reqId = insertContent(db, ftId, "requirement", "a requirement");
+
+    const result = linkContent(db, reqId, anaId);
+
+    expect(result.direction_warning).toBeUndefined();
+  });
+
+  it("emits direction_warning for custom types when existing links go the other way", () => {
+    const ftId = seed(db, "ws", "ft");
+    const req1 = insertContent(db, ftId, "requirement", "req 1");
+    const ana1 = insertContent(db, ftId, "analyze", "ana 1");
+    linkContent(db, ana1, req1);
+
+    const req2 = insertContent(db, ftId, "requirement", "req 2");
+    const ana2 = insertContent(db, ftId, "analyze", "ana 2");
+    const result = linkContent(db, req2, ana2);
+
+    expect(result.direction_warning).toMatch(/analyze→requirement/);
+    expect(result.direction_warning).toMatch(/1 time/);
+  });
+
+  it("does NOT emit direction_warning for custom types that follow the learned direction", () => {
+    const ftId = seed(db, "ws", "ft");
+    const req1 = insertContent(db, ftId, "requirement", "req 1");
+    const ana1 = insertContent(db, ftId, "analyze", "ana 1");
+    linkContent(db, ana1, req1);
+
+    const req2 = insertContent(db, ftId, "requirement", "req 2");
+    const ana2 = insertContent(db, ftId, "analyze", "ana 2");
+    const result = linkContent(db, ana2, req2);
+
+    expect(result.direction_warning).toBeUndefined();
+  });
+
+  it("re-linking an existing pair does not count itself as evidence", () => {
+    const ftId = seed(db, "ws", "ft");
+    const anaId = insertContent(db, ftId, "analyze", "an analyze");
+    const reqId = insertContent(db, ftId, "requirement", "a requirement");
+
+    linkContent(db, reqId, anaId);
+    const result = linkContent(db, reqId, anaId);
+
+    expect(result.direction_warning).toBeUndefined();
+  });
+
   it("succeeds with direction_warning when parent and child are in different workspaces", () => {
     const ftId1 = seed(db, "ws1", "ft");
     const ftId2 = seed(db, "ws2", "ft");

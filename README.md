@@ -140,6 +140,8 @@ title      — (optional) short label for easy identification in lists
 body       — document text
 ```
 
+The response includes `suggested_parents` — up to 3 semantically similar documents in the same workspace that could be this document's parent. Candidates exclude the document itself, its own type, and any type known to come after it (seed `idea → spec → plan`, plus the direction learned from existing links), so custom types get suggestions too.
+
 ### `get_content`
 
 Fetches a single document by its numeric ID. Returns all fields including `title` and `has_code_refs: boolean` — a zero-cost signal indicating whether any code refs are attached, so Claude can decide whether to call `get_code_refs` without fetching the data first.
@@ -229,6 +231,8 @@ parent_id  — ID of the parent document
 ```
 
 Returns a `LinkResult` with `parent_id`, `child_id`, `created_at`, and an optional `direction_warning` if the type order is reversed (e.g. linking a `plan` as the parent of an `idea`). The warning is informational — the link is always created.
+
+Type order is dynamic: `idea → spec → plan` is a built-in seed, and the order of any other type is learned from existing links (a pair warns only when existing links go the other way more often). The first links between new custom types produce no warning — there is no evidence yet.
 
 ### `derive_content`
 
