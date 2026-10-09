@@ -74,15 +74,19 @@ function repopulateContentsFts(db: Database.Database): void {
   `);
 }
 
+// One transaction: a crash mid-way rolls back to the old table and triggers, which the
+// Migration 6/11 detection then still sees as "not migrated" and re-runs.
 function recreateContentsFts(db: Database.Database): void {
-  db.exec(`
-    DROP TRIGGER IF EXISTS contents_ai;
-    DROP TRIGGER IF EXISTS contents_ad;
-    DROP TRIGGER IF EXISTS contents_au;
-    DROP TABLE IF EXISTS contents_fts;
-  `);
-  db.exec(FTS_AND_TRIGGERS);
-  repopulateContentsFts(db);
+  db.transaction(() => {
+    db.exec(`
+      DROP TRIGGER IF EXISTS contents_ai;
+      DROP TRIGGER IF EXISTS contents_ad;
+      DROP TRIGGER IF EXISTS contents_au;
+      DROP TABLE IF EXISTS contents_fts;
+    `);
+    db.exec(FTS_AND_TRIGGERS);
+    repopulateContentsFts(db);
+  })();
 }
 
 export function applySchema(db: Database.Database): void {
@@ -362,8 +366,10 @@ function removeFeatureIdColumn(db: Database.Database): void {
     COMMIT;
   `);
 
-  db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
-  repopulateContentsFts(db);
+  db.transaction(() => {
+    db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
+    repopulateContentsFts(db);
+  })();
 
   db.exec("PRAGMA foreign_keys = ON");
 }
@@ -403,8 +409,10 @@ function removeCheckConstraint(db: Database.Database): void {
   `);
 
   // FTS virtual table and triggers must be created outside the transaction above.
-  db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
-  repopulateContentsFts(db);
+  db.transaction(() => {
+    db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
+    repopulateContentsFts(db);
+  })();
 
   db.exec("PRAGMA foreign_keys = ON");
 }

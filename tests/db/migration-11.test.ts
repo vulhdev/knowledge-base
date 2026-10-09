@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import Database from "better-sqlite3";
 import { load as loadSqliteVec } from "sqlite-vec";
 import { applySchema } from "../../src/db/schema.js";
@@ -97,5 +97,21 @@ describe("Migration 11 — contentless CJK-bigram contents_fts", () => {
     expect(sqlOf(db, "contents_fts")).toContain("contentless_delete");
     expect(sqlOf(db, "contents_fts")).not.toContain("content=contents");
     expect(match(db, '"端数 数処 処理"')).toEqual([1]);
+  });
+
+  it("is atomic: a failure while refilling leaves the old index and triggers, so the next start re-runs it", () => {
+    const db = buildPre11Db();
+    const realExec = db.exec.bind(db);
+    const spy = vi.spyOn(db, "exec").mockImplementation((sql: string) => {
+      if (sql.includes("SELECT id, kb_cjk_bigram(title), kb_cjk_bigram(body) FROM contents")) throw new Error("crash");
+      return realExec(sql);
+    });
+    expect(() => applySchema(db)).toThrow(/crash/);
+    spy.mockRestore();
+    expect(sqlOf(db, "contents_fts")).not.toContain("contentless_delete");
+    expect(sqlOf(db, "contents_ai")).not.toContain("kb_cjk_bigram");
+    applySchema(db);
+    expect(sqlOf(db, "contents_fts")).toContain("contentless_delete");
+    expect(match(db, '"掛率"')).toEqual([1]);
   });
 });
