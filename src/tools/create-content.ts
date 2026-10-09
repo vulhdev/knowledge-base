@@ -3,20 +3,26 @@ import type { ContentType, ConflictResult, CreateContentResult, SuggestedParent 
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
+import { typesAfter } from "./_type-order.js";
 
-const PARENT_TYPE: Record<string, string> = { spec: "idea", plan: "spec" };
 const SUGGEST_LIMIT = 3;
 const SCORE_THRESHOLD = 0.25;
 
 async function suggestParents(
   db: Database.Database,
   workspace: string,
+  contentId: number,
   type: string,
   body: string,
   embeddingBlob: Buffer | null,
 ): Promise<SuggestedParent[]> {
-  const parentType = PARENT_TYPE[type];
-  if (!parentType) return [];
+  let excludedTypes: string[];
+  try {
+    excludedTypes = [...typesAfter(db, type)];
+  } catch {
+    excludedTypes = [type];
+  }
+  const typePlaceholders = excludedTypes.map(() => "?").join(", ");
 
   if (embeddingBlob) {
     try {
@@ -30,11 +36,12 @@ async function suggestParents(
            JOIN features f ON cf.feature_id = f.id
            JOIN workspaces w ON f.workspace_id = w.id
            WHERE v.embedding MATCH ? AND k = ?
-             AND c.type = ?
+             AND c.type NOT IN (${typePlaceholders})
+             AND c.id != ?
              AND w.name = ?
            ORDER BY v.distance`,
         )
-        .all(embeddingBlob, SUGGEST_LIMIT * 4, parentType, workspace) as VecRow[];
+        .all(embeddingBlob, SUGGEST_LIMIT * 4, ...excludedTypes, contentId, workspace) as VecRow[];
 
       const filtered = rows.filter((r) => r.score <= SCORE_THRESHOLD).slice(0, SUGGEST_LIMIT);
       if (filtered.length > 0) {
@@ -68,11 +75,12 @@ async function suggestParents(
          JOIN features f ON cf.feature_id = f.id
          JOIN workspaces w ON f.workspace_id = w.id
          WHERE contents_fts MATCH ?
-           AND c.type = ?
+           AND c.type NOT IN (${typePlaceholders})
+           AND c.id != ?
            AND w.name = ?
          LIMIT ?`,
       )
-      .all(ftsQuery, parentType, workspace, SUGGEST_LIMIT) as FtsRow[];
+      .all(ftsQuery, ...excludedTypes, contentId, workspace, SUGGEST_LIMIT) as FtsRow[];
 
     return rows.map((r) => ({ id: r.id, type: r.type, title: r.title, score: 0 }));
   } catch {
@@ -160,7 +168,7 @@ export async function createContent(
     .prepare("SELECT id, title, created_at FROM contents WHERE id = ?")
     .get(contentId) as { id: number; title: string | null; created_at: string };
 
-  const suggested_parents = await suggestParents(db, workspace, type, body, embeddingBlob);
+  const suggested_parents = await suggestParents(db, workspace, contentId, type, body, embeddingBlob);
 
   return { id: row.id, workspace, features: featureNamesSorted, type, title: row.title, created_at: row.created_at, conflicts, suggested_parents };
 }

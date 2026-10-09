@@ -169,14 +169,32 @@ describe("createContent", () => {
     expect(Array.isArray(result.suggested_parents)).toBe(true);
   });
 
-  it("suggested_parents is [] for type=idea (no parent type)", async () => {
-    const result = await createContent(db, "ws", ["ft"], "idea", "some idea body");
+  it("suggested_parents for type=idea never includes later seed types (spec, plan)", async () => {
+    await createContent(db, "ws", ["ft"], "spec", "checkout redesign spec");
+    await createContent(db, "ws", ["ft"], "plan", "checkout redesign plan");
+    const result = await createContent(db, "ws", ["ft"], "idea", "checkout redesign idea");
     expect(result.suggested_parents).toEqual([]);
   });
 
-  it("suggested_parents is [] for unknown types", async () => {
-    const result = await createContent(db, "ws", ["ft"], "adr", "some adr body");
+  it("suggested_parents works for custom types", async () => {
+    await createContent(db, "ws", ["ft"], "requirement", "invoice export requirement");
+    const result = await createContent(db, "ws", ["ft"], "analyze", "invoice export analyze");
+    expect(result.suggested_parents.map((p) => p.type)).toEqual(["requirement"]);
+  });
+
+  it("suggested_parents never includes the document itself or its own type", async () => {
+    await createContent(db, "ws", ["ft"], "adr", "billing retry adr one");
+    const result = await createContent(db, "ws", ["ft"], "adr", "billing retry adr two");
     expect(result.suggested_parents).toEqual([]);
+  });
+
+  it("suggested_parents excludes types that existing links place after the new type", async () => {
+    const req = await createContent(db, "ws", ["ft"], "requirement", "ledger sync requirement");
+    const ana = await createContent(db, "ws", ["ft"], "analyze", "ledger sync analyze");
+    db.prepare("INSERT INTO content_links (parent_id, child_id) VALUES (?, ?)").run(req.id, ana.id);
+
+    const result = await createContent(db, "ws", ["ft"], "requirement", "ledger sync requirement v2");
+    expect(result.suggested_parents.map((p) => p.type)).not.toContain("analyze");
   });
 
   it("FTS fallback: suggests ideas when creating spec and model is not ready", async () => {

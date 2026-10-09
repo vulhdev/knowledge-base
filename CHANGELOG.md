@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Dynamic type taxonomy for `suggested_parents` and `direction_warning`** — the hardcoded `idea → spec → plan` tables (`PARENT_TYPE` in `create-content.ts`, `TYPE_ORDER` in `link-content.ts`) are replaced by `src/tools/_type-order.ts`, which keeps `idea → spec → plan` as a seed order and learns the order of every other type from the `(parent.type, child.type)` pairs already in `content_links`. Custom types (`requirement`, `analyze`, `adr`, …) now get parent suggestions: a new document's suggestions exclude its own type and every type known to come after it, and are otherwise ranked by vector similarity (FTS fallback unchanged). `link_content` warns on a custom-type pair only when existing links go the other way more often; with no evidence yet (cold start) it stays silent. The warning text now states its basis, e.g. `Unexpected type direction plan→idea: default order is idea→spec→plan`
+- **No schema change, no migration** — the order is computed at query time from existing `content_links` and `contents.type`; nothing new is stored, and rollback is a plain code revert
+
+### Fixed
+- **`suggested_parents` could return the document itself** — the ANN and FTS queries in `suggestParents` now exclude the new document's own id (`c.id != ?`), matching `findSimilarInWorkspace` in conflict detection. Previously masked by the strict type filter
+
 ## [1.17.0] — 2026-08-14
 
 ### Added

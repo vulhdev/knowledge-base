@@ -1,7 +1,6 @@
 import type Database from "better-sqlite3";
 import type { LinkResult } from "../types.js";
-
-const TYPE_ORDER: Record<string, number> = { idea: 1, spec: 2, plan: 3 };
+import { reverseDirectionReason } from "./_type-order.js";
 
 export function linkContent(
   db: Database.Database,
@@ -44,11 +43,15 @@ export function linkContent(
 
   const result: LinkResult = { parent_id: parentId, child_id: childId, created_at: row.created_at };
 
-  const parentOrder = TYPE_ORDER[parent.type];
-  const childOrder = TYPE_ORDER[child.type];
+  let reason: string | null = null;
+  try {
+    reason = reverseDirectionReason(db, parent.type, child.type, { parentId, childId });
+  } catch {
+    // direction check is advisory — the link is already created
+  }
 
-  if (parentOrder !== undefined && childOrder !== undefined && parentOrder >= childOrder) {
-    result.direction_warning = `Expected parent type to precede child type (idea→spec→plan), but got ${parent.type}→${child.type}`;
+  if (reason) {
+    result.direction_warning = `Unexpected type direction ${parent.type}→${child.type}: ${reason}`;
   } else if (parent.workspace !== child.workspace) {
     result.direction_warning = `Parent (workspace: ${parent.workspace}) and child (workspace: ${child.workspace}) are in different workspaces`;
   }
