@@ -17,8 +17,10 @@ workspace → feature → content (idea | spec | plan | digest | doc)
 - **Code grounding** — link plan documents to git commits at task granularity; `attach_code_ref` records which commit implements which task, `get_code_refs` returns the full coverage map, `get_content` includes a `has_code_refs` signal so Claude knows to fetch refs without a round-trip
 - **Error log viewer** — every unhandled MCP tool exception is captured to SQLite and viewable in the GUI at `/errors`
 - **SQLite-backed** — single file database via `better-sqlite3`, no external services
+- **Content versioning** — create named snapshots of any document with `create_version`; browse the full version history with `list_versions`; `list_contents` and semantic search always show only the latest version
+- **GitHub-style diff viewer** — compare any two versions of a document in the GUI at `/ws/:workspace/:feature/:id/diff?from=<id>&to=<id>`; line-level unified diff with green additions and red deletions; version compare widget on every content page with ≥ 2 versions
 - **Inline review** — after saving a document, Claude opens a review session in the GUI; select any passage to add an inline comment, commit the review, and Claude processes each comment (edit, clarify, or expand) and marks it resolved — resolved comments are shown with a green badge in the GUI
-- **Claude Code skills** — 13 slash commands for create, list, search, get, update, delete, import, export, explore, digest, doc analysis, review, and resolve feedback
+- **Claude Code skills** — 14 slash commands for create, list, search, get, update, delete, import, export, explore, digest, doc analysis, review, resolve feedback, and version diff
 - **Claude Code agents** — reusable agent personas installed alongside skills; `kb-conflict-resolver` provides deep conflict analysis when `semantic_contradiction` is detected
 
 ## Requirements
@@ -94,7 +96,7 @@ To explore your knowledge base in a browser, run:
 npx @vulhdev/knowledge-base gui
 ```
 
-Opens a web UI at `http://localhost:3000` (override with `PORT=<n>`). Browse workspaces → features → documents, search across all content, open the **Errors** tab to inspect recent MCP tool failures, or view a **review session** with inline comments when opened via `open_for_review`.
+Opens a web UI at `http://localhost:57891` (override with `PORT=<n>`). Browse workspaces → features → documents, search across all content, open the **Errors** tab to inspect recent MCP tool failures, or view a **review session** with inline comments when opened via `open_for_review`. Content pages with multiple versions show a **version compare widget** — pick any two versions and click Compare, or use "What changed?" for a one-click latest-vs-previous diff.
 
 ## Claude Code Skills
 
@@ -115,6 +117,7 @@ Skills use colon namespace notation — type the part after the colon to get aut
 | `/doc` → `knowledge-base:doc` | Analyze a codebase feature and save structured docs (DB schema, backend flow, frontend) |
 | `/review` → `knowledge-base:review` | Proactively open an existing document for inline review in the GUI — creates a review session, prints the URL, waits for the user to commit, then hands off to resolve-feedback |
 | `/resolve-feedback` → `knowledge-base:resolve-feedback` | Process committed inline review comments — classifies each comment by intent (`edit_request`, `clarification`, `expand`, `positive`) and responds accordingly; marks each comment resolved via `resolve_comment` and the review via `resolve_review` |
+| `/diff` → `knowledge-base:diff` | Compare any two versions of a document — resolves the version list, lets you pick two versions interactively, renders a unified diff in chat (`--- removed` / `+++ added`), and prints the GUI diff URL |
 
 ## Claude Code Agents
 
@@ -194,6 +197,42 @@ title  — (optional) new title, omit to keep existing
 
 Permanently deletes a document by its numeric ID. Returns the deleted document.
 
+```
+id       — document ID
+cascade  — (optional, default false) when true, deletes the entire version chain
+```
+
+Four deletion behaviors depending on the document's position in a version chain:
+- **Sole version** — deletes the document (existing behavior, unchanged)
+- **Non-root version** — deletes only that version; remaining versions are renumbered
+- **Root version, `cascade=false`** — promotes v2 to root (`root_id=NULL`); other chain members updated
+- **Any version, `cascade=true`** — deletes every version in the chain
+
+---
+
+### `create_version`
+
+Creates a new version of an existing document. The new row gets `version_number = prev_max + 1` and `is_latest = 1`; the previous latest row is set to `is_latest = 0`. Features and content links are copied to the new version; code refs are not.
+
+```
+id    — ID of any version in the chain (root or non-root)
+body  — body for the new version
+type  — (optional) new type, omit to keep the same
+title — (optional) new title, omit to keep the same
+```
+
+Returns a `CreateVersionResult` with the new document and `previous_version_id`.
+
+### `list_versions`
+
+Returns all versions in a chain sorted by `version_number ASC`. Safe to call with any version ID in the chain — always resolves to the root and returns the full list.
+
+```
+id  — ID of any version in the chain
+```
+
+Returns `{ root_id, versions: VersionSummary[] }` where each `VersionSummary` includes `id`, `version_number`, `is_latest`, `title`, `created_at`, `updated_at`.
+
 ---
 
 ### `attach_code_ref`
@@ -255,7 +294,7 @@ Creates a review session for a document and returns the GUI URL. The user opens 
 
 ```
 content_id  — ID of the document to review
-port        — (optional) GUI server port, default 3000
+port        — (optional) GUI server port, default 57891
 ```
 
 Returns `{ review_id, url, note }`. Does not auto-open a browser — print the URL for the user to open manually. Start the GUI server first with `npx @vulhdev/knowledge-base gui`.
@@ -333,7 +372,7 @@ Beyond the MCP tools, the package exposes a CLI for human developer workflows:
 | Command | Description |
 |---|---|
 | `npx @vulhdev/knowledge-base init` | Link a project to a workspace, download embedding model, install skills and agents |
-| `npx @vulhdev/knowledge-base gui` | Open read-only browser UI at `http://localhost:3000` |
+| `npx @vulhdev/knowledge-base gui` | Open browser UI at `http://localhost:57891` — browse, search, review, and compare versions |
 | `npx @vulhdev/knowledge-base update` | Update installed Claude Code skills to the current version |
 | `npx @vulhdev/knowledge-base link-code` | Link the current HEAD commit to a plan task |
 
@@ -367,14 +406,17 @@ CREATE TABLE features (
 );
 
 CREATE TABLE contents (
-  id         INTEGER PRIMARY KEY,
-  feature_id INTEGER NOT NULL REFERENCES features(id),
-  type       TEXT NOT NULL,   -- "idea" | "spec" | "plan" | "digest" | "doc"
-  title      TEXT,            -- optional short label
-  body       TEXT NOT NULL,
-  embedding  BLOB,            -- float[384] vector, NULL until model is downloaded
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  id             INTEGER PRIMARY KEY,
+  feature_id     INTEGER NOT NULL REFERENCES features(id),
+  type           TEXT NOT NULL,   -- "idea" | "spec" | "plan" | "digest" | "doc"
+  title          TEXT,            -- optional short label
+  body           TEXT NOT NULL,
+  embedding      BLOB,            -- float[384] vector, NULL until model is downloaded
+  root_id        INTEGER REFERENCES contents(id),  -- NULL on v1; points to root for v2+
+  version_number INTEGER NOT NULL DEFAULT 1,
+  is_latest      INTEGER NOT NULL DEFAULT 1,       -- 1 for the current version, 0 for old
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Provenance graph: tracks idea→spec→plan lineage chains
@@ -437,6 +479,7 @@ Existing databases are automatically migrated on startup:
 - `reviews` and `review_comments` tables added if missing (Migration 7)
 - `resolved_at` column added to `review_comments` if missing (Migration 8)
 - Indexes on `contents(created_at)` and `contents(type, created_at)` added if missing (Migration 10)
+- `root_id`, `version_number`, `is_latest` columns added to `contents` if missing, with indexes on `root_id` and `is_latest` (Migration 11)
 - Legacy database at `~/.claude/knowledge-base.db` automatically moved to `~/.claude/knowledge-base/knowledge-base.db` on first startup
 
 ## Development
