@@ -231,6 +231,36 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_contents_created_at ON contents(created_at);
     CREATE INDEX IF NOT EXISTS idx_contents_type_created_at ON contents(type, created_at);
   `);
+
+  // Migration 11: add versioning columns (root_id, version_number, is_latest)
+  const hasRootId = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'root_id'").get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasRootId) {
+    db.exec("ALTER TABLE contents ADD COLUMN root_id INTEGER REFERENCES contents(id)");
+  }
+
+  const hasVersionNumber = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'version_number'").get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasVersionNumber) {
+    db.exec("ALTER TABLE contents ADD COLUMN version_number INTEGER NOT NULL DEFAULT 1");
+  }
+
+  const hasIsLatest = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'is_latest'").get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasIsLatest) {
+    db.exec("ALTER TABLE contents ADD COLUMN is_latest INTEGER NOT NULL DEFAULT 1");
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
+    CREATE INDEX IF NOT EXISTS idx_contents_is_latest ON contents(is_latest);
+  `);
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {
