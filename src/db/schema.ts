@@ -20,6 +20,26 @@ const VEC_TABLE_AND_TRIGGERS = `
   CREATE TRIGGER IF NOT EXISTS contents_vec_ad AFTER DELETE ON contents BEGIN
     DELETE FROM vec_contents WHERE rowid = old.id;
   END;
+
+  CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+    embedding float[384]
+  );
+
+  CREATE TRIGGER IF NOT EXISTS content_chunks_vec_ai AFTER INSERT ON content_chunks
+  WHEN new.embedding IS NOT NULL BEGIN
+    INSERT INTO vec_chunks(rowid, embedding) VALUES (new.id, new.embedding);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS content_chunks_vec_au AFTER UPDATE ON content_chunks
+  WHEN new.embedding IS NOT NULL BEGIN
+    DELETE FROM vec_chunks WHERE rowid = old.id;
+    INSERT INTO vec_chunks(rowid, embedding) VALUES (new.id, new.embedding);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS content_chunks_ad AFTER DELETE ON content_chunks BEGIN
+    DELETE FROM vec_chunks WHERE rowid = old.id;
+    DELETE FROM sot_chunks_fts WHERE rowid = old.id AND old.kind = 'sot';
+  END;
 `;
 
 const FTS_AND_TRIGGERS = `
@@ -251,6 +271,34 @@ function runMigrations(db: Database.Database): void {
   if (!fts11.includes("contentless_delete") || !trigger11.includes("kb_cjk_bigram")) {
     recreateContentsFts(db);
   }
+
+  // Migration 12: section rows (offset-only, no text) for docs and SOT pointers, plus the
+  // contentless FTS that holds SOT section tokens. vec_chunks and its triggers live in the VEC block.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS content_chunks (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT, -- never reuse ids: they key vec_chunks and sot_chunks_fts
+      content_id    INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+      kind          TEXT NOT NULL,
+      chunk_key     TEXT NOT NULL,
+      ord           INTEGER NOT NULL,
+      heading_path  TEXT NOT NULL,
+      start_char    INTEGER,
+      end_char      INTEGER,
+      start_line    INTEGER NOT NULL,
+      end_line      INTEGER NOT NULL,
+      source_path   TEXT,
+      source_commit TEXT,
+      chunk_sha     TEXT NOT NULL,
+      embedding     BLOB,
+      UNIQUE(content_id, kind, chunk_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_content_chunks_content ON content_chunks(content_id);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS sot_chunks_fts USING fts5(
+      heading, body, content='', contentless_delete=1, tokenize='unicode61'
+    );
+  `);
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {

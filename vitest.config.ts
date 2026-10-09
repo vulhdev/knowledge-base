@@ -5,6 +5,7 @@ export default defineConfig({
     environment: "node",
     pool: "forks",
     passWithNoTests: true,
+    setupFiles: ["tests/setup-tokenizer.ts"],
     coverage: {
       provider: "v8",
       include: ["src/tools/**"],

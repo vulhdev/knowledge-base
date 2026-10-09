@@ -336,3 +336,76 @@ describe("Japanese full-text search (CJK bigrams)", () => {
     expect(page.results[0].id).toBe(titled);
   });
 });
+
+describe("section-level search (matched_sections)", () => {
+  let db: Database.Database;
+  const vecA = new Float32Array(384).fill(0); vecA[0] = 1;
+  const vecB = new Float32Array(384).fill(0); vecB[1] = 1;
+  const DOC = [
+    "# 手引き",
+    ...["概要", "前提", "手順", "注意", "補足"].flatMap((h) => [`## ${h}`, `${h}の説明文です。`.repeat(12)]),
+    "## 最後の節",
+    "ここだけに書かれたユニークな詳細：掛率は九割とする。".repeat(3),
+  ].join("\n");
+
+  beforeEach(async () => {
+    const { isModelReady, getEmbedding } = await import("../../src/embedding/model.js");
+    vi.mocked(isModelReady).mockReturnValue(true);
+    vi.mocked(getEmbedding).mockImplementation(async (t: string) => (t.includes("ユニーク") ? vecA : vecB));
+    db = createTestDb();
+  });
+
+  it("returns the doc once, in the top 5, with the last section among matched_sections (Independent Test)", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    const { id } = await createContent(db, "ws-sec", ["ft"], "doc", DOC, "手引き");
+    for (let i = 0; i < 6; i++) await createContent(db, "ws-sec", ["ft"], "doc", `別の文書 ${i} です。`.repeat(10));
+    const page = await searchSemantic(db, "ユニークな詳細", "ws-sec");
+    const top = page.results.slice(0, 5);
+    expect(top.map((r) => r.id)).toContain(id);
+    expect(page.results.filter((r) => r.id === id)).toHaveLength(1);
+    const hit = page.results.find((r) => r.id === id)!;
+    const last = db.prepare("SELECT chunk_key FROM content_chunks WHERE content_id = ? ORDER BY ord DESC LIMIT 1").get(id) as { chunk_key: string };
+    expect(hit.matched_sections![0].chunk_key).toBe(`${id}#${last.chunk_key}`);
+    expect(hit.matched_sections![0].heading_path).toBe("手引き › 最後の節");
+    const lines = DOC.split("\n");
+    expect(lines[hit.matched_sections![0].start_line - 1]).toBe("## 最後の節");
+  });
+
+  it("caps matched_sections at 3 and lists a doc once even when many sections match", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    const many = ["# 多い", ...Array.from({ length: 10 }, (_, i) => [`## 節${i}`, "ユニーク ".repeat(60)]).flat()].join("\n");
+    const { id } = await createContent(db, "ws-sec", ["ft"], "doc", many, "多い");
+    const page = await searchSemantic(db, "ユニーク", "ws-sec");
+    expect(page.results.filter((r) => r.id === id)).toHaveLength(1);
+    expect(page.results[0].matched_sections!.length).toBeLessThanOrEqual(3);
+    expect(page.total_in_pool).toBe(page.results.length);
+  });
+
+  it("keeps every existing SearchResult / SearchPage field", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    await createContent(db, "ws-sec", ["ft"], "doc", DOC, "手引き");
+    const page = await searchSemantic(db, "ユニーク", "ws-sec");
+    expect(Object.keys(page).sort()).toEqual(["has_more", "limit", "offset", "results", "total_in_pool"]);
+    const r = page.results[0];
+    for (const k of ["id", "workspace", "features", "type", "title", "body", "created_at", "updated_at", "has_code_refs", "score"]) {
+      expect(r).toHaveProperty(k);
+    }
+  });
+
+  it("still returns a doc that has no sections (doc vector only)", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    const { id } = await createContent(db, "ws-sec", ["ft"], "doc", "ユニーク body", "x");
+    db.prepare("DELETE FROM content_chunks WHERE content_id = ?").run(id);
+    const page = await searchSemantic(db, "ユニーク", "ws-sec");
+    const hit = page.results.find((r) => r.id === id)!;
+    expect(hit).toBeDefined();
+    expect(hit.matched_sections ?? []).toEqual([]);
+  });
+
+  it("still throws the old error when the model is absent", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    const { isModelReady } = await import("../../src/embedding/model.js");
+    vi.mocked(isModelReady).mockReturnValue(false);
+    await expect(searchSemantic(db, "x")).rejects.toThrow("Semantic search is not available. Run: npx @vulhdev/knowledge-base init");
+  });
+});

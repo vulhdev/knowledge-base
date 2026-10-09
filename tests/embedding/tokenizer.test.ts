@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.unmock("../../src/embedding/tokenizer.js");
+
 vi.mock("../../src/embedding/model.js", () => ({
   isModelReady: vi.fn().mockReturnValue(false),
   getEmbedding: vi.fn(),
