@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import { loadGolden, GROUPS, GoldenHashMismatch, type GoldenQuestion, type Freeze } from "./golden.js";
 import { aggregate, noAnswerRatio, percentile, rankOf, resolveKey, sectionHit, versionHit, type GroupMetrics, type QuestionOutcome } from "./metrics.js";
 import { loadKb, openWith } from "./kb-src.js";
-import { sotWindows, scanDb } from "./sc005.js";
+import { sotWindows, scanDb, sotHeadings } from "./sc005.js";
 import { assertNotRealDb } from "../db/client.js";
 
 type Args = {
@@ -170,7 +170,15 @@ export async function runHarness(a: Args): Promise<{ code: number; result?: RunR
       const path = /^- path: `([^`]+)`/m.exec(c.body)?.[1];
       if (commit && path) { texts.push(git(a.sotRepo, ["show", `${commit}:${path}`])); paths.push(path); }
     }
-    const m = scanDb(db, sotWindows(texts, paths));
+    // Branch A rows are the personal docs' own text, not SOT content; headings and paths are allowed.
+    const allowed = [...sotHeadings(texts), ...paths, resolve(a.sotRepo), ...paths.map((p) => p.split("/").pop()!)];
+    const m = scanDb(db, sotWindows(texts, paths), {
+      skipRowsWhere: {
+        contents: "source_key IS NOT NULL AND source_key LIKE 'doc:%'",
+        content_chunks: "kind = 'doc' AND content_id IN (SELECT id FROM contents WHERE source_key LIKE 'doc:%')",
+      },
+      allowed,
+    });
     sc005 = { matches: m.length, samples: m.slice(0, 20) };
   }
 

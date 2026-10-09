@@ -8,8 +8,10 @@ vi.mock("../../src/embedding/model.js", () => ({
 }));
 
 const fromPretrained = vi.fn();
+const transformersEnv: { cacheDir?: string } = {};
 vi.mock("@huggingface/transformers", () => ({
   AutoTokenizer: { from_pretrained: (...args: unknown[]) => fromPretrained(...args) },
+  env: transformersEnv,
 }));
 
 vi.mock("../../src/config.js", () => ({
@@ -41,8 +43,9 @@ describe("getTokenCounter", () => {
     expect(count("abc")).toBe(3);
     expect(fromPretrained).toHaveBeenCalledWith(
       "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
-      expect.objectContaining({ local_files_only: true, cache_dir: "/tmp/kb-models-test" }),
+      expect.objectContaining({ local_files_only: true }),
     );
+    expect(transformersEnv.cacheDir).toBe("/tmp/kb-models-test");
   });
 
   it("falls back to the approximation when loading the tokenizer throws", async () => {

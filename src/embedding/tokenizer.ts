@@ -29,11 +29,11 @@ export async function getTokenCounter(): Promise<TokenCounter> {
   if (real) return real;
   if (!isModelReady()) return approxTokenCount;
   try {
-    const { AutoTokenizer } = await import("@huggingface/transformers");
-    const tokenizer = await AutoTokenizer.from_pretrained(MODEL_NAME, {
-      cache_dir: loadSettings().model_cache_dir,
-      local_files_only: true,
-    });
+    const { AutoTokenizer, env } = await import("@huggingface/transformers");
+    // Same cache location model.ts uses. Passing cache_dir per call instead resolves a different
+    // layout, falls through to a remote metadata fetch and leaves the shared pipeline unusable.
+    env.cacheDir = loadSettings().model_cache_dir;
+    const tokenizer = await AutoTokenizer.from_pretrained(MODEL_NAME, { local_files_only: true });
     real = (text: string) => tokenizer.encode(text, { add_special_tokens: false }).length;
     return real;
   } catch {

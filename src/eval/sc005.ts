@@ -27,7 +27,24 @@ export function sotWindows(texts: string[], paths: string[]): Set<string> {
   return set;
 }
 
-export function scanDb(db: Database.Database, windows: Set<string>, opts: { skipRowsWhere?: string } = {}): Sc005Match[] {
+/** Heading texts of the SOT files: allowed in the DB (card outline, pointer heading_path, titles). */
+export function sotHeadings(texts: string[]): string[] {
+  const out = new Set<string>();
+  for (const text of texts) {
+    for (const line of text.split("\n")) {
+      const m = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+      if (m && m[1]) out.add(m[1]);
+    }
+  }
+  // longest first so a heading containing another is blanked whole
+  return [...out].sort((a, b) => b.length - a.length);
+}
+
+export function scanDb(
+  db: Database.Database,
+  windows: Set<string>,
+  opts: { skipRowsWhere?: Record<string, string>; allowed?: string[] } = {},
+): Sc005Match[] {
   const tables = db
     .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND sql NOT LIKE 'CREATE VIRTUAL%' AND name NOT LIKE 'sqlite_%'
               AND name NOT LIKE '%_fts_%' AND name NOT LIKE 'vec_%'`)
@@ -37,11 +54,14 @@ export function scanDb(db: Database.Database, windows: Set<string>, opts: { skip
     const cols = (db.prepare(`SELECT name, type FROM pragma_table_info(?)`).all(name) as { name: string; type: string }[])
       .filter((c) => c.type.toUpperCase() === "TEXT" || c.type === "");
     for (const c of cols) {
-      const where = name === "contents" && opts.skipRowsWhere ? ` WHERE NOT (${opts.skipRowsWhere})` : "";
+      const skip = opts.skipRowsWhere?.[name];
+      const where = skip ? ` WHERE NOT (${skip})` : "";
       const rows = db.prepare(`SELECT rowid AS rowid, "${c.name}" AS v FROM "${name}"${where}`).all() as { rowid: number; v: unknown }[];
       for (const r of rows) {
         if (typeof r.v !== "string" || r.v.length < WINDOW) continue;
-        const chars = Array.from(r.v);
+        let value = r.v;
+        for (const a of opts.allowed ?? []) if (a.length >= 4 && value.includes(a)) value = value.split(a).join("\u0000");
+        const chars = Array.from(value);
         for (let i = 0; i + WINDOW <= chars.length; i++) {
           const w = chars.slice(i, i + WINDOW).join("");
           if (windows.has(w)) {
