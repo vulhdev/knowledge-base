@@ -8,7 +8,10 @@ import type { SourceFile } from "./dedup.js";
 
 export type SotFile = { repoRoot: string; repoPath: string; ref: string; commit: string };
 
-export type ScanResult = { aFiles: SourceFile[]; bFiles: SotFile[]; warnings: string[] };
+/** A git folder scanned for branch B: cards under it that vanish from the ref are deleted. */
+export type SotScope = { repoRoot: string; relDir: string };
+
+export type ScanResult = { aFiles: SourceFile[]; bFiles: SotFile[]; bScopes: SotScope[]; warnings: string[] };
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -24,6 +27,7 @@ function walk(dir: string): string[] {
 export function scanSources(dirs: string[], opts: { ref?: string } = {}): ScanResult {
   const aFiles: SourceFile[] = [];
   const bFiles: SotFile[] = [];
+  const bScopes: SotScope[] = [];
   const warnings: string[] = [];
 
   for (const d of dirs) {
@@ -38,6 +42,7 @@ export function scanSources(dirs: string[], opts: { ref?: string } = {}): ScanRe
       const anyTracked = onDisk.some((p) => isTracked(root, relative(root, p).split(sep).join("/")));
       if (anyTracked) {
         refInfo = resolveRef(root, opts.ref);
+        bScopes.push({ repoRoot: root, relDir });
         tracked = new Set(listTrackedAtRef(root, refInfo.commit, relDir).filter((p) => !isIgnored(root, p)));
         for (const p of [...tracked].sort()) bFiles.push({ repoRoot: root, repoPath: p, ref: refInfo.ref, commit: refInfo.commit });
       }
@@ -57,5 +62,5 @@ export function scanSources(dirs: string[], opts: { ref?: string } = {}): ScanRe
       aFiles.push({ clone: cloneOf(abs, dir), relPath, absPath: abs, text: readFileSync(abs, "utf8"), mtimeMs: statSync(abs).mtimeMs });
     }
   }
-  return { aFiles, bFiles, warnings };
+  return { aFiles, bFiles, bScopes, warnings };
 }

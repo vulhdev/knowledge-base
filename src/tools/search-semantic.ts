@@ -280,20 +280,24 @@ export function runSotFtsSearch(
   const { tokens } = buildFtsQuery(query);
   if (tokens.length === 0) return [];
 
+  // bm25() cannot run inside an aggregate, so pointer scores are materialized first, then folded per card
   let sql = `
-    SELECT cc.content_id AS id, MIN(bm25(sot_chunks_fts, 2.0, 1.0)) AS s
-    FROM sot_chunks_fts
-    JOIN content_chunks cc ON cc.id = sot_chunks_fts.rowid
-    JOIN contents c ON c.id = cc.content_id
-    JOIN content_features cf ON cf.content_id = c.id
-    JOIN features f ON cf.feature_id = f.id
-    JOIN workspaces w ON f.workspace_id = w.id
-    WHERE sot_chunks_fts MATCH ?
+    WITH hits AS MATERIALIZED (
+      SELECT cc.content_id AS id, bm25(sot_chunks_fts, 2.0, 1.0) AS s
+      FROM sot_chunks_fts
+      JOIN content_chunks cc ON cc.id = sot_chunks_fts.rowid
+      JOIN contents c ON c.id = cc.content_id
+      JOIN content_features cf ON cf.content_id = c.id
+      JOIN features f ON cf.feature_id = f.id
+      JOIN workspaces w ON f.workspace_id = w.id
+      WHERE sot_chunks_fts MATCH ?
   `;
   if (conditions.length > 0) {
     sql += ` AND ${conditions.join(" AND ")}`;
   }
-  sql += ` GROUP BY cc.content_id ORDER BY s LIMIT ${limit}`;
+  sql += `
+    )
+    SELECT id, MIN(s) AS s FROM hits GROUP BY id ORDER BY s LIMIT ${limit}`;
 
   try {
     const stmt = db.prepare(sql);

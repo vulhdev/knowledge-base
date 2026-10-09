@@ -30,6 +30,7 @@ export type PlanCard = {
   repo_path: string;
   ref: string;
   commit: string; // last commit that changed the file, reachable from `ref`
+  ref_commit: string; // the commit `ref` resolved to when the plan was built
   markdown: boolean;
 };
 
@@ -41,6 +42,8 @@ export type LoadPlan = {
   sot_workspace: string;
   items: (PlanDoc | PlanCard)[];
   links: PlanLink[];
+  /** source_key prefixes of every scanned SOT folder: cards under them that are not in `items` are removed */
+  sot_scopes: string[];
   log: string[];
   warnings: string[];
   stats: { files_a: number; files_b: number; docs: number; residues: number; cards: number; aliases: number; series_links: number };
@@ -134,6 +137,7 @@ export function buildLoadPlan(scan: ScanResult, workspace: string, sotWorkspace:
         repo_path: b.repoPath,
         ref: b.ref,
         commit,
+        ref_commit: b.commit,
         markdown: /\.md$/i.test(b.repoPath),
       });
     } catch (err) {
@@ -147,6 +151,7 @@ export function buildLoadPlan(scan: ScanResult, workspace: string, sotWorkspace:
     sot_workspace: sotWorkspace,
     items,
     links,
+    sot_scopes: scan.bScopes.map((sc) => cardSourceKey(sotWorkspace, sc.relDir ? `${sc.relDir}/` : "")),
     log,
     warnings,
     stats: {
