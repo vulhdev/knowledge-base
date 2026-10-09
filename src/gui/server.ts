@@ -166,6 +166,54 @@ export function createApp(db: Database.Database) {
     }
   });
 
+  app.get("/ws/:workspace/:feature/:id/diff", (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(404).send("<p>Not found</p>");
+      return;
+    }
+    try {
+      const { workspace, feature } = req.params;
+      const contentUrl = `/ws/${encodeURIComponent(workspace)}/${encodeURIComponent(feature)}/${id}`;
+
+      let allVersions;
+      try {
+        allVersions = listVersions(db, id);
+      } catch {
+        res.status(404).send("<p>Content not found</p>");
+        return;
+      }
+
+      if (allVersions.versions.length < 2) {
+        res.redirect(contentUrl);
+        return;
+      }
+
+      const latest = allVersions.versions.find((v) => v.is_latest) ?? allVersions.versions[allVersions.versions.length - 1];
+      const secondLatest = allVersions.versions[allVersions.versions.indexOf(latest) - 1] ?? allVersions.versions[0];
+
+      const fromId = req.query.from ? Number(req.query.from) : secondLatest.id;
+      const toId = req.query.to ? Number(req.query.to) : latest.id;
+
+      if (fromId === toId) {
+        res.redirect(contentUrl);
+        return;
+      }
+
+      const ids = new Set(allVersions.versions.map((v) => v.id));
+      if (!ids.has(fromId) || !ids.has(toId)) {
+        res.status(400).send("<p>Versions do not belong to the same document</p>");
+        return;
+      }
+
+      const fromContent = getContent(db, fromId);
+      const toContent = getContent(db, toId);
+      res.send(renderDiff(fromContent, toContent, allVersions.versions));
+    } catch {
+      res.status(404).send("<p>Content not found</p>");
+    }
+  });
+
   // DEV FIXTURE: preview diff UI with hardcoded data — remove before release
   app.get("/diff/preview", (_req, res) => {
     const now = new Date().toISOString();
