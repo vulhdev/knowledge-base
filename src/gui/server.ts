@@ -214,19 +214,6 @@ export function createApp(db: Database.Database) {
     }
   });
 
-  // DEV FIXTURE: preview diff UI with hardcoded data — remove before release
-  app.get("/diff/preview", (_req, res) => {
-    const now = new Date().toISOString();
-    const base = { workspace: "demo", features: ["search"], type: "spec" as const, title: "Search Spec", root_id: null, has_code_refs: false, created_at: now, updated_at: now };
-    const fromContent = { ...base, id: 1, version_number: 1, body: "# Search Spec\n\n## Objective\n\nBuild a fast search experience for the knowledge base.\n\n## Requirements\n\n- Full-text search across all documents\n- Results ranked by relevance\n- Support for filtering by workspace\n\n## Out of Scope\n\n- Fuzzy matching\n- Spell correction" };
-    const toContent = { ...base, id: 2, version_number: 2, root_id: 1, body: "# Search Spec\n\n## Objective\n\nBuild a fast, semantic search experience for the knowledge base.\n\n## Requirements\n\n- Full-text search across all documents\n- Semantic vector search (ANN)\n- Results ranked by relevance with recency boost\n- Support for filtering by workspace and feature\n\n## Out of Scope\n\n- Spell correction" };
-    const versions = [
-      { id: 1, version_number: 1, is_latest: false, title: "Search Spec", created_at: now, updated_at: now },
-      { id: 2, version_number: 2, is_latest: true, title: "Search Spec", created_at: now, updated_at: now },
-    ];
-    res.send(renderDiff(fromContent, toContent, versions));
-  });
-
   app.get("/errors", (_req, res) => {
     const errors = listErrorLogs(db);
     res.send(renderErrorList(errors));
