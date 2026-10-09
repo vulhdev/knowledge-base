@@ -22,7 +22,7 @@ If IDs are not given, ask: "What are the IDs of the two docs to link? (use `/kno
 
 The relationship is directional: **parent → child**.
 
-Natural order: `idea → spec → plan` (parent comes earlier in the chain).
+Natural order: `idea → spec → plan` (parent comes earlier in the chain). For other types, the server learns the order from existing links — follow the direction already used for the same type pair.
 
 If the user specifies direction explicitly ("A is the parent of B"), use it directly.
 
@@ -39,7 +39,7 @@ link_content(parent_id=PARENT_ID, child_id=CHILD_ID)
 
 If the response includes `direction_warning`, show it to the user:
 ```
-⚠️  direction_warning: Expected idea→spec→plan but got plan→idea
+⚠️  direction_warning: Unexpected type direction plan→idea: default order is idea→spec→plan
    Reverse the link direction?
 ```
 
