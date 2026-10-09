@@ -59,4 +59,19 @@ describe("openDbAt / assertNotRealDb", () => {
     const home = tmp();
     expect(() => openDbAt(join(home, ".claude", "knowledge-base", "knowledge-base.db"), home)).toThrow(/Refusing/);
   });
+
+  it("also refuses the DB_PATH override and the legacy ~/.claude/knowledge-base.db", async () => {
+    const { assertNotRealDb } = await import("../../src/db/client.js");
+    const home = tmp();
+    expect(() => assertNotRealDb(join(home, ".claude", "knowledge-base.db"), home)).toThrow(/Refusing/);
+    const custom = join(tmp(), "env.db");
+    const prev = process.env.DB_PATH;
+    process.env.DB_PATH = custom;
+    try {
+      expect(() => assertNotRealDb(custom, home)).toThrow(/Refusing/);
+    } finally {
+      if (prev === undefined) delete process.env.DB_PATH; else process.env.DB_PATH = prev;
+    }
+    expect(() => assertNotRealDb(custom, home)).not.toThrow();
+  });
 });

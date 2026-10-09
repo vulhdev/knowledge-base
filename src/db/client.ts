@@ -41,12 +41,14 @@ function canonicalPath(path: string): string {
 }
 
 /**
- * The user's live database paths: the default location and, when settings.json exists, its db_path.
- * Reads settings.json directly — never through loadSettings(), which would create it.
+ * The user's live database paths: the default location, the legacy pre-settings location, the
+ * DB_PATH override and, when settings.json exists, its db_path. Reads settings.json directly —
+ * never through loadSettings(), which would create it.
  */
 export function realDbPaths(home: string = homedir()): string[] {
   const dir = join(home, ".claude", "knowledge-base");
-  const paths = [join(dir, "knowledge-base.db")];
+  const paths = [join(dir, "knowledge-base.db"), join(home, ".claude", "knowledge-base.db")];
+  if (process.env.DB_PATH) paths.push(process.env.DB_PATH);
   const settingsPath = join(dir, "settings.json");
   if (existsSync(settingsPath)) {
     try {
