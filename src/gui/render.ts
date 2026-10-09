@@ -593,16 +593,19 @@ export function renderDiff(
   let oldLine = 1;
   let newLine = 1;
   const rows: string[] = [];
+  let hasChanges = false;
 
   for (const change of changes) {
     const lines = change.value.split("\n");
     if (lines[lines.length - 1] === "") lines.pop();
 
     if (change.removed) {
+      hasChanges = true;
       for (const line of lines) {
         rows.push(`<tr class="diff-line-del"><td class="ln">${oldLine++}</td><td class="ln"></td><td class="diff-sign">-</td><td>${esc(line)}</td></tr>`);
       }
     } else if (change.added) {
+      hasChanges = true;
       for (const line of lines) {
         rows.push(`<tr class="diff-line-add"><td class="ln"></td><td class="ln">${newLine++}</td><td class="diff-sign">+</td><td>${esc(line)}</td></tr>`);
       }
@@ -613,7 +616,7 @@ export function renderDiff(
     }
   }
 
-  const diffTable = rows.length === 0
+  const diffTable = !hasChanges
     ? `<p style="color:#8b949e;margin-top:24px">No differences between these versions.</p>`
     : `<table class="diff-table"><tbody>${rows.join("")}</tbody></table>`;
 
