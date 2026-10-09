@@ -22,6 +22,8 @@ import { attachFeature } from "./tools/attach-feature.js";
 import { detachFeature } from "./tools/detach-feature.js";
 import { patchContent } from "./tools/patch-content.js";
 import { appendContent } from "./tools/append-content.js";
+import { createVersion } from "./tools/create-version.js";
+import { listVersions } from "./tools/list-versions.js";
 import { insertErrorLog } from "./db/error-log.js";
 
 const db = openDb();
@@ -265,13 +267,14 @@ server.tool(
 
 server.tool(
   "delete_content",
-  "Permanently deletes a document by its numeric ID. Returns the deleted document.",
+  "Permanently deletes a document by its numeric ID. When cascade=true, deletes the entire version chain. When cascade=false (default), only the specified version is deleted; if it is the root of a chain, v2 is promoted to root. Returns the deleted document.",
   {
     id: z.number().int().positive().describe("Document ID to delete"),
+    cascade: z.boolean().optional().default(false).describe("If true, delete the entire version chain; if false (default), delete only this version"),
   },
-  async ({ id }) => {
+  async ({ id, cascade }) => {
     try {
-      const result = deleteContent(db, id);
+      const result = deleteContent(db, id, cascade);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       insertErrorLog(db, "delete_content", err instanceof Error ? err.message : String(err));
@@ -469,6 +472,40 @@ server.tool(
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       insertErrorLog(db, "resolve_review", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "create_version",
+  "Creates a new version of an existing document. The new version is a copy of the source with version_number incremented. The previous latest version becomes non-latest. Callable with any version id in the chain. Returns the new version with previous_version_id.",
+  {
+    id: z.number().int().positive().describe("ID of any version in the chain to base the new version on"),
+  },
+  async ({ id }) => {
+    try {
+      const result = createVersion(db, id);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "create_version", err instanceof Error ? err.message : String(err));
+      return errorContent(err);
+    }
+  },
+);
+
+server.tool(
+  "list_versions",
+  "Returns all versions in a document's version chain, sorted by version_number ascending. Callable with any version id in the chain.",
+  {
+    id: z.number().int().positive().describe("ID of any version in the chain"),
+  },
+  async ({ id }) => {
+    try {
+      const result = listVersions(db, id);
+      return { content: [{ type: "text", text: toText(result) }] };
+    } catch (err) {
+      insertErrorLog(db, "list_versions", err instanceof Error ? err.message : String(err));
       return errorContent(err);
     }
   },
