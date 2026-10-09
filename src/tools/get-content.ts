@@ -6,7 +6,8 @@ export function getContent(db: Database.Database, id: number): Content {
   type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
   const row = db
     .prepare(
-      `SELECT c.id, w.name AS workspace, c.type, c.title, c.body, c.created_at, c.updated_at,
+      `SELECT c.id, w.name AS workspace, c.type, c.title, c.body, c.root_id, c.version_number,
+              c.created_at, c.updated_at,
               EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
        FROM contents c
        JOIN content_features cf ON cf.content_id = c.id
