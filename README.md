@@ -439,6 +439,67 @@ Existing databases are automatically migrated on startup:
 - Indexes on `contents(created_at)` and `contents(type, created_at)` added if missing (Migration 10)
 - Legacy database at `~/.claude/knowledge-base.db` automatically moved to `~/.claude/knowledge-base/knowledge-base.db` on first startup
 
+## Running from a local checkout
+
+Use this when you work on this repo, or want Claude Code to use your local build instead of the published npm package. One script prepares everything; you run it once after each reboot.
+
+`scripts/kb-up.sh` does, in order:
+
+1. Picks Node 22 (newest `~/.nvm/versions/node/v22.*`, else `node` on `PATH`), runs `npm install` if `node_modules` is missing or stale, and rebuilds `better-sqlite3` if it was compiled for another Node version
+2. Runs `npm run build` if `src/` changed since the last build
+3. Starts the MCP server once to check it answers `initialize` — this also applies every pending migration to your real database
+4. Checks the embedding model is downloaded (warns only; it never downloads ~465 MB on its own)
+5. Registers the MCP server in Claude Code as `kb-local`, **user scope** — available in every project folder — pointing at this checkout's `dist/bin/cli.js` with an absolute Node path
+6. (Re)starts the GUI on port `57891`, detached from the terminal so closing the tab does not stop it
+
+It then reports what is done and what, if anything, is left for you to do.
+
+> The MCP server is not a background service. Claude Code starts its own copy each time you open a session and stops it when you quit — the script only makes sure that start succeeds.
+
+### After every reboot — 3 steps
+
+**1. Open a plain terminal** — not inside Claude Code.
+
+**2. Go to the project you work on and run the script:**
+
+```bash
+cd /path/to/your-project
+/path/to/knowledge-base/scripts/kb-up.sh
+```
+
+**3. At the last question, press Enter:**
+
+```
+Open a Claude Code session in /path/to/your-project now?
+  y / Enter → yes, this terminal becomes that session
+  n         → no; everything stays ready, open sessions yourself later
+[Y/n]
+```
+
+Claude Code opens in your project with the knowledge-base tools available. Paths to your project's code and docs stay relative to your project.
+
+**More sessions at the same time:** open a new terminal tab and run `cd /path/to/your-project && claude`. Do not re-run the script — once per reboot is enough. All sessions share one database and one GUI.
+
+**Do not run the script from inside Claude Code** (for example with `!`): Claude Code's sandbox blocks the GUI from opening its port, and a session is already open anyway.
+
+### Other commands
+
+```bash
+scripts/kb-up.sh --no-launch   # prepare everything, never ask to open Claude Code
+scripts/kb-up.sh status        # show what is running; changes nothing
+scripts/kb-up.sh stop          # stop the GUI
+```
+
+### After pulling new code
+
+Run `scripts/kb-up.sh` again. It rebuilds, and if Claude Code sessions are still running the old build it tells you to type `/mcp` → `kb-local` → **Reconnect** in each of them.
+
+### Notes
+
+- macOS only for now — the script uses BSD `stat` / `date` and `lsof`.
+- If you also installed the plugin (`/plugin install knowledge-base`), Claude Code runs both servers against the same database and lists each tool twice, once per server. Disable one of them.
+- Which workspace a project uses comes from the `KNOWLEDGE_BASE_WORKSPACE=<name>` line in that project's `CLAUDE.md` (written by `init`).
+
 ## Development
 
 ```bash
