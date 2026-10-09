@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import Database from "better-sqlite3";
 import { load as loadSqliteVec } from "sqlite-vec";
 import { applySchema } from "../../src/db/schema.js";
+import { createTestDb } from "../setup.js";
 
 function createOldSchemaDb(): Database.Database {
   const db = new Database(":memory:");
@@ -299,5 +300,30 @@ describe("migration 7: reviews and review_comments tables", () => {
     db.prepare("INSERT INTO reviews (content_id) VALUES (?)").run(contentId);
     const row = db.prepare("SELECT status FROM reviews WHERE content_id = ?").get(contentId) as { status: string };
     expect(row.status).toBe("pending");
+  });
+});
+
+describe("migration 10: contents indexes", () => {
+  const INDEXES = ["idx_contents_created_at", "idx_contents_type_created_at"];
+
+  it("creates both contents indexes on a fresh DB", () => {
+    const db = createTestDb();
+    for (const name of INDEXES) {
+      const idx = db
+        .prepare("SELECT type, tbl_name FROM sqlite_master WHERE name = ?")
+        .get(name) as { type: string; tbl_name: string } | undefined;
+      expect(idx).toEqual({ type: "index", tbl_name: "contents" });
+    }
+  });
+
+  it("is idempotent: re-running applySchema keeps exactly one of each index", () => {
+    const db = createTestDb();
+    expect(() => applySchema(db)).not.toThrow();
+    for (const name of INDEXES) {
+      const { n } = db
+        .prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'index' AND name = ?")
+        .get(name) as { n: number };
+      expect(n).toBe(1);
+    }
   });
 });

@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import type { ContentType, SearchResult, SearchPage } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
-import { fetchFeatures } from "./_helpers.js";
+import { fetchFeaturesBatch } from "./_helpers.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -107,7 +107,7 @@ export async function searchSemantic(
     }
 
     const allIds = new Set([...vecRankMap.keys(), ...ftsRankMap.keys()]);
-    const scored: SearchResult[] = [];
+    const scored: Omit<SearchResult, "features">[] = [];
 
     for (const id of allIds) {
       const content = contentMap.get(id);
@@ -120,13 +120,15 @@ export async function searchSemantic(
         (ftsRank !== undefined ? 1 / (RRF_K + ftsRank) : 0);
 
       const boostedScore = rrfScore * (1 + RECENCY_WEIGHT * recencyFactor(content.updated_at));
-      scored.push({ ...content, features: fetchFeatures(db, id), has_code_refs: content.has_code_refs === 1, score: boostedScore });
+      scored.push({ ...content, has_code_refs: content.has_code_refs === 1, score: boostedScore });
     }
 
     scored.sort((a, b) => b.score - a.score);
     const sliced = scored.slice(clampedOffset, clampedOffset + clampedLimit);
+    // Features are looked up for the returned page only, in one query
+    const featureMap = fetchFeaturesBatch(db, sliced.map((r) => r.id));
     return {
-      results: sliced,
+      results: sliced.map(({ score, ...rest }) => ({ ...rest, features: featureMap.get(rest.id) ?? [], score })),
       has_more: scored.length > clampedOffset + clampedLimit,
       total_in_pool: scored.length,
       offset: clampedOffset,

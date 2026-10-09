@@ -225,6 +225,12 @@ function runMigrations(db: Database.Database): void {
       INSERT INTO contents_fts(contents_fts) VALUES ('rebuild');
     `);
   }
+
+  // Migration 10: index contents(created_at) and contents(type, created_at) for list ordering
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_contents_created_at ON contents(created_at);
+    CREATE INDEX IF NOT EXISTS idx_contents_type_created_at ON contents(type, created_at);
+  `);
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {

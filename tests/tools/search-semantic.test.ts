@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
 import { runFtsSearch } from "../../src/tools/search-semantic.js";
+import { fetchFeatures } from "../../src/tools/_helpers.js";
 
 vi.mock("../../src/embedding/model.js", () => ({
   isModelReady: vi.fn().mockReturnValue(true),
@@ -219,5 +220,68 @@ describe("searchSemantic", () => {
     const ids = runFtsSearch(db, "apple banana", [], [], 10);
     expect(ids).toContain(idApple);
     expect(ids).toContain(idBanana);
+  });
+
+  describe("batched feature lookup", () => {
+    // 4 docs from the outer beforeEach + 40 here = 44 < internalK for limit 10 (50),
+    // so the ANN pool holds every doc for both limit 10 and limit 50.
+    beforeEach(async () => {
+      for (let i = 0; i < 40; i++) {
+        await createContent(db, "proj-a", i % 2 === 0 ? ["auth"] : ["auth", "bulk"], "doc", `auth bulk document ${i}`);
+      }
+    });
+
+    function featureQueries(spy: { mock: { calls: unknown[][] } }): string[] {
+      return spy.mock.calls.map((c) => String(c[0])).filter((sql) => sql.includes("cf.content_id IN"));
+    }
+
+    it("runs exactly one features query sized to the page, with a constant statement count", async () => {
+      const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+      const spy = vi.spyOn(db, "prepare");
+
+      spy.mockClear();
+      const small = await searchSemantic(db, "auth", undefined, undefined, 10, 0);
+      const smallTotal = spy.mock.calls.length;
+      const smallFeatureSql = featureQueries(spy);
+
+      spy.mockClear();
+      const large = await searchSemantic(db, "auth", undefined, undefined, 50, 0);
+      const largeTotal = spy.mock.calls.length;
+      const largeFeatureSql = featureQueries(spy);
+      spy.mockRestore();
+
+      expect(small.results).toHaveLength(10);
+      expect(large.results.length).toBeGreaterThan(10);
+      expect(smallFeatureSql).toHaveLength(1);
+      expect(largeFeatureSql).toHaveLength(1);
+      expect((smallFeatureSql[0].match(/\?/g) ?? []).length).toBe(small.results.length);
+      expect((largeFeatureSql[0].match(/\?/g) ?? []).length).toBe(large.results.length);
+      expect(smallTotal).toBe(largeTotal);
+    });
+
+    it("runs no features query when offset is beyond the pool", async () => {
+      const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+      const first = await searchSemantic(db, "auth", undefined, undefined, 10, 0);
+
+      const spy = vi.spyOn(db, "prepare");
+      spy.mockClear();
+      const beyond = await searchSemantic(db, "auth", undefined, undefined, 10, 100);
+      const featureSql = featureQueries(spy);
+      spy.mockRestore();
+
+      expect(beyond.results).toEqual([]);
+      expect(beyond.has_more).toBe(false);
+      expect(beyond.total_in_pool).toBe(first.total_in_pool);
+      expect(featureSql).toHaveLength(0);
+    });
+
+    it("attaches the same features as fetchFeatures for every result", async () => {
+      const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+      const page = await searchSemantic(db, "auth", undefined, undefined, 50, 0);
+      expect(page.results.length).toBeGreaterThan(10);
+      for (const r of page.results) {
+        expect(r.features).toEqual(fetchFeatures(db, r.id));
+      }
+    });
   });
 });

@@ -436,6 +436,7 @@ Existing databases are automatically migrated on startup:
 - FTS index rebuilt to include `title` column alongside `body`, with 5× BM25 column weight on title (Migration 6)
 - `reviews` and `review_comments` tables added if missing (Migration 7)
 - `resolved_at` column added to `review_comments` if missing (Migration 8)
+- Indexes on `contents(created_at)` and `contents(type, created_at)` added if missing (Migration 10)
 - Legacy database at `~/.claude/knowledge-base.db` automatically moved to `~/.claude/knowledge-base/knowledge-base.db` on first startup
 
 ## Development
