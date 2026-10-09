@@ -259,8 +259,22 @@ function runMigrations(db: Database.Database): void {
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
-    CREATE INDEX IF NOT EXISTS idx_contents_is_latest ON contents(is_latest);
   `);
+
+  // Rebuild list-path indexes as partial indexes covering only is_latest=1 rows,
+  // so list_contents queries retain their index-scan-ordered plan after the is_latest filter.
+  const createdAtIdx = (
+    db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_contents_created_at'").get() as { sql: string } | undefined
+  )?.sql ?? "";
+
+  if (!createdAtIdx.includes("WHERE")) {
+    db.exec(`
+      DROP INDEX IF EXISTS idx_contents_created_at;
+      CREATE INDEX idx_contents_created_at ON contents(created_at) WHERE is_latest = 1;
+      DROP INDEX IF EXISTS idx_contents_type_created_at;
+      CREATE INDEX idx_contents_type_created_at ON contents(type, created_at) WHERE is_latest = 1;
+    `);
+  }
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {

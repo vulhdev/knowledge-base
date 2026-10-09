@@ -20,7 +20,7 @@ export function listContents(
   const clampedLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
   const clampedOffset = Math.max(0, offset);
 
-  const conditions: string[] = ["w.name = ?"];
+  const conditions: string[] = ["w.name = ?", "c.is_latest = 1"];
   const params: (string | number | bigint | null)[] = [workspace];
 
   if (feature !== undefined) {
@@ -69,6 +69,7 @@ export function listContents(
            c.created_at, c.updated_at
     FROM contents c
     WHERE ${type !== undefined ? "c.type = ?" : "c.type != 'digest'"}
+      AND c.is_latest = 1
       AND EXISTS (
         SELECT 1
         FROM content_features cf
