@@ -13,7 +13,7 @@ vi.mock("../../src/tools/conflict-detection.js", () => ({ detectConflicts: vi.fn
 
 import { scanSources } from "../../src/import/scan.js";
 import { buildLoadPlan } from "../../src/import/plan.js";
-import { applyPlanToDb } from "../../src/import/apply.js";
+import { applyPlanToDb } from "../../src/import/apply-docs.js";
 import { detectConflicts } from "../../src/tools/conflict-detection.js";
 
 let repo: Repo;
@@ -81,5 +81,55 @@ describe("applyPlanToDb", () => {
     const dupes = db.prepare("SELECT source_key, count(*) AS n FROM contents WHERE source_key IS NOT NULL GROUP BY source_key HAVING n > 1").all();
     expect(dupes).toEqual([]);
     expect((db.prepare("SELECT count(*) AS n FROM contents").get() as { n: number }).n).toBe(6);
+  });
+});
+
+describe("SOT card identity across repositories and pruning safety", () => {
+  let other: Repo;
+  beforeEach(() => {
+    other = makeRepo();
+    other.write("sot/F-001-x.md", "# other repo\n" + "別リポジトリの本文。".repeat(10) + "\n");
+    other.commit("other");
+  });
+  afterEach(() => other.cleanup());
+
+  const sotOnly = (dirsList: string[]) => buildLoadPlan(scanSources(dirsList), "ws", "ws-sot");
+
+  it("two repositories with the same path get different card keys and stable sha", async () => {
+    const p = sotOnly([join(repo.dir, "sot"), join(other.dir, "sot")]);
+    const keys = p.items.filter((i) => i.kind === "card").map((i) => i.source_key);
+    expect(new Set(keys).size).toBe(2);
+    await applyPlanToDb(db, p);
+    const r2 = await applyPlanToDb(db, sotOnly([join(repo.dir, "sot"), join(other.dir, "sot")]));
+    expect(r2.writes).toBe(0);
+    expect(r2.cards.unchanged).toBe(2);
+  });
+
+  it("pruning a repository scanned at its root never deletes another repository's cards", async () => {
+    await applyPlanToDb(db, sotOnly([join(repo.dir, "sot"), join(other.dir, "sot")]));
+    other.git("rm", "-q", "-r", "sot");
+    other.write("README.md", "# root file\n");
+    other.commit("move");
+    const r = await applyPlanToDb(db, sotOnly([other.dir]));
+    expect(r.cards.deleted).toBe(1);
+    expect((db.prepare("SELECT count(*) AS n FROM contents WHERE source_key LIKE 'sot:%' AND body LIKE '%' || ? || '%'").get(repo.dir.split("/").pop()) as { n: number }).n).toBe(1);
+  });
+
+  it("scanning the same repository twice yields one card per file and a warning", () => {
+    const p = sotOnly([join(repo.dir, "sot"), join(repo.dir, "sot")]);
+    expect(p.items.filter((i) => i.kind === "card")).toHaveLength(1);
+    expect(p.warnings.some((w) => w.includes("duplicate SOT key"))).toBe(true);
+  });
+
+  it("a card that cannot be planned (e.g. now binary) keeps its existing card and pointers", async () => {
+    await applyPlanToDb(db, sotOnly([join(repo.dir, "sot")]));
+    const before = (db.prepare("SELECT count(*) AS n FROM content_chunks WHERE kind = 'sot'").get() as { n: number }).n;
+    repo.write("sot/F-001-x.md", "binary\u0000data");
+    repo.commit("binary");
+    const p = sotOnly([join(repo.dir, "sot")]);
+    expect(p.skipped_keys).toHaveLength(1);
+    const r = await applyPlanToDb(db, p);
+    expect(r.cards.deleted).toBe(0);
+    expect((db.prepare("SELECT count(*) AS n FROM content_chunks WHERE kind = 'sot'").get() as { n: number }).n).toBe(before);
   });
 });

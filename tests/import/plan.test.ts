@@ -60,7 +60,7 @@ describe("buildLoadPlan", () => {
       "doc:ws:docs/p/a.md#fork-residue",
       "doc:ws:docs/p/n-20260101.md",
       "doc:ws:docs/p/n.md",
-      "sot:ws-sot:sot/F-001-x.md",
+      expect.stringMatching(/^sot:ws-sot:[0-9a-f]{12}\/sot\/F-001-x\.md$/),
     ]);
     expect(plan.links).toEqual(expect.arrayContaining([
       { parent_source_key: "doc:ws:docs/p/a.md", child_source_key: "doc:ws:docs/p/a.md#fork-residue", reason: "fork-residue" },

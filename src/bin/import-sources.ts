@@ -105,7 +105,7 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const { applyPlan } = await import("../import/apply.js");
+  const { applyPlan } = await import("../import/apply-docs.js");
   const result = await applyPlan(args.db, plan);
   const out = { db: args.db, kb_commit: kbCommit(), ...result, elapsed_ms: Date.now() - started };
   if (args.report) writeFile(args.report, renderReport(plan, [`- result: \`${JSON.stringify(out)}\``]));

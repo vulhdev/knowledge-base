@@ -56,7 +56,7 @@ describe("importSotCard", () => {
   it("creates one card with pointers whose git slices hash to chunk_sha (pointer-ok)", async () => {
     for (const c of cards()) await importSotCard(db, c);
     const rows = db.prepare("SELECT id, source_key, type FROM contents ORDER BY id").all() as { id: number; source_key: string; type: string }[];
-    expect(rows.map((r) => r.source_key)).toEqual(["sot:ws-sot:sot/F-001-flow.md", "sot:ws-sot:sot/registry.conf"]);
+    expect(rows.map((r) => r.source_key.replace(/^sot:ws-sot:[0-9a-f]{12}\//, ""))).toEqual(["sot/F-001-flow.md", "sot/registry.conf"]);
     for (const r of rows) {
       const ps = pointers(r.id);
       expect(ps.length).toBeGreaterThan(0);

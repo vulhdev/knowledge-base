@@ -2,14 +2,14 @@
 // pointer) by asking git — never by a hard-coded folder list.
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import { gitRoot, resolveRef, listTrackedAtRef, isIgnored, isTracked } from "./git.js";
+import { gitRoot, resolveRef, listTrackedAtRef, isIgnored, isTracked, repoId } from "./git.js";
 import { relPathFor, cloneOf, isImportableDoc } from "./classify.js";
 import type { SourceFile } from "./dedup.js";
 
-export type SotFile = { repoRoot: string; repoPath: string; ref: string; commit: string };
+export type SotFile = { repoRoot: string; repoId: string; repoPath: string; ref: string; commit: string };
 
 /** A git folder scanned for branch B: cards under it that vanish from the ref are deleted. */
-export type SotScope = { repoRoot: string; relDir: string };
+export type SotScope = { repoRoot: string; repoId: string; relDir: string };
 
 export type ScanResult = { aFiles: SourceFile[]; bFiles: SotFile[]; bScopes: SotScope[]; warnings: string[] };
 
@@ -42,9 +42,10 @@ export function scanSources(dirs: string[], opts: { ref?: string } = {}): ScanRe
       const anyTracked = onDisk.some((p) => isTracked(root, relative(root, p).split(sep).join("/")));
       if (anyTracked) {
         refInfo = resolveRef(root, opts.ref);
-        bScopes.push({ repoRoot: root, relDir });
+        const id = repoId(root, refInfo.commit);
+        bScopes.push({ repoRoot: root, repoId: id, relDir });
         tracked = new Set(listTrackedAtRef(root, refInfo.commit, relDir).filter((p) => !isIgnored(root, p)));
-        for (const p of [...tracked].sort()) bFiles.push({ repoRoot: root, repoPath: p, ref: refInfo.ref, commit: refInfo.commit });
+        for (const p of [...tracked].sort()) bFiles.push({ repoRoot: root, repoId: id, repoPath: p, ref: refInfo.ref, commit: refInfo.commit });
       }
     }
 

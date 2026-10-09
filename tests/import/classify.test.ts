@@ -36,7 +36,7 @@ describe("classify", () => {
   it("builds source keys", () => {
     expect(docSourceKey("ws", "docs/a.md")).toBe("doc:ws:docs/a.md");
     expect(residueSourceKey("ws", "docs/a.md")).toBe("doc:ws:docs/a.md#fork-residue");
-    expect(cardSourceKey("ws-sot", "docs/design/F-001-x.md")).toBe("sot:ws-sot:docs/design/F-001-x.md");
+    expect(cardSourceKey("ws-sot", "0123456789ab", "docs/design/F-001-x.md")).toBe("sot:ws-sot:0123456789ab/docs/design/F-001-x.md");
   });
 
   it("classifies SOT cards: sot-spec / sot-status / sot-file with flow + parent-folder features", () => {

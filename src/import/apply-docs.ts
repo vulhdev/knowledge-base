@@ -74,7 +74,9 @@ export async function applyCards(db: Database.Database, plan: LoadPlan, r: Apply
     }
   }
   // only prune when every listed file was read; a failed read must not look like a deletion
-  if (failed === 0) r.cards.deleted = removeMissingSotFiles(db, plan.sot_scopes, new Set(cards.map((c) => c.source_key)));
+  // files present at the ref but skipped while planning (unreadable, binary) also count as present
+  const present = new Set([...cards.map((c) => c.source_key), ...(plan.skipped_keys ?? [])]);
+  if (failed === 0) r.cards.deleted = removeMissingSotFiles(db, plan.sot_scopes, present);
   r.ref = cards[0]?.ref ?? null;
   r.sot_commit = cards[0]?.ref_commit ?? null;
   return cards.length === 0 ? 0 : failed === cards.length ? 1 : 0;

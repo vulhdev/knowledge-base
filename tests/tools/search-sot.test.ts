@@ -41,7 +41,7 @@ describe("search over SOT cards", () => {
   it("FTS over pointer tokens finds the card holding a 2-char JP term", () => {
     const ids = runSotFtsSearch(db, "掛率", [], [], 10);
     const key = (db.prepare("SELECT source_key FROM contents WHERE id = ?").get(ids[0]) as { source_key: string }).source_key;
-    expect(key).toBe("sot:ws-sot:sot/F-001-a.md");
+    expect(key).toMatch(/^sot:ws-sot:[0-9a-f]{12}\/sot\/F-001-a\.md$/);
     expect(ids).toHaveLength(1);
   });
 

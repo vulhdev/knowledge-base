@@ -44,6 +44,8 @@ export type LoadPlan = {
   links: PlanLink[];
   /** source_key prefixes of every scanned SOT folder: cards under them that are not in `items` are removed */
   sot_scopes: string[];
+  /** cards that exist at the ref but could not be planned this run: never pruned */
+  skipped_keys: string[];
   log: string[];
   warnings: string[];
   stats: { files_a: number; files_b: number; docs: number; residues: number; cards: number; aliases: number; series_links: number };
@@ -113,20 +115,29 @@ export function buildLoadPlan(scan: ScanResult, workspace: string, sotWorkspace:
   }
 
   const warnings = [...scan.warnings];
+  const skipped: string[] = [];
+  const cardKeys = new Set<string>();
   for (const b of scan.bFiles) {
+    const key = cardSourceKey(sotWorkspace, b.repoId, b.repoPath);
+    if (cardKeys.has(key)) {
+      warnings.push(`duplicate SOT key ${key} (${b.repoRoot}) — the same repository and path was already planned; skipped`);
+      continue;
+    }
+    cardKeys.add(key);
     try {
       const history = fileHistory(b.repoRoot, b.commit, b.repoPath);
       const commit = history[0]?.hash ?? b.commit;
       const text = showAtCommit(b.repoRoot, commit, b.repoPath);
       if (text.includes("\u0000")) {
         warnings.push(`binary SOT file skipped: ${b.repoPath}`);
+        skipped.push(key);
         continue;
       }
       const sha = sha256(text);
       const cls = classifyCard(b.repoPath, text);
       items.push({
         kind: "card",
-        source_key: cardSourceKey(sotWorkspace, b.repoPath),
+        source_key: key,
         workspace: sotWorkspace,
         features: cls.features,
         type: cls.type,
@@ -142,6 +153,7 @@ export function buildLoadPlan(scan: ScanResult, workspace: string, sotWorkspace:
       });
     } catch (err) {
       warnings.push(`SOT file ${b.repoPath}: ${(err as Error).message}`);
+      skipped.push(key);
     }
   }
 
@@ -151,7 +163,8 @@ export function buildLoadPlan(scan: ScanResult, workspace: string, sotWorkspace:
     sot_workspace: sotWorkspace,
     items,
     links,
-    sot_scopes: scan.bScopes.map((sc) => cardSourceKey(sotWorkspace, sc.relDir ? `${sc.relDir}/` : "")),
+    sot_scopes: scan.bScopes.map((sc) => cardSourceKey(sotWorkspace, sc.repoId, sc.relDir ? `${sc.relDir}/` : "")),
+    skipped_keys: skipped,
     log,
     warnings,
     stats: {

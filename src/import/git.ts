@@ -47,6 +47,15 @@ export function isTracked(root: string, relPath: string): boolean {
   return git(root, ["ls-files", "--error-unmatch", "--", relPath], { allowFail: true }) !== null;
 }
 
+/**
+ * Stable repository identity: the first 12 hex of the (lexicographically first) root commit
+ * reachable from `commit`. Equal for every clone of a repository, different across repositories.
+ */
+export function repoId(root: string, commit: string): string {
+  const roots = git(root, ["rev-list", "--max-parents=0", commit])!.split("\n").filter((l) => l !== "").sort();
+  return roots[0].slice(0, 12);
+}
+
 /** File content at a commit — never the working tree. */
 export function showAtCommit(root: string, commit: string, relPath: string): string {
   return git(root, ["show", `${commit}:${relPath}`])!;

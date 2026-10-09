@@ -18,7 +18,8 @@ export function cloneOf(absPath: string, sourceDir: string): string {
 
 export const docSourceKey = (ws: string, relPath: string) => `doc:${ws}:${relPath}`;
 export const residueSourceKey = (ws: string, relPath: string) => `doc:${ws}:${relPath}#fork-residue`;
-export const cardSourceKey = (sotWs: string, repoPath: string) => `sot:${sotWs}:${repoPath}`;
+/** SOT card key: workspace + repository identity (root commit) + repo-relative path. */
+export const cardSourceKey = (sotWs: string, repo: string, repoPath: string) => `sot:${sotWs}:${repo}/${repoPath}`;
 
 const EXCLUDE: RegExp[] = [
   /(^|\/)compacts\//,
