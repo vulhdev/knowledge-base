@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`list_contents` / `search_semantic`: one batched feature lookup per page** — features for the returned documents are fetched with a single `IN (...)` query instead of one query per row (no more N+1); `search_semantic` now looks up features only for the page it returns, not the whole candidate pool
+- **`list_contents`: deterministic order for documents sharing `created_at`** — ordering is now `created_at DESC, id DESC`, so pagination never repeats or skips documents created in the same second
+- **Migration 10: `contents` indexes for list ordering** — adds `idx_contents_created_at` and `idx_contents_type_created_at` (created if missing on startup), so the default and type-filtered `list_contents` queries read in index order instead of temp-sorting the whole workspace
+
 ## [1.17.0] — 2026-08-14
 
 ### Added

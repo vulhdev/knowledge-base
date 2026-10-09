@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import Database from "better-sqlite3";
 import { load as loadSqliteVec } from "sqlite-vec";
 import { applySchema } from "../../src/db/schema.js";
-import { fetchFeatures } from "../../src/tools/_helpers.js";
+import { fetchFeatures, fetchFeaturesBatch } from "../../src/tools/_helpers.js";
 
 function buildPreMigration9Db(): Database.Database {
   const db = new Database(":memory:");
@@ -116,6 +116,27 @@ describe("Migration 9: content_features junction table", () => {
     db.prepare("DELETE FROM contents WHERE id = 1").run();
     expect((db.prepare("SELECT COUNT(*) AS n FROM content_features").get() as { n: number }).n).toBe(1);
   });
+
+  it("legacy DB gets Migration 9 and the Migration 10 contents indexes", () => {
+    const db = buildPreMigration9Db();
+    const before = db.prepare("SELECT id AS content_id, feature_id FROM contents ORDER BY id").all();
+    applySchema(db);
+
+    const hasFeatureId = (
+      db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'feature_id'").get() as { cnt: number }
+    ).cnt > 0;
+    expect(hasFeatureId).toBe(false);
+
+    for (const name of ["idx_contents_created_at", "idx_contents_type_created_at"]) {
+      const idx = db
+        .prepare("SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = ?")
+        .get(name) as { tbl_name: string } | undefined;
+      expect(idx?.tbl_name).toBe("contents");
+    }
+
+    const after = db.prepare("SELECT content_id, feature_id FROM content_features ORDER BY content_id").all();
+    expect(after).toEqual(before);
+  });
 });
 
 describe("fetchFeatures helper", () => {
@@ -165,5 +186,83 @@ describe("fetchFeatures helper", () => {
     db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(contentId, featId);
 
     expect(fetchFeatures(db, contentId)).toEqual(["only"]);
+  });
+});
+
+describe("fetchFeaturesBatch helper", () => {
+  function seed(): { db: Database.Database; multi: number; single: number; orphan: number } {
+    const db = new Database(":memory:");
+    loadSqliteVec(db);
+    applySchema(db);
+
+    db.prepare("INSERT INTO workspaces (name) VALUES (?), (?)").run("ws-a", "ws-b");
+    const wsA = (db.prepare("SELECT id FROM workspaces WHERE name = ?").get("ws-a") as { id: number }).id;
+    const wsB = (db.prepare("SELECT id FROM workspaces WHERE name = ?").get("ws-b") as { id: number }).id;
+    const insertFeature = db.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)");
+    const zeta = Number(insertFeature.run(wsA, "zeta").lastInsertRowid);
+    const alpha = Number(insertFeature.run(wsB, "alpha").lastInsertRowid);
+    const solo = Number(insertFeature.run(wsA, "solo").lastInsertRowid);
+
+    const insertContent = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)");
+    const link = db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)");
+    const multi = Number(insertContent.run("idea", "multi").lastInsertRowid);
+    link.run(multi, zeta);
+    link.run(multi, alpha);
+    const single = Number(insertContent.run("spec", "single").lastInsertRowid);
+    link.run(single, solo);
+    const orphan = Number(insertContent.run("plan", "orphan").lastInsertRowid);
+    link.run(orphan, solo);
+    db.prepare("DELETE FROM content_features WHERE content_id = ?").run(orphan);
+
+    return { db, multi, single, orphan };
+  }
+
+  it("returns an empty Map without preparing any statement for an empty id list", () => {
+    const { db } = seed();
+    const spy = vi.spyOn(db, "prepare");
+    spy.mockClear();
+
+    const result = fetchFeaturesBatch(db, []);
+
+    expect(result).toBeInstanceOf(Map);
+    expect(result.size).toBe(0);
+    expect(spy).toHaveBeenCalledTimes(0);
+  });
+
+  it("maps every id to its sorted feature names across workspaces and omits feature-less ids", () => {
+    const { db, multi, single, orphan } = seed();
+
+    const result = fetchFeaturesBatch(db, [multi, single, orphan]);
+
+    expect(result.get(multi)).toEqual(["alpha", "zeta"]);
+    expect(result.get(single)).toEqual(["solo"]);
+    expect(result.has(orphan)).toBe(false);
+  });
+
+  it("uses a single prepared statement for a non-empty id list", () => {
+    const { db, multi, single, orphan } = seed();
+    const spy = vi.spyOn(db, "prepare");
+    spy.mockClear();
+
+    fetchFeaturesBatch(db, [multi, single, orphan]);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("agrees with fetchFeatures for every id", () => {
+    const { db, multi, single, orphan } = seed();
+
+    for (const id of [multi, single, orphan]) {
+      expect(fetchFeaturesBatch(db, [id]).get(id) ?? []).toEqual(fetchFeatures(db, id));
+    }
+  });
+
+  it("treats duplicate ids like the de-duplicated input", () => {
+    const { db, multi, single } = seed();
+
+    const withDuplicates = fetchFeaturesBatch(db, [multi, single, multi, single]);
+    const deduplicated = fetchFeaturesBatch(db, [multi, single]);
+
+    expect([...withDuplicates.entries()]).toEqual([...deduplicated.entries()]);
   });
 });
