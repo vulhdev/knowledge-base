@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import type { ContentType, SearchResult, SearchPage } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { fetchFeaturesBatch } from "./_helpers.js";
+import { buildFtsQuery } from "../text/cjk-bigram.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -149,10 +150,8 @@ export function runFtsSearch(
   filterParams: (string | number)[],
   limit: number,
 ): number[] {
-  const tokens = query
-    .split(/\s+/)
-    .map(w => w.replace(/[*"^():]/g, "").trim())
-    .filter(w => w.length > 1);
+  // CJK runs become bigram phrases, exactly as kb_cjk_bigram indexed them
+  const { tokens } = buildFtsQuery(query);
 
   if (tokens.length === 0) return [];
 

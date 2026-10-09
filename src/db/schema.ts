@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { bigramIndexText } from "../text/cjk-bigram.js";
 
 const VEC_TABLE_AND_TRIGGERS = `
   CREATE VIRTUAL TABLE IF NOT EXISTS vec_contents USING vec0(
@@ -25,26 +26,50 @@ const FTS_AND_TRIGGERS = `
   CREATE VIRTUAL TABLE IF NOT EXISTS contents_fts USING fts5(
     title,
     body,
-    content=contents,
-    content_rowid=id,
+    content='',
+    contentless_delete=1,
     tokenize='unicode61'
   );
 
   CREATE TRIGGER IF NOT EXISTS contents_ai AFTER INSERT ON contents BEGIN
-    INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
+    INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, kb_cjk_bigram(new.title), kb_cjk_bigram(new.body));
   END;
 
   CREATE TRIGGER IF NOT EXISTS contents_ad AFTER DELETE ON contents BEGIN
-    INSERT INTO contents_fts(contents_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
+    DELETE FROM contents_fts WHERE rowid = old.id;
   END;
 
   CREATE TRIGGER IF NOT EXISTS contents_au AFTER UPDATE ON contents BEGIN
-    INSERT INTO contents_fts(contents_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
-    INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
+    DELETE FROM contents_fts WHERE rowid = old.id;
+    INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, kb_cjk_bigram(new.title), kb_cjk_bigram(new.body));
   END;
 `;
 
+// Contentless FTS cannot 'rebuild' from contents — refill it through the same bigram function the triggers use.
+function repopulateContentsFts(db: Database.Database): void {
+  db.exec(`
+    DELETE FROM contents_fts;
+    INSERT INTO contents_fts(rowid, title, body)
+      SELECT id, kb_cjk_bigram(title), kb_cjk_bigram(body) FROM contents;
+  `);
+}
+
+function recreateContentsFts(db: Database.Database): void {
+  db.exec(`
+    DROP TRIGGER IF EXISTS contents_ai;
+    DROP TRIGGER IF EXISTS contents_ad;
+    DROP TRIGGER IF EXISTS contents_au;
+    DROP TABLE IF EXISTS contents_fts;
+  `);
+  db.exec(FTS_AND_TRIGGERS);
+  repopulateContentsFts(db);
+}
+
 export function applySchema(db: Database.Database): void {
+  // Must be registered before any statement that can fire the contents_fts triggers.
+  db.function("kb_cjk_bigram", { deterministic: true }, (text: unknown) =>
+    text === null || text === undefined ? null : bigramIndexText(String(text)),
+  );
   db.exec("PRAGMA foreign_keys = ON");
 
   db.exec(`
@@ -204,26 +229,7 @@ function runMigrations(db: Database.Database): void {
   )?.sql ?? "";
 
   if (!ftsSql.includes("title")) {
-    db.exec(`
-      DROP TRIGGER IF EXISTS contents_ai;
-      DROP TRIGGER IF EXISTS contents_ad;
-      DROP TRIGGER IF EXISTS contents_au;
-      DROP TABLE IF EXISTS contents_fts;
-      CREATE VIRTUAL TABLE contents_fts USING fts5(
-        title, body, content=contents, content_rowid=id, tokenize='unicode61'
-      );
-      CREATE TRIGGER contents_ai AFTER INSERT ON contents BEGIN
-        INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
-      END;
-      CREATE TRIGGER contents_ad AFTER DELETE ON contents BEGIN
-        INSERT INTO contents_fts(contents_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
-      END;
-      CREATE TRIGGER contents_au AFTER UPDATE ON contents BEGIN
-        INSERT INTO contents_fts(contents_fts, rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
-        INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
-      END;
-      INSERT INTO contents_fts(contents_fts) VALUES ('rebuild');
-    `);
+    recreateContentsFts(db);
   }
 
   // Migration 10: index contents(created_at) and contents(type, created_at) for list ordering
@@ -231,6 +237,20 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_contents_created_at ON contents(created_at);
     CREATE INDEX IF NOT EXISTS idx_contents_type_created_at ON contents(type, created_at);
   `);
+
+  // Migration 11: contents_fts becomes contentless and indexes CJK as bigrams (kb_cjk_bigram)
+  const fts11 = (
+    db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contents_fts'")
+      .get() as { sql: string } | undefined
+  )?.sql ?? "";
+  const trigger11 = (
+    db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'contents_ai'")
+      .get() as { sql: string } | undefined
+  )?.sql ?? "";
+
+  if (!fts11.includes("contentless_delete") || !trigger11.includes("kb_cjk_bigram")) {
+    recreateContentsFts(db);
+  }
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {
@@ -276,7 +296,7 @@ function removeFeatureIdColumn(db: Database.Database): void {
   `);
 
   db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
-  db.exec("INSERT INTO contents_fts(contents_fts) VALUES ('rebuild')");
+  repopulateContentsFts(db);
 
   db.exec("PRAGMA foreign_keys = ON");
 }
@@ -317,7 +337,7 @@ function removeCheckConstraint(db: Database.Database): void {
 
   // FTS virtual table and triggers must be created outside the transaction above.
   db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
-  db.exec("INSERT INTO contents_fts(contents_fts) VALUES ('rebuild')");
+  repopulateContentsFts(db);
 
   db.exec("PRAGMA foreign_keys = ON");
 }

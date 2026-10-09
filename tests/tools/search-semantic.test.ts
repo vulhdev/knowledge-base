@@ -285,3 +285,54 @@ describe("searchSemantic", () => {
     });
   });
 });
+
+describe("Japanese full-text search (CJK bigrams)", () => {
+  let db: Database.Database;
+  const JP = "見積金額は原価に掛率を乗じて算出する。端数処理は切り捨て。";
+
+  beforeEach(async () => {
+    const { isModelReady, getEmbedding } = await import("../../src/embedding/model.js");
+    vi.mocked(isModelReady).mockReturnValue(true);
+    vi.mocked(getEmbedding).mockResolvedValue(new Float32Array(384).fill(0.1));
+    db = createTestDb();
+  });
+
+  it("finds 2-char and long terms mid-sentence, as a phrase, and never a non-adjacent pair", async () => {
+    const { id } = await createContent(db, "ws-jp", ["ft"], "doc", JP);
+    await createContent(db, "ws-jp", ["ft"], "doc", "unrelated english body");
+    for (const q of ["掛率", "原価", "端数処理", "原価に掛率"]) {
+      expect(runFtsSearch(db, q, [], [], 10), q).toEqual([id]);
+    }
+    expect(runFtsSearch(db, "価掛", [], [], 10)).toEqual([]);
+    expect(runFtsSearch(db, "見", [], [], 10)).toEqual([]);
+  });
+
+  it("searchSemantic puts the JP doc in the top 5 for each term (Independent Test)", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    const { id } = await createContent(db, "ws-jp", ["ft"], "doc", JP);
+    for (let i = 0; i < 8; i++) await createContent(db, "ws-jp", ["ft"], "doc", `filler document number ${i}`);
+    for (const q of ["掛率", "原価", "端数処理", "原価に掛率"]) {
+      const page = await searchSemantic(db, q, "ws-jp");
+      expect(page.results.slice(0, 5).map((r) => r.id), q).toContain(id);
+    }
+    await expect(searchSemantic(db, "見", "ws-jp")).resolves.toBeDefined();
+  });
+
+  it("handles a mixed query per script: F-002 掛率", async () => {
+    const { id } = await createContent(db, "ws-jp", ["ft"], "doc", `F-002 の ${JP}`);
+    await createContent(db, "ws-jp", ["ft"], "doc", "F-002 only latin");
+    expect(runFtsSearch(db, "F-002 掛率", [], [], 10)).toEqual([id]);
+  });
+
+  it("keeps the title weight for Japanese titles", async () => {
+    const { searchSemantic } = await import("../../src/tools/search-semantic.js");
+    await createContent(db, "ws-jp", ["ft"], "doc", "同じ本文です。", "回次の採番");
+    await createContent(db, "ws-jp", ["ft"], "doc", "同じ本文です。回次");
+    for (let i = 0; i < 4; i++) await createContent(db, "ws-jp", ["ft"], "doc", `別の本文 ${i}`);
+    const ids = runFtsSearch(db, "回次", [], [], 10);
+    const titled = (db.prepare("SELECT id FROM contents WHERE title = '回次の採番'").get() as { id: number }).id;
+    expect(ids[0]).toBe(titled);
+    const page = await searchSemantic(db, "回次", "ws-jp");
+    expect(page.results[0].id).toBe(titled);
+  });
+});

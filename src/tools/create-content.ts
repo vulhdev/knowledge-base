@@ -4,6 +4,7 @@ import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
 import { typesAfter } from "./_type-order.js";
+import { buildFtsQuery } from "../text/cjk-bigram.js";
 
 const SUGGEST_LIMIT = 3;
 const SCORE_THRESHOLD = 0.25;
@@ -54,12 +55,9 @@ async function suggestParents(
 
   // FTS fallback
   try {
-    const words = body
-      .trim()
-      .split(/\s+/)
-      .slice(0, 8)
-      .map((w) => w.replace(/[^\w]/g, ""))
-      .filter((w) => w.length > 2);
+    // Same tokenization as contents_fts: CJK runs become bigram phrases instead of being stripped
+    const words = buildFtsQuery(body.trim().split(/\s+/).slice(0, 8).join(" "))
+      .tokens.filter((w) => w.startsWith('"') && (/[^\x00-\x7F]/.test(w) || w.length - 2 > 2));
 
     if (words.length === 0) return [];
 
