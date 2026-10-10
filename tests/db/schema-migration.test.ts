@@ -327,3 +327,86 @@ describe("migration 10: contents indexes", () => {
     }
   });
 });
+
+describe("migration 12: sessions table", () => {
+  it("creates sessions table with correct columns", () => {
+    const db = createTestDb();
+    const cols = db.prepare("SELECT name FROM pragma_table_info('sessions')").all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).toContain("id");
+    expect(names).toContain("github_login");
+    expect(names).toContain("token_hash");
+    expect(names).toContain("created_at");
+    expect(names).toContain("expires_at");
+  });
+
+  it("token_hash has UNIQUE constraint", () => {
+    const db = createTestDb();
+    const future = new Date(Date.now() + 86400000).toISOString();
+    db.prepare("INSERT INTO sessions (github_login, token_hash, expires_at) VALUES ('alice', 'hash1', ?)").run(future);
+    expect(() =>
+      db.prepare("INSERT INTO sessions (github_login, token_hash, expires_at) VALUES ('bob', 'hash1', ?)").run(future)
+    ).toThrow();
+  });
+
+  it("migration 12 is idempotent", () => {
+    const db = createTestDb();
+    expect(() => applySchema(db)).not.toThrow();
+  });
+});
+
+describe("migration 13: members table", () => {
+  it("creates members table with correct columns", () => {
+    const db = createTestDb();
+    const cols = db.prepare("SELECT name FROM pragma_table_info('members')").all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).toContain("id");
+    expect(names).toContain("github_login");
+    expect(names).toContain("workspace_id");
+    expect(names).toContain("role");
+    expect(names).toContain("invited_by");
+    expect(names).toContain("created_at");
+  });
+
+  it("role defaults to contributor", () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO workspaces (name) VALUES ('ws')").run();
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.prepare("INSERT INTO members (github_login, workspace_id) VALUES ('alice', ?)").run(wsId);
+    const row = db.prepare("SELECT role FROM members WHERE github_login = 'alice'").get() as { role: string };
+    expect(row.role).toBe("contributor");
+  });
+
+  it("UNIQUE(github_login, workspace_id) — duplicate insert throws", () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO workspaces (name) VALUES ('ws')").run();
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.prepare("INSERT INTO members (github_login, workspace_id) VALUES ('alice', ?)").run(wsId);
+    expect(() =>
+      db.prepare("INSERT INTO members (github_login, workspace_id) VALUES ('alice', ?)").run(wsId)
+    ).toThrow();
+  });
+
+  it("members_login index exists", () => {
+    const db = createTestDb();
+    const idx = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'members_login'")
+      .get() as { name: string } | undefined;
+    expect(idx?.name).toBe("members_login");
+  });
+
+  it("CASCADE delete: removing workspace removes members", () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO workspaces (name) VALUES ('ws')").run();
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.prepare("INSERT INTO members (github_login, workspace_id) VALUES ('alice', ?)").run(wsId);
+    db.prepare("DELETE FROM workspaces WHERE id = ?").run(wsId);
+    const count = (db.prepare("SELECT COUNT(*) AS n FROM members").get() as { n: number }).n;
+    expect(count).toBe(0);
+  });
+
+  it("migration 13 is idempotent", () => {
+    const db = createTestDb();
+    expect(() => applySchema(db)).not.toThrow();
+  });
+});
