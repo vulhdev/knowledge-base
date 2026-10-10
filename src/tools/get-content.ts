@@ -7,7 +7,7 @@ export function getContent(db: Database.Database, id: number): Content & { versi
   const row = db
     .prepare(
       `SELECT c.id, w.name AS workspace, c.type, c.title, c.body, c.root_id, c.version_number,
-              c.created_at, c.updated_at,
+              c.created_at, c.updated_at, c.created_by, c.updated_by,
               EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs,
               (SELECT COUNT(*) FROM contents v
                WHERE v.id = COALESCE(c.root_id, c.id)

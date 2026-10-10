@@ -60,7 +60,7 @@ export async function searchSemantic(
     // --- Vector search (ANN) ---
     let vecSql = `
       SELECT DISTINCT c.id, w.name AS workspace, c.type, c.title, c.body,
-             c.root_id, c.version_number, c.created_at, c.updated_at,
+             c.root_id, c.version_number, c.created_at, c.updated_at, c.created_by, c.updated_by,
              EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
       FROM vec_contents v
       JOIN contents c ON v.rowid = c.id
@@ -93,7 +93,7 @@ export async function searchSemantic(
       const placeholders = ftsOnlyIds.map(() => "?").join(",");
       const extraRows = db.prepare(`
         SELECT DISTINCT c.id, w.name AS workspace, c.type, c.title, c.body,
-               c.root_id, c.version_number, c.created_at, c.updated_at,
+               c.root_id, c.version_number, c.created_at, c.updated_at, c.created_by, c.updated_by,
                EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
         FROM contents c
         JOIN content_features cf ON cf.content_id = c.id
