@@ -88,12 +88,14 @@ export function buildLoadPlan(scan: ScanResult, workspace: string, sotWorkspace:
   const items: (PlanDoc | PlanCard)[] = [];
   const links: PlanLink[] = [];
   const keyOf = new Map<string, string>();
+  let docCount = 0, residueCount = 0, cardCount = 0;
 
   for (const d of docs) {
     const cls = classifyDoc(d.relPath, d.canonical.text);
     const key = docSourceKey(workspace, d.relPath);
     keyOf.set(d.relPath, key);
     items.push({ kind: "doc", source_key: key, workspace, features: cls.features, type: cls.type, title: cls.title, body: cls.body, source_sha: sha256(cls.body) });
+    docCount++;
     if (d.residue) {
       const body = d.residue.lines.join("\n") + "\n";
       const rkey = residueSourceKey(workspace, d.relPath);
@@ -107,6 +109,7 @@ export function buildLoadPlan(scan: ScanResult, workspace: string, sotWorkspace:
         body,
         source_sha: sha256(body),
       });
+      residueCount++;
       links.push({ parent_source_key: key, child_source_key: rkey, reason: "fork-residue" });
     }
   }
@@ -151,6 +154,7 @@ export function buildLoadPlan(scan: ScanResult, workspace: string, sotWorkspace:
         ref_commit: b.commit,
         markdown: /\.md$/i.test(b.repoPath),
       });
+      cardCount++;
     } catch (err) {
       warnings.push(`SOT file ${b.repoPath}: ${(err as Error).message}`);
       skipped.push(key);
@@ -170,9 +174,9 @@ export function buildLoadPlan(scan: ScanResult, workspace: string, sotWorkspace:
     stats: {
       files_a: scan.aFiles.length,
       files_b: scan.bFiles.length,
-      docs: items.filter((i) => i.kind === "doc").length,
-      residues: items.filter((i) => i.kind === "residue").length,
-      cards: items.filter((i) => i.kind === "card").length,
+      docs: docCount,
+      residues: residueCount,
+      cards: cardCount,
       aliases: docs.reduce((n, d) => n + d.aliases.length, 0),
       series_links: series.length,
     },
