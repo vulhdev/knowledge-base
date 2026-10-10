@@ -231,6 +231,50 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_contents_created_at ON contents(created_at);
     CREATE INDEX IF NOT EXISTS idx_contents_type_created_at ON contents(type, created_at);
   `);
+
+  // Migration 11: add versioning columns (root_id, version_number, is_latest)
+  const hasRootId = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'root_id'").get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasRootId) {
+    db.exec("ALTER TABLE contents ADD COLUMN root_id INTEGER REFERENCES contents(id)");
+  }
+
+  const hasVersionNumber = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'version_number'").get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasVersionNumber) {
+    db.exec("ALTER TABLE contents ADD COLUMN version_number INTEGER NOT NULL DEFAULT 1");
+  }
+
+  const hasIsLatest = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'is_latest'").get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasIsLatest) {
+    db.exec("ALTER TABLE contents ADD COLUMN is_latest INTEGER NOT NULL DEFAULT 1");
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
+  `);
+
+  // Rebuild list-path indexes as partial indexes covering only is_latest=1 rows,
+  // so list_contents queries retain their index-scan-ordered plan after the is_latest filter.
+  const createdAtIdx = (
+    db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_contents_created_at'").get() as { sql: string } | undefined
+  )?.sql ?? "";
+
+  if (!createdAtIdx.includes("WHERE")) {
+    db.exec(`
+      DROP INDEX IF EXISTS idx_contents_created_at;
+      CREATE INDEX idx_contents_created_at ON contents(created_at) WHERE is_latest = 1;
+      DROP INDEX IF EXISTS idx_contents_type_created_at;
+      CREATE INDEX idx_contents_type_created_at ON contents(type, created_at) WHERE is_latest = 1;
+    `);
+  }
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {

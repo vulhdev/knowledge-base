@@ -166,6 +166,27 @@ If yes, spawn `kb-conflict-resolver` via the Agent tool:
 
 Do not interrupt. Collect all `risk_shadow` conflicts and surface them in Step 8 report as a note section. No action required.
 
+### 6c. Offer versioning (optional)
+
+After Step 6b, scan `result.conflicts[]` for any `semantic_contradiction` whose `features` overlap with the saved doc's features AND whose `type` matches the saved type.
+
+If such a conflict exists, offer:
+
+```
+This doc closely resembles #<id> · <feature>/<type> already in the knowledge base.
+Save as a new version of #<id> instead?
+  ● Yes — create as new version of #<id>
+  ○ No — keep as a separate document
+```
+
+**If yes:**
+1. `delete_content(id=NEW_DOC_ID)` — remove the doc just created
+2. `create_version(id=CONFLICT_ID)` → returns `{ content: new_version, previous_version_id }`
+3. `update_content(id=new_version.id, body=CONTENT, type=TYPE, title=TITLE)` — fill with actual content
+4. Continue the rest of this skill using `new_version.id` as the saved doc ID
+
+**If no (or no matching conflict):** proceed to Step 7 with the doc from Step 6.
+
 ### 7. Suggest links (optional)
 
 After saving, check if there are related documents to link.

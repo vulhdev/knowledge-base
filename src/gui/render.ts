@@ -1,6 +1,7 @@
 import { parse } from "marked";
+import { diffLines } from "diff";
 import type { Feature, WorkspaceSummary, RecentContent } from "./db.js";
-import type { Content, SearchResult, LineageResult, LinkedContent } from "../types.js";
+import type { Content, SearchResult, LineageResult, LinkedContent, VersionSummary } from "../types.js";
 import type { ErrorLog } from "../db/error-log.js";
 import type { ReviewComment } from "../db/reviews.js";
 
@@ -87,6 +88,21 @@ const CUSTOM_CSS = `
   .recent-left a:hover { color: #ffffff; }
   .recent-path { font-size: 12px; color: #8b949e; white-space: nowrap; }
   .recent-age { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8b949e; white-space: nowrap; }
+  .diff-table { width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 20px; margin-top: 24px; }
+  .diff-table td { padding: 2px 8px; white-space: pre-wrap; word-break: break-all; vertical-align: top; }
+  .diff-table .ln { color: #4b5563; text-align: right; width: 40px; min-width: 40px; user-select: none; }
+  .diff-table .diff-sign { width: 16px; text-align: center; user-select: none; }
+  .diff-line-add { background: #0d2615; }
+  .diff-line-add .ln { background: #0f3018; }
+  .diff-line-add .diff-sign { color: #3fb950; }
+  .diff-line-del { background: #2d0f0f; }
+  .diff-line-del .ln { background: #350f0f; }
+  .diff-line-del .diff-sign { color: #f85149; }
+  .diff-line-ctx .diff-sign { color: transparent; }
+  .diff-version-bar { background: #141c24; border: 1px solid #2d363e; border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; font-size: 13px; color: #8b949e; }
+  .diff-version-bar select { background: #0b141c; border: 1px solid #2d363e; border-radius: 6px; padding: 4px 8px; color: #dae3ee; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .diff-version-bar button { background: #7c3aed; color: #fff; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: inherit; }
+  .diff-version-bar button:hover { background: #6d28d9; }
 `;
 
 function searchBar(defaultQ = "", defaultWs = ""): string {
@@ -197,7 +213,11 @@ export function renderContentList(
   return layout(`${workspace}/${feature}`, body);
 }
 
-export function renderContent(content: Content, lineage?: LineageResult): string {
+export function renderContent(
+  content: Content,
+  lineage?: LineageResult,
+  versions?: VersionSummary[],
+): string {
   const primaryFeature = content.features[0] ?? "";
   const crumb = `<p class="breadcrumb">
     <a href="/">Home</a> /
@@ -207,11 +227,21 @@ export function renderContent(content: Content, lineage?: LineageResult): string
   </p>`;
   const title = content.title ?? `#${content.id}`;
   const renderedBody = parse(content.body) as string;
-  const sidebar = lineage ? renderLinkedSidebar(lineage) : "";
+
+  const versionWidget =
+    versions && versions.length >= 2
+      ? renderVersionWidget(content, versions, primaryFeature)
+      : "";
+
+  const linkedSidebar = lineage ? renderLinkedSidebar(lineage) : "";
+  const sidebar = versionWidget || linkedSidebar
+    ? `<aside class="content-sidebar">${versionWidget}${linkedSidebar.replace(/^<aside[^>]*>|<\/aside>$/g, "")}</aside>`
+    : "";
   const mainContent = `<div class="content-body">${renderedBody}</div>`;
   const contentArea = sidebar
     ? `<div class="content-layout">${mainContent}${sidebar}</div>`
     : mainContent;
+
   const exportUrl = `/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(primaryFeature)}/${content.id}/export`;
   const escapedBody = JSON.stringify(content.body);
   const copyScript = `(function(b){navigator.clipboard.writeText(b).then(function(){var el=document.getElementById('copy-btn-${content.id}');el.textContent='Copied!';setTimeout(function(){el.textContent='Copy';},2000);})})(${escapedBody})`;
@@ -228,6 +258,38 @@ export function renderContent(content: Content, lineage?: LineageResult): string
 <hr />
 ${contentArea}`;
   return layout(title, body);
+}
+
+function renderVersionWidget(
+  content: Content,
+  versions: VersionSummary[],
+  primaryFeature: string,
+): string {
+  const rootId = content.root_id ?? content.id;
+  const diffBase = `/ws/${encodeURIComponent(content.workspace)}/${encodeURIComponent(primaryFeature)}/${rootId}/diff`;
+  const latest = versions.find((v) => v.is_latest) ?? versions[versions.length - 1];
+  const secondLatest = versions[versions.indexOf(latest) - 1] ?? versions[0];
+
+  const options = versions
+    .map(
+      (v) =>
+        `<option value="${v.id}"${v.id === secondLatest.id ? " selected" : ""}>v${v.version_number}${v.is_latest ? " (latest)" : ""}</option>`,
+    )
+    .join("");
+  const toOptions = versions
+    .map(
+      (v) =>
+        `<option value="${v.id}"${v.id === latest.id ? " selected" : ""}>v${v.version_number}${v.is_latest ? " (latest)" : ""}</option>`,
+    )
+    .join("");
+
+  return `<span class="section-label">VERSIONS</span>
+<form method="get" action="${diffBase}" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+  <select name="from" style="background:#0b141c;border:1px solid #2d363e;border-radius:4px;padding:4px 6px;color:#dae3ee;font-family:'JetBrains Mono',monospace;font-size:11px">${options}</select>
+  <select name="to" style="background:#0b141c;border:1px solid #2d363e;border-radius:4px;padding:4px 6px;color:#dae3ee;font-family:'JetBrains Mono',monospace;font-size:11px">${toOptions}</select>
+  <button type="submit" style="background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:5px 10px;cursor:pointer;font-size:12px;font-family:inherit">Compare</button>
+</form>
+<a href="${diffBase}" style="font-size:12px;color:#8b949e">What changed?</a>`;
 }
 
 function typeBadge(type: string): string {
@@ -485,6 +547,87 @@ ${popup}
 ${reviewScript}`;
 
   return layout(`Review: ${title}`, body);
+}
+
+export function renderDiff(
+  from: Content,
+  to: Content,
+  allVersions: VersionSummary[],
+): string {
+  const workspace = from.workspace;
+  const primaryFeature = from.features[0] ?? "";
+  const rootId = from.root_id ?? from.id;
+  const title = from.title ?? `#${rootId}`;
+
+  const crumb = `<p class="breadcrumb">
+    <a href="/">Home</a> /
+    <a href="/ws/${encodeURIComponent(workspace)}">${esc(workspace)}</a> /
+    <a href="/ws/${encodeURIComponent(workspace)}/${encodeURIComponent(primaryFeature)}">${esc(primaryFeature)}</a> /
+    <a href="/ws/${encodeURIComponent(workspace)}/${encodeURIComponent(primaryFeature)}/${rootId}">${esc(title)}</a> /
+    Diff
+  </p>`;
+
+  const diffBase = `/ws/${encodeURIComponent(workspace)}/${encodeURIComponent(primaryFeature)}/${rootId}/diff`;
+  const versionOptions = (selectedId: number) =>
+    allVersions
+      .map(
+        (v) =>
+          `<option value="${v.id}"${v.id === selectedId ? " selected" : ""}>v${v.version_number}${v.is_latest ? " (latest)" : ""} — ${formatDate(v.created_at)}</option>`,
+      )
+      .join("");
+
+  const versionBar = `<div class="diff-version-bar">
+    <span>Compare</span>
+    <form method="get" action="${diffBase}" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <select name="from">${versionOptions(from.id)}</select>
+      <span>→</span>
+      <select name="to">${versionOptions(to.id)}</select>
+      <button type="submit">Compare</button>
+    </form>
+  </div>`;
+
+  const fromBody = from.body.replace(/\r\n/g, "\n");
+  const toBody = to.body.replace(/\r\n/g, "\n");
+  const changes = diffLines(fromBody, toBody);
+
+  let oldLine = 1;
+  let newLine = 1;
+  const rows: string[] = [];
+  let hasChanges = false;
+
+  for (const change of changes) {
+    const lines = change.value.split("\n");
+    if (lines[lines.length - 1] === "") lines.pop();
+
+    if (change.removed) {
+      hasChanges = true;
+      for (const line of lines) {
+        rows.push(`<tr class="diff-line-del"><td class="ln">${oldLine++}</td><td class="ln"></td><td class="diff-sign">-</td><td>${esc(line)}</td></tr>`);
+      }
+    } else if (change.added) {
+      hasChanges = true;
+      for (const line of lines) {
+        rows.push(`<tr class="diff-line-add"><td class="ln"></td><td class="ln">${newLine++}</td><td class="diff-sign">+</td><td>${esc(line)}</td></tr>`);
+      }
+    } else {
+      for (const line of lines) {
+        rows.push(`<tr class="diff-line-ctx"><td class="ln">${oldLine++}</td><td class="ln">${newLine++}</td><td class="diff-sign"> </td><td>${esc(line)}</td></tr>`);
+      }
+    }
+  }
+
+  const diffTable = !hasChanges
+    ? `<p style="color:#8b949e;margin-top:24px">No differences between these versions.</p>`
+    : `<table class="diff-table"><tbody>${rows.join("")}</tbody></table>`;
+
+  const body = `${crumb}
+<h1>${esc(title)} — v${from.version_number} → v${to.version_number}</h1>
+<p class="meta"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8b949e">v${from.version_number}: ${formatDate(from.created_at)} &nbsp;→&nbsp; v${to.version_number}: ${formatDate(to.created_at)}</span></p>
+<hr />
+${versionBar}
+${diffTable}`;
+
+  return layout(`${esc(title)} — v${from.version_number} → v${to.version_number}`, body);
 }
 
 function renderRecentSection(recent: RecentContent[]): string {

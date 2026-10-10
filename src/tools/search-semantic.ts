@@ -60,7 +60,7 @@ export async function searchSemantic(
     // --- Vector search (ANN) ---
     let vecSql = `
       SELECT DISTINCT c.id, w.name AS workspace, c.type, c.title, c.body,
-             c.created_at, c.updated_at,
+             c.root_id, c.version_number, c.created_at, c.updated_at,
              EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
       FROM vec_contents v
       JOIN contents c ON v.rowid = c.id
@@ -68,6 +68,7 @@ export async function searchSemantic(
       JOIN features f ON cf.feature_id = f.id
       JOIN workspaces w ON f.workspace_id = w.id
       WHERE v.embedding MATCH ? AND k = ?
+        AND c.is_latest = 1
     `;
     if (filterConditions.length > 0) {
       vecSql += ` AND ${filterConditions.join(" AND ")}`;
@@ -92,13 +93,14 @@ export async function searchSemantic(
       const placeholders = ftsOnlyIds.map(() => "?").join(",");
       const extraRows = db.prepare(`
         SELECT DISTINCT c.id, w.name AS workspace, c.type, c.title, c.body,
-               c.created_at, c.updated_at,
+               c.root_id, c.version_number, c.created_at, c.updated_at,
                EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
         FROM contents c
         JOIN content_features cf ON cf.content_id = c.id
         JOIN features f ON cf.feature_id = f.id
         JOIN workspaces w ON f.workspace_id = w.id
         WHERE c.id IN (${placeholders})
+          AND c.is_latest = 1
       `).all(...ftsOnlyIds) as RawRow[];
 
       for (const row of extraRows) {
@@ -166,6 +168,7 @@ export function runFtsSearch(
     JOIN features f ON cf.feature_id = f.id
     JOIN workspaces w ON f.workspace_id = w.id
     WHERE contents_fts MATCH ?
+      AND c.is_latest = 1
   `;
   if (conditions.length > 0) {
     sql += ` AND ${conditions.join(" AND ")}`;

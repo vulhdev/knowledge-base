@@ -3,6 +3,7 @@ import request from "supertest";
 import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
+import { createVersion } from "../../src/tools/create-version.js";
 import { linkContent } from "../../src/tools/link-content.js";
 import { insertErrorLog } from "../../src/db/error-log.js";
 import { createApp } from "../../src/gui/server.js";
@@ -457,6 +458,69 @@ describe("GUI server routes", () => {
       const res = await request(app)
         .post(`/ws/proj-a/auth/${contentId}/review/9999/commit`);
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("GET /ws/:workspace/:feature/:id/diff", () => {
+    let docId: number;
+    let v2Id: number;
+    let v3Id: number;
+
+    beforeEach(async () => {
+      const doc = await createContent(db, "proj-a", ["auth"], "spec", "line one\nline two\nline three", "Versioned Doc");
+      docId = doc.id;
+      const v2 = createVersion(db, docId);
+      v2Id = v2.content.id;
+      db.prepare("UPDATE contents SET body = ? WHERE id = ?").run("line one\nline two modified\nline three\nline four added", v2Id);
+      const v3 = createVersion(db, v2Id);
+      v3Id = v3.content.id;
+      db.prepare("UPDATE contents SET body = ? WHERE id = ?").run("line one\nline two modified\nline three\nline four added\nline five", v3Id);
+    });
+
+    it("returns 200 with diff HTML when from+to provided", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${docId}/diff?from=${docId}&to=${v2Id}`);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("diff-table");
+    });
+
+    it("auto-selects latest-1 vs latest when no query params", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${docId}/diff`);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("diff-table");
+    });
+
+    it("shows diff-line-del for removed content", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${docId}/diff?from=${v2Id}&to=${docId}`);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("diff-line-del");
+    });
+
+    it("shows diff-line-add for added content", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${docId}/diff?from=${docId}&to=${v2Id}`);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("diff-line-add");
+    });
+
+    it("returns 404 for unknown content id", async () => {
+      const res = await request(app).get("/ws/proj-a/auth/9999/diff");
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 400 when from/to are from different chains", async () => {
+      const other = await createContent(db, "proj-a", ["auth"], "spec", "unrelated doc");
+      const res = await request(app).get(`/ws/proj-a/auth/${docId}/diff?from=${docId}&to=${other.id}`);
+      expect(res.status).toBe(400);
+    });
+
+    it("redirects to content page when doc has only 1 version", async () => {
+      const solo = await createContent(db, "proj-a", ["auth"], "spec", "only one version");
+      const res = await request(app).get(`/ws/proj-a/auth/${solo.id}/diff`);
+      expect(res.status).toBe(302);
+    });
+
+    it("redirects when from === to", async () => {
+      const res = await request(app).get(`/ws/proj-a/auth/${docId}/diff?from=${docId}&to=${docId}`);
+      expect(res.status).toBe(302);
     });
   });
 });

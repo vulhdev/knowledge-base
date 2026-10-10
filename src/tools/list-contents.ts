@@ -20,7 +20,7 @@ export function listContents(
   const clampedLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
   const clampedOffset = Math.max(0, offset);
 
-  const conditions: string[] = ["w.name = ?"];
+  const conditions: string[] = ["w.name = ?", "c.is_latest = 1"];
   const params: (string | number | bigint | null)[] = [workspace];
 
   if (feature !== undefined) {
@@ -50,7 +50,8 @@ export function listContents(
   let dataArgs: (string | number | bigint | null)[];
   if (feature !== undefined) {
     dataSql = `
-    SELECT DISTINCT c.id, w.name AS workspace, c.type, c.title, c.body, c.created_at, c.updated_at
+    SELECT DISTINCT c.id, w.name AS workspace, c.type, c.title, c.body, c.root_id, c.version_number,
+           c.created_at, c.updated_at
     FROM contents c
     JOIN content_features cf ON cf.content_id = c.id
     JOIN features f ON cf.feature_id = f.id
@@ -64,9 +65,11 @@ export function listContents(
     // No feature filter: walk contents in index order and test workspace membership per row,
     // so the default and type-filtered listings avoid a temp sort over the whole workspace.
     dataSql = `
-    SELECT c.id, ? AS workspace, c.type, c.title, c.body, c.created_at, c.updated_at
+    SELECT c.id, ? AS workspace, c.type, c.title, c.body, c.root_id, c.version_number,
+           c.created_at, c.updated_at
     FROM contents c
     WHERE ${type !== undefined ? "c.type = ?" : "c.type != 'digest'"}
+      AND c.is_latest = 1
       AND EXISTS (
         SELECT 1
         FROM content_features cf
@@ -82,7 +85,7 @@ export function listContents(
   type RawRow = Omit<Content, "features" | "has_code_refs">;
   const rows = db.prepare(dataSql).all(...dataArgs) as RawRow[];
   const featureMap = fetchFeaturesBatch(db, rows.map((r) => r.id));
-  const results = rows.map((row) => ({ ...row, features: featureMap.get(row.id) ?? [] })) as Content[];
+  const results = rows.map((row) => ({ ...row, features: featureMap.get(row.id) ?? [], has_code_refs: false })) as Content[];
 
   return {
     results,

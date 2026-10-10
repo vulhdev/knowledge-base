@@ -7,6 +7,8 @@ export type Content = {
   type: ContentType;
   title: string | null;
   body: string;
+  root_id: number | null;
+  version_number: number;
   created_at: string;
   updated_at: string;
   has_code_refs: boolean;
@@ -100,4 +102,23 @@ export type AttachCodeRefResult = {
 export type GetCodeRefsResult = {
   content_id: number;
   refs: AttachCodeRefResult[];
+};
+
+export type VersionSummary = {
+  id: number;
+  version_number: number;
+  is_latest: boolean;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ListVersionsResult = {
+  root_id: number;
+  versions: VersionSummary[];
+};
+
+export type CreateVersionResult = {
+  content: Content;
+  previous_version_id: number;
 };
