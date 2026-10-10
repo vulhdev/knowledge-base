@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
 import { updateContent } from "../../src/tools/update-content.js";
+import { authCtx } from "../../src/auth/middleware.js";
 
 vi.mock("../../src/embedding/model.js", () => ({
   isModelReady: vi.fn().mockReturnValue(false),
@@ -135,5 +136,38 @@ describe("updateContent", () => {
     expect(result.body).toBe("updated body");
 
     vi.mocked(isModelReady).mockReturnValue(false);
+  });
+});
+
+describe("updateContent — server-mode ownership", () => {
+  it("sets updated_by from authCtx in server mode", async () => {
+    const db = createTestDb();
+    const created = await createContent(db, "ws", ["feat"], "idea", "body");
+    let result: Awaited<ReturnType<typeof updateContent>>;
+    await authCtx.run({ github_login: "bob" }, async () => {
+      result = await updateContent(db, created.id, "new body");
+    });
+    expect(result!.updated_by).toBe("bob");
+  });
+
+  it("updated_by is null in local mode", async () => {
+    const db = createTestDb();
+    const created = await createContent(db, "ws", ["feat"], "idea", "body");
+    const result = await updateContent(db, created.id, "new body");
+    expect(result.updated_by).toBeNull();
+  });
+
+  it("created_by is preserved after update", async () => {
+    const db = createTestDb();
+    let created: Awaited<ReturnType<typeof createContent>>;
+    await authCtx.run({ github_login: "alice" }, async () => {
+      created = await createContent(db, "ws", ["feat"], "idea", "body");
+    });
+    await authCtx.run({ github_login: "bob" }, async () => {
+      await updateContent(db, created!.id, "updated");
+    });
+    const row = db.prepare("SELECT created_by, updated_by FROM contents WHERE id = ?").get(created!.id) as { created_by: string | null; updated_by: string | null };
+    expect(row.created_by).toBe("alice");
+    expect(row.updated_by).toBe("bob");
   });
 });

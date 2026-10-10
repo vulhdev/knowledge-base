@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
 import { appendContent } from "../../src/tools/append-content.js";
+import { authCtx } from "../../src/auth/middleware.js";
 
 vi.mock("../../src/embedding/model.js", () => ({
   isModelReady: vi.fn().mockReturnValue(false),
@@ -92,5 +93,24 @@ describe("appendContent", () => {
     const created = await createContent(db, "proj", ["docs"], "doc", body);
     const result = await appendContent(db, created.id, "- Entry two");
     expect(result.body).toBe("## Log\n\n- Entry one\n- Entry two");
+  });
+});
+
+describe("appendContent — server-mode ownership", () => {
+  it("sets updated_by from authCtx in server mode", async () => {
+    const db = createTestDb();
+    const created = await createContent(db, "ws", ["feat"], "doc", "line one");
+    let result: Awaited<ReturnType<typeof appendContent>>;
+    await authCtx.run({ github_login: "dave" }, async () => {
+      result = await appendContent(db, created.id, "line two");
+    });
+    expect(result!.updated_by).toBe("dave");
+  });
+
+  it("updated_by is null in local mode", async () => {
+    const db = createTestDb();
+    const created = await createContent(db, "ws", ["feat"], "doc", "line one");
+    const result = await appendContent(db, created.id, "line two");
+    expect(result.updated_by).toBeNull();
   });
 });
