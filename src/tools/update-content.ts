@@ -1,9 +1,10 @@
 import type Database from "better-sqlite3";
-import type { Content, ContentType, ConflictResult, UpdateContentResult } from "../types.js";
+import type { Content, ContentType, ConflictResult, UpdateContentResult, Provenance } from "../types.js";
 
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
+import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
 
@@ -14,22 +15,39 @@ export async function updateContent(
   type?: ContentType,
   title?: string,
   requestSampling?: RequestSampling,
+  provenance?: Provenance,
 ): Promise<UpdateContentResult> {
   if (!body.trim()) {
     throw new Error("body must not be empty");
   }
 
-  const { changes } = db
-    .prepare(
-      `UPDATE contents
-       SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title), updated_at = datetime('now')
-       WHERE id = ?`,
-    )
-    .run(body, type ?? null, title ?? null, id);
+  const sections = await prepareSections(body);
 
-  if (changes === 0) {
-    throw new Error(`Content not found: id=${id}`);
-  }
+  db.transaction(() => {
+    const before = db.prepare("SELECT title FROM contents WHERE id = ?").get(id) as { title: string | null } | undefined;
+    const { changes } = provenance
+      ? db
+          .prepare(
+            `UPDATE contents
+             SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title), updated_at = datetime('now'),
+                 source_key = ?, source_sha = ?
+             WHERE id = ?`,
+          )
+          .run(body, type ?? null, title ?? null, provenance.source_key, provenance.source_sha, id)
+      : db
+          .prepare(
+            `UPDATE contents
+             SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title), updated_at = datetime('now')
+             WHERE id = ?`,
+          )
+          .run(body, type ?? null, title ?? null, id);
+
+    if (changes === 0 || !before) {
+      throw new Error(`Content not found: id=${id}`);
+    }
+
+    writeDocSections(db, id, sections, title !== undefined && title !== before.title);
+  })();
 
   let embeddingBlob: Buffer | null = null;
 
@@ -42,6 +60,8 @@ export async function updateContent(
       // embedding failure must not prevent content update
     }
   }
+
+  await embedDocSections(db, id);
 
   const row = db
     .prepare(

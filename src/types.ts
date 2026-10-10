@@ -14,7 +14,19 @@ export type Content = {
   has_code_refs: boolean;
 };
 
-export type SearchResult = Content & { score: number };
+export type MatchedSection = {
+  chunk_key: string; // "<content_id>#3.3.2.1~2" (doc) | "<source_path>#3.3.2.1~2" (SOT)
+  heading_path: string; // "H1 › H2 › …"
+  start_line: number; // 1-based, inclusive
+  end_line: number;
+  source_path?: string; // SOT only
+  source_commit?: string; // SOT only — read with `git show <commit>:<path>`
+};
+
+export type SearchResult = Content & { score: number; matched_sections?: MatchedSection[] };
+
+/** Where an imported row came from: `doc:<ws>:<relPath>[#fork-residue]` or `sot:<sot-ws>:<repoPath>`. */
+export type Provenance = { source_key: string; source_sha: string };
 
 export type SearchPage = {
   results: SearchResult[];

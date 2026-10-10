@@ -35,6 +35,18 @@ describe("createVersion", () => {
     expect(result.content.features).toEqual(["feat"]);
   });
 
+  it("copies the doc sections of the source version", async () => {
+    const body = "# A\n\n" + "alpha ".repeat(60) + "\n\n# B\n\n" + "beta ".repeat(60);
+    const original = await createContent(db, "ws", ["feat"], "spec", body);
+    const result = createVersion(db, original.id);
+
+    const keys = (id: number) =>
+      (db.prepare("SELECT chunk_key, chunk_sha FROM content_chunks WHERE content_id = ? AND kind = 'doc' ORDER BY ord").all(id) as
+        { chunk_key: string; chunk_sha: string }[]);
+    expect(keys(original.id).length).toBeGreaterThan(0);
+    expect(keys(result.content.id)).toEqual(keys(original.id));
+  });
+
   it("sets is_latest=1 on new version and is_latest=0 on previous", async () => {
     const original = await createContent(db, "ws", ["feat"], "spec", "v1 body");
     const result = createVersion(db, original.id);

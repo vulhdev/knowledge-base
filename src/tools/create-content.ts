@@ -1,9 +1,11 @@
 import type Database from "better-sqlite3";
-import type { ContentType, ConflictResult, CreateContentResult, SuggestedParent } from "../types.js";
+import type { ContentType, ConflictResult, CreateContentResult, SuggestedParent, Provenance } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
 import { typesAfter } from "./_type-order.js";
+import { buildFtsQuery } from "../text/cjk-bigram.js";
+import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
 
 const SUGGEST_LIMIT = 3;
 const SCORE_THRESHOLD = 0.25;
@@ -54,12 +56,9 @@ async function suggestParents(
 
   // FTS fallback
   try {
-    const words = body
-      .trim()
-      .split(/\s+/)
-      .slice(0, 8)
-      .map((w) => w.replace(/[^\w]/g, ""))
-      .filter((w) => w.length > 2);
+    // Same tokenization as contents_fts: CJK runs become bigram phrases instead of being stripped
+    const words = buildFtsQuery(body.trim().split(/\s+/).slice(0, 8).join(" "))
+      .tokens.filter((w) => w.startsWith('"') && (/[^\x00-\x7F]/.test(w) || w.length - 2 > 2));
 
     if (words.length === 0) return [];
 
@@ -96,6 +95,7 @@ export async function createContent(
   body: string,
   title?: string,
   requestSampling?: RequestSampling,
+  provenance?: Provenance,
 ): Promise<CreateContentResult> {
   if (!body.trim()) {
     throw new Error("body must not be empty");
@@ -131,15 +131,29 @@ export async function createContent(
     }
   }
 
-  const { lastInsertRowid } = db
-    .prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)")
-    .run(type, title ?? null, body);
+  // Sections are computed before the transaction (the token counter is async); the row, its
+  // features and its sections are then written atomically.
+  const sections = await prepareSections(body);
 
-  const contentId = Number(lastInsertRowid);
+  const contentId = db.transaction(() => {
+    // provenance is written in the same INSERT, so an interrupted import never leaves a keyless copy
+    const { lastInsertRowid } = provenance
+      ? db
+          .prepare("INSERT INTO contents (type, title, body, source_key, source_sha) VALUES (?, ?, ?, ?, ?)")
+          .run(type, title ?? null, body, provenance.source_key, provenance.source_sha)
+      : db
+          .prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)")
+          .run(type, title ?? null, body);
 
-  for (const featureId of featureIds) {
-    db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(contentId, featureId);
-  }
+    const id = Number(lastInsertRowid);
+
+    for (const featureId of featureIds) {
+      db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(id, featureId);
+    }
+
+    writeDocSections(db, id, sections);
+    return id;
+  })();
 
   let embeddingBlob: Buffer | null = null;
 
@@ -152,6 +166,8 @@ export async function createContent(
       // embedding failure must not prevent content creation
     }
   }
+
+  await embedDocSections(db, contentId);
 
   const featureNamesSorted = fetchFeatures(db, contentId);
 

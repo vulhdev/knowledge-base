@@ -14,12 +14,15 @@ switch (command) {
   case "link-code":
     await import("./link-code.js");
     break;
+  case "import-sources":
+    await import("./import-sources.js");
+    break;
   case undefined:
     // No subcommand — start the MCP server (stdio transport, called by Claude Code)
     await import("../index.js");
     break;
   default:
     console.error(`Unknown command: ${command}`);
-    console.error("Usage: knowledge-base [init|gui|update]");
+    console.error("Usage: knowledge-base [init|gui|update|link-code|import-sources]");
     process.exit(1);
 }

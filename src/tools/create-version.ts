@@ -51,6 +51,16 @@ export function createVersion(db: Database.Database, id: number): CreateVersionR
 
     const newId = Number(lastInsertRowid);
 
+    // Same body, same sections: copy the doc sections (with their embeddings) so section search
+    // covers the new version immediately instead of waiting for the next backfill
+    db.prepare(
+      `INSERT INTO content_chunks (content_id, kind, chunk_key, ord, heading_path, start_char, end_char,
+                                   start_line, end_line, source_path, source_commit, chunk_sha, embedding)
+       SELECT ?, kind, chunk_key, ord, heading_path, start_char, end_char,
+              start_line, end_line, source_path, source_commit, chunk_sha, embedding
+       FROM content_chunks WHERE content_id = ? AND kind = 'doc'`,
+    ).run(newId, id);
+
     // Copy content_features
     db.prepare(
       `INSERT OR IGNORE INTO content_features (content_id, feature_id)

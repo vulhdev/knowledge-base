@@ -188,7 +188,7 @@ server.tool(
 
 server.tool(
   "search_semantic",
-  "Semantic search across document bodies using vector similarity (multilingual, 50+ languages). Returns documents ordered by semantic similarity to the query. Requires `npx @vulhdev/knowledge-base init` to be run first to download the embedding model.",
+  "Semantic search across document bodies using vector similarity (multilingual, 50+ languages) fused with full-text search. Japanese/Chinese terms are matched even in the middle of a sentence (CJK bigram index). Each result is one document (never repeated) and may carry `matched_sections` — up to 3 sections `{chunk_key, heading_path, start_line, end_line}` that matched; for SOT cards they also carry `source_path` and `source_commit`, readable with `git show <source_commit>:<source_path>` at those lines. Requires `npx @vulhdev/knowledge-base init` to be run first to download the embedding model.",
   {
     query: z.string().min(1).describe("Search query — any natural language, including Vietnamese"),
     workspace: z.string().optional().describe("Scope search to a specific workspace"),
