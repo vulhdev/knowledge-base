@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import type { Content, CreateVersionResult } from "../types.js";
 import { fetchFeatures } from "./_helpers.js";
+import { authCtx } from "../auth/middleware.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number; version_count: number };
 
@@ -25,6 +26,8 @@ export function createVersion(db: Database.Database, id: number): CreateVersionR
 
   const chainRoot = row.root_id ?? row.id;
 
+  const created_by = authCtx.getStore()?.github_login ?? null;
+
   const newContent = db.transaction(() => {
     const { max_version } = db
       .prepare(
@@ -44,10 +47,10 @@ export function createVersion(db: Database.Database, id: number): CreateVersionR
 
     const { lastInsertRowid } = db
       .prepare(
-        `INSERT INTO contents (type, title, body, embedding, root_id, version_number, is_latest, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))`,
+        `INSERT INTO contents (type, title, body, embedding, root_id, version_number, is_latest, created_at, updated_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'), ?)`,
       )
-      .run(row.type, row.title, row.body, row.embedding, chainRoot, max_version + 1);
+      .run(row.type, row.title, row.body, row.embedding, chainRoot, max_version + 1, created_by);
 
     const newId = Number(lastInsertRowid);
 
@@ -73,7 +76,7 @@ export function createVersion(db: Database.Database, id: number): CreateVersionR
   const newRow = db
     .prepare(
       `SELECT c.id, w.name AS workspace, c.type, c.title, c.body, c.root_id, c.version_number,
-              c.created_at, c.updated_at,
+              c.created_at, c.updated_at, c.created_by, c.updated_by,
               EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs,
               (SELECT COUNT(*) FROM contents v
                WHERE v.id = COALESCE(c.root_id, c.id)

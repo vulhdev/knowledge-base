@@ -4,6 +4,7 @@ import type { Content, ContentType, ConflictResult, UpdateContentResult } from "
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
+import { authCtx } from "../auth/middleware.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
 
@@ -19,13 +20,16 @@ export async function updateContent(
     throw new Error("body must not be empty");
   }
 
+  const updated_by = authCtx.getStore()?.github_login ?? null;
+
   const { changes } = db
     .prepare(
       `UPDATE contents
-       SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title), updated_at = datetime('now')
+       SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title),
+           updated_at = datetime('now'), updated_by = ?
        WHERE id = ?`,
     )
-    .run(body, type ?? null, title ?? null, id);
+    .run(body, type ?? null, title ?? null, updated_by, id);
 
   if (changes === 0) {
     throw new Error(`Content not found: id=${id}`);
@@ -46,7 +50,7 @@ export async function updateContent(
   const row = db
     .prepare(
       `SELECT c.id, w.name AS workspace, c.type, c.title, c.body, c.root_id, c.version_number,
-              c.created_at, c.updated_at,
+              c.created_at, c.updated_at, c.created_by, c.updated_by,
               EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs
        FROM contents c
        JOIN content_features cf ON cf.content_id = c.id
