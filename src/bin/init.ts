@@ -7,6 +7,7 @@ import * as p from "@clack/prompts";
 import { openDb } from "../db/client.js";
 import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
+import { loadSettings, writeSettings } from "../config.js";
 
 const CREATE_NEW = "__new__";
 const SKIP = "__skip__";
@@ -233,6 +234,34 @@ async function main(): Promise<void> {
       for (const agent of copied) p.log.info(`  ${agent}`);
     } else {
       p.log.warn("No agents found to install.");
+    }
+  }
+
+  // Mode selection (local vs server)
+  const modeChoice = await p.select<string>({
+    message: "Server mode (share knowledge base over HTTP with a team)?",
+    options: [
+      { value: "local", label: "Local (stdio, default)", hint: "used by Claude Code on this machine" },
+      { value: "server", label: "Server (HTTP)", hint: "expose MCP over HTTP for team access" },
+    ],
+  });
+
+  if (!p.isCancel(modeChoice) && (modeChoice as string) === "server") {
+    const clientId = await p.text({
+      message: "GitHub OAuth App Client ID (create one at github.com/settings/developers):",
+      placeholder: "Ov23li...",
+      validate: (v) => (!v?.trim() ? "Client ID cannot be empty" : undefined),
+    });
+
+    if (!p.isCancel(clientId) && clientId) {
+      const currentSettings = loadSettings();
+      writeSettings({
+        ...currentSettings,
+        mode: "server",
+        github_client_id: (clientId as string).trim(),
+      });
+      p.log.success("Settings updated: mode=server, github_client_id saved.");
+      p.log.info("Set GITHUB_CLIENT_SECRET env var when running knowledge-base serve.");
     }
   }
 

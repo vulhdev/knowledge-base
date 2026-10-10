@@ -8,6 +8,18 @@ switch (command) {
   case "gui":
     await import("./gui.js");
     break;
+  case "serve":
+    await import("./serve.js");
+    break;
+  case "login":
+    await import("./login.js");
+    break;
+  case "invite":
+    await import("./invite.js");
+    break;
+  case "kick":
+    await import("./kick.js");
+    break;
   case "update":
     await import("./update.js");
     break;
@@ -20,6 +32,6 @@ switch (command) {
     break;
   default:
     console.error(`Unknown command: ${command}`);
-    console.error("Usage: knowledge-base [init|gui|update]");
+    console.error("Usage: knowledge-base [init|gui|serve|login|invite|kick|update]");
     process.exit(1);
 }
