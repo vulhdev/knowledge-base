@@ -16,12 +16,16 @@ export async function prepareSections(body: string): Promise<Section[]> {
 
 const hasSourceKey = new WeakMap<Database.Database, boolean>();
 
-/** SOT cards (source_key 'sot:…') get pointers from the importer, never doc sections. */
-export function isSotCard(db: Database.Database, contentId: number): boolean {
+function hasSourceKeyColumn(db: Database.Database): boolean {
   if (!hasSourceKey.has(db)) {
     hasSourceKey.set(db, !!db.prepare("SELECT 1 FROM pragma_table_info('contents') WHERE name = 'source_key'").get());
   }
-  if (!hasSourceKey.get(db)) return false;
+  return hasSourceKey.get(db)!;
+}
+
+/** SOT cards (source_key 'sot:…') get pointers from the importer, never doc sections. */
+export function isSotCard(db: Database.Database, contentId: number): boolean {
+  if (!hasSourceKeyColumn(db)) return false;
   const row = db.prepare("SELECT source_key FROM contents WHERE id = ?").get(contentId) as { source_key: string | null } | undefined;
   return !!row?.source_key?.startsWith("sot:");
 }
@@ -75,30 +79,26 @@ function overlapFor(body: string, rows: PendingRow[], row: PendingRow): string {
 /** Embed the doc sections of one content row that have no embedding yet. Never throws. */
 export async function embedDocSections(db: Database.Database, contentId: number): Promise<void> {
   if (!isModelReady()) return;
-  try {
-    const doc = db.prepare("SELECT title, body FROM contents WHERE id = ?").get(contentId) as { title: string | null; body: string } | undefined;
-    if (!doc) return;
-    const rows = db
-      .prepare("SELECT id, chunk_key, chunk_sha, ord, heading_path, start_char, end_char FROM content_chunks WHERE content_id = ? AND kind = 'doc' ORDER BY ord")
-      .all(contentId) as PendingRow[];
-    const pending = db.prepare("SELECT id FROM content_chunks WHERE content_id = ? AND kind = 'doc' AND embedding IS NULL").all(contentId) as { id: number }[];
-    const pendingIds = new Set(pending.map((p) => p.id));
-    // chunk_sha guards against a row rewritten (and its id reused) while the model was running
-    const update = db.prepare("UPDATE content_chunks SET embedding = ? WHERE id = ? AND chunk_sha = ?");
-    for (const row of rows) {
-      if (!pendingIds.has(row.id)) continue;
-      try {
-        const head = breadcrumb(doc.title, row.heading_path);
-        const section = `${overlapFor(doc.body, rows, row)}${doc.body.slice(row.start_char, row.end_char)}`;
-        const text = head ? `${head}\n\n${section}` : section;
-        const embedding = await getEmbedding(text);
-        update.run(Buffer.from(embedding.buffer), row.id, row.chunk_sha);
-      } catch {
-        // section embedding failure must not prevent the document write — backfill retries it
-      }
+  const doc = db.prepare("SELECT title, body FROM contents WHERE id = ?").get(contentId) as { title: string | null; body: string } | undefined;
+  if (!doc) return;
+  const rows = db
+    .prepare("SELECT id, chunk_key, chunk_sha, ord, heading_path, start_char, end_char FROM content_chunks WHERE content_id = ? AND kind = 'doc' ORDER BY ord")
+    .all(contentId) as PendingRow[];
+  const pending = db.prepare("SELECT id FROM content_chunks WHERE content_id = ? AND kind = 'doc' AND embedding IS NULL").all(contentId) as { id: number }[];
+  const pendingIds = new Set(pending.map((p) => p.id));
+  // chunk_sha guards against a row rewritten (and its id reused) while the model was running
+  const update = db.prepare("UPDATE content_chunks SET embedding = ? WHERE id = ? AND chunk_sha = ?");
+  for (const row of rows) {
+    if (!pendingIds.has(row.id)) continue;
+    try {
+      const head = breadcrumb(doc.title, row.heading_path);
+      const section = `${overlapFor(doc.body, rows, row)}${doc.body.slice(row.start_char, row.end_char)}`;
+      const text = head ? `${head}\n\n${section}` : section;
+      const embedding = await getEmbedding(text);
+      update.run(Buffer.from(embedding.buffer), row.id, row.chunk_sha);
+    } catch {
+      // section embedding failure must not prevent the document write — backfill retries it
     }
-  } catch {
-    // section embedding failure must not prevent the document write — backfill retries it
   }
 }
 
@@ -132,6 +132,3 @@ export async function embedPendingDocSections(db: Database.Database): Promise<nu
   return ids.length;
 }
 
-function hasSourceKeyColumn(db: Database.Database): boolean {
-  return !!db.prepare("SELECT 1 FROM pragma_table_info('contents') WHERE name = 'source_key'").get();
-}
