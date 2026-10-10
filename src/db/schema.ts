@@ -262,21 +262,64 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_contents_type_created_at ON contents(type, created_at);
   `);
 
-  // Migration 11: contents_fts becomes contentless and indexes CJK as bigrams (kb_cjk_bigram)
-  const fts11 = (
+  // Migration 11: add versioning columns (root_id, version_number, is_latest)
+  const hasRootId = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'root_id'").get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasRootId) {
+    db.exec("ALTER TABLE contents ADD COLUMN root_id INTEGER REFERENCES contents(id)");
+  }
+
+  const hasVersionNumber = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'version_number'").get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasVersionNumber) {
+    db.exec("ALTER TABLE contents ADD COLUMN version_number INTEGER NOT NULL DEFAULT 1");
+  }
+
+  const hasIsLatest = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'is_latest'").get() as { cnt: number }
+  ).cnt > 0;
+
+  if (!hasIsLatest) {
+    db.exec("ALTER TABLE contents ADD COLUMN is_latest INTEGER NOT NULL DEFAULT 1");
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
+  `);
+
+  // Rebuild list-path indexes as partial indexes covering only is_latest=1 rows,
+  // so list_contents queries retain their index-scan-ordered plan after the is_latest filter.
+  const createdAtIdx = (
+    db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_contents_created_at'").get() as { sql: string } | undefined
+  )?.sql ?? "";
+
+  if (!createdAtIdx.includes("WHERE")) {
+    db.exec(`
+      DROP INDEX IF EXISTS idx_contents_created_at;
+      CREATE INDEX idx_contents_created_at ON contents(created_at) WHERE is_latest = 1;
+      DROP INDEX IF EXISTS idx_contents_type_created_at;
+      CREATE INDEX idx_contents_type_created_at ON contents(type, created_at) WHERE is_latest = 1;
+    `);
+  }
+  // Migration 12: contents_fts becomes contentless and indexes CJK as bigrams (kb_cjk_bigram)
+  const fts12 = (
     db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contents_fts'")
       .get() as { sql: string } | undefined
   )?.sql ?? "";
-  const trigger11 = (
+  const trigger12 = (
     db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'contents_ai'")
       .get() as { sql: string } | undefined
   )?.sql ?? "";
 
-  if (!fts11.includes("contentless_delete") || !trigger11.includes("kb_cjk_bigram")) {
+  if (!fts12.includes("contentless_delete") || !trigger12.includes("kb_cjk_bigram")) {
     recreateContentsFts(db);
   }
 
-  // Migration 12: section rows (offset-only, no text) for docs and SOT pointers, plus the
+  // Migration 13: section rows (offset-only, no text) for docs and SOT pointers, plus the
   // contentless FTS that holds SOT section tokens. vec_chunks and its triggers live in the VEC block.
   db.exec(`
     CREATE TABLE IF NOT EXISTS content_chunks (
@@ -304,7 +347,7 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
-  // Migration 13: provenance of imported rows — source_key (unique when set) and source_sha
+  // Migration 14: provenance of imported rows — source_key (unique when set) and source_sha
   const hasSourceKey = (
     db
       .prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'source_key'")

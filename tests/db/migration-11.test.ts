@@ -39,7 +39,7 @@ const match = (db: Database.Database, q: string) =>
 const sqlOf = (db: Database.Database, name: string) =>
   (db.prepare("SELECT sql FROM sqlite_master WHERE name = ?").get(name) as { sql: string }).sql;
 
-describe("Migration 11 — contentless CJK-bigram contents_fts", () => {
+describe("Migration 12 — contentless CJK-bigram contents_fts", () => {
   it("old DB: a 2-char JP term mid-sentence is not findable before the migration", () => {
     const db = buildPre11Db();
     expect(match(db, '"掛率"')).toEqual([]);

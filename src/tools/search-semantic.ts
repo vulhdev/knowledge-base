@@ -29,7 +29,7 @@ const SECTION_BONUS_CAP = 3;
 const MAX_MATCHED_SECTIONS = 3;
 
 const CONTENT_COLUMNS = `c.id, w.name AS workspace, c.type, c.title, c.body,
-               c.created_at, c.updated_at,
+               c.root_id, c.version_number, c.created_at, c.updated_at,
                EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs`;
 
 export async function searchSemantic(
@@ -66,7 +66,8 @@ export async function searchSemantic(
       filterConditions.push("c.type = ?");
       filterParams.push(type);
     }
-    const filterSql = filterConditions.length > 0 ? ` AND ${filterConditions.join(" AND ")}` : "";
+    // Only the latest version of a doc is searchable
+    const filterSql = ` AND c.is_latest = 1${filterConditions.length > 0 ? ` AND ${filterConditions.join(" AND ")}` : ""}`;
     const joins = `
       JOIN content_features cf ON cf.content_id = c.id
       JOIN features f ON cf.feature_id = f.id
@@ -126,6 +127,7 @@ export async function searchSemantic(
         SELECT DISTINCT ${CONTENT_COLUMNS}
         FROM contents c ${joins}
         WHERE c.id IN (${placeholders})
+          AND c.is_latest = 1
       `).all(...missing) as RawRow[];
 
       for (const row of extraRows) {
@@ -291,6 +293,7 @@ export function runSotFtsSearch(
       JOIN features f ON cf.feature_id = f.id
       JOIN workspaces w ON f.workspace_id = w.id
       WHERE sot_chunks_fts MATCH ?
+        AND c.is_latest = 1
   `;
   if (conditions.length > 0) {
     sql += ` AND ${conditions.join(" AND ")}`;
@@ -332,6 +335,7 @@ export function runFtsSearch(
     JOIN features f ON cf.feature_id = f.id
     JOIN workspaces w ON f.workspace_id = w.id
     WHERE contents_fts MATCH ?
+      AND c.is_latest = 1
   `;
   if (conditions.length > 0) {
     sql += ` AND ${conditions.join(" AND ")}`;

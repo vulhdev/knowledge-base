@@ -11,7 +11,7 @@ function seedDoc(db: ReturnType<typeof createTestDb>): number {
 
 const vec = () => Buffer.from(new Float32Array(384).fill(0.2).buffer);
 
-describe("Migration 12 — content_chunks, sot_chunks_fts, vec_chunks", () => {
+describe("Migration 13 — content_chunks, sot_chunks_fts, vec_chunks", () => {
   it("creates content_chunks with the documented columns and no text column", () => {
     const db = createTestDb();
     const cols = (db.prepare("SELECT name, type, \"notnull\" AS nn FROM pragma_table_info('content_chunks')").all() as { name: string; type: string; nn: number }[]);

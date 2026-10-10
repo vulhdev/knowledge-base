@@ -7,6 +7,7 @@ import { listFeatures, listWorkspaceSummaries, listRecentContents } from "./db.j
 import { listContents } from "../tools/list-contents.js";
 import { getContent } from "../tools/get-content.js";
 import { getLineage } from "../tools/get-lineage.js";
+import { listVersions } from "../tools/list-versions.js";
 import { searchSemantic } from "../tools/search-semantic.js";
 import type { LineageResult, Content } from "../types.js";
 import {
@@ -17,6 +18,7 @@ import {
   renderReview,
   renderSearchResults,
   renderErrorList,
+  renderDiff,
 } from "./render.js";
 import { addComment, commitReview } from "../db/reviews.js";
 import type { ReviewComment } from "../db/reviews.js";
@@ -72,7 +74,12 @@ export function createApp(db: Database.Database) {
       const content = getContent(db, id);
       let lineage: LineageResult | undefined;
       try { lineage = getLineage(db, id); } catch { /* no links or db error */ }
-      res.send(renderContent(content, lineage));
+      let versions;
+      try {
+        const vr = listVersions(db, id);
+        if (vr.versions.length >= 2) versions = vr.versions;
+      } catch { /* single-version or db error — no widget */ }
+      res.send(renderContent(content, lineage, versions));
     } catch {
       res.status(404).send("<p>Content not found</p>");
     }
@@ -154,6 +161,54 @@ export function createApp(db: Database.Database) {
       res.setHeader("Content-Type", "text/markdown; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}.md"`);
       res.send(body);
+    } catch {
+      res.status(404).send("<p>Content not found</p>");
+    }
+  });
+
+  app.get("/ws/:workspace/:feature/:id/diff", (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(404).send("<p>Not found</p>");
+      return;
+    }
+    try {
+      const { workspace, feature } = req.params;
+      const contentUrl = `/ws/${encodeURIComponent(workspace)}/${encodeURIComponent(feature)}/${id}`;
+
+      let allVersions;
+      try {
+        allVersions = listVersions(db, id);
+      } catch {
+        res.status(404).send("<p>Content not found</p>");
+        return;
+      }
+
+      if (allVersions.versions.length < 2) {
+        res.redirect(contentUrl);
+        return;
+      }
+
+      const latest = allVersions.versions.find((v) => v.is_latest) ?? allVersions.versions[allVersions.versions.length - 1];
+      const secondLatest = allVersions.versions[allVersions.versions.indexOf(latest) - 1] ?? allVersions.versions[0];
+
+      const fromId = req.query.from ? Number(req.query.from) : secondLatest.id;
+      const toId = req.query.to ? Number(req.query.to) : latest.id;
+
+      if (fromId === toId) {
+        res.redirect(contentUrl);
+        return;
+      }
+
+      const ids = new Set(allVersions.versions.map((v) => v.id));
+      if (!ids.has(fromId) || !ids.has(toId)) {
+        res.status(400).send("<p>Versions do not belong to the same document</p>");
+        return;
+      }
+
+      const fromContent = getContent(db, fromId);
+      const toContent = getContent(db, toId);
+      res.send(renderDiff(fromContent, toContent, allVersions.versions));
     } catch {
       res.status(404).send("<p>Content not found</p>");
     }

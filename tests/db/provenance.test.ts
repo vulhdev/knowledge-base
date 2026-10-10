@@ -7,7 +7,7 @@ vi.mock("../../src/embedding/model.js", () => ({ isModelReady: vi.fn().mockRetur
 import { createContent } from "../../src/tools/create-content.js";
 import { updateContent } from "../../src/tools/update-content.js";
 
-describe("Migration 13 — source_key / source_sha", () => {
+describe("Migration 14 — source_key / source_sha", () => {
   it("adds nullable source_key and source_sha with a partial unique index; idempotent", () => {
     const db = createTestDb();
     const cols = (db.prepare("SELECT name, \"notnull\" AS nn FROM pragma_table_info('contents')").all() as { name: string; nn: number }[]);
