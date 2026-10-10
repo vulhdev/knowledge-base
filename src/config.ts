@@ -9,6 +9,7 @@ export type Settings = {
   github_client_id?: string;
   mcp_port?: number;
   gui_port?: number;
+  server_url?: string;
 };
 
 const SETTINGS_DIR  = join(homedir(), ".claude", "knowledge-base");
@@ -23,6 +24,12 @@ export function loadSettings(): Settings {
   if (cached) return cached;
   cached = readOrMigrate();
   return cached;
+}
+
+export function writeSettings(settings: Settings): void {
+  mkdirSync(SETTINGS_DIR, { recursive: true });
+  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+  cached = settings;
 }
 
 function readOrMigrate(): Settings {
