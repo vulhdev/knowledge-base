@@ -192,11 +192,19 @@ type SectionRow = {
   d: number | null;
 };
 
-/** Query terms as literal strings (CJK runs and Latin words) for matching inside a section's text. */
+/**
+ * Query terms as literal strings for matching inside section text.
+ * Bigram tokens ("AB BC CD") are reconstructed to original text ("ABCD")
+ * by taking the first bigram then appending the last char of each subsequent bigram.
+ */
 function queryTerms(query: string): string[] {
-  return buildFtsQuery(query).tokens.map((t) => t.slice(1, -1)).map((t) =>
-    t.includes(" ") ? t.split(" ").map((b, i) => (i === 0 ? b : b.slice(-1))).join("") : t,
-  ).map((t) => t.toLowerCase());
+  const rawTokens = buildFtsQuery(query).tokens.map((t) => t.slice(1, -1)); // strip surrounding quotes
+  return rawTokens.map((t) => {
+    if (!t.includes(" ")) return t;
+    // "AB BC CD" → ["AB","BC","CD"] → "AB" + "C" + "D" = "ABCD"
+    const parts = t.split(" ");
+    return parts[0] + parts.slice(1).map((b) => b.slice(-1)).join("");
+  }).map((t) => t.toLowerCase());
 }
 
 /**
@@ -245,7 +253,11 @@ function matchedSections(
   }
 
   const byDoc = new Map<number, SectionRow[]>();
-  for (const r of rows) byDoc.set(r.content_id, [...(byDoc.get(r.content_id) ?? []), r]);
+  for (const r of rows) {
+    const bucket = byDoc.get(r.content_id);
+    if (bucket) bucket.push(r);
+    else byDoc.set(r.content_id, [r]);
+  }
   for (const [docId, secs] of byDoc) {
     const vecOrder = secs.filter((s) => s.d !== null).sort((a, b) => a.d! - b.d!);
     const vecRank = new Map(vecOrder.map((s, i) => [s.id, i + 1]));
