@@ -4,6 +4,7 @@ import type { Feature, WorkspaceSummary, RecentContent } from "./db.js";
 import type { Content, SearchResult, LineageResult, LinkedContent, VersionSummary } from "../types.js";
 import type { ErrorLog } from "../db/error-log.js";
 import type { ReviewComment } from "../db/reviews.js";
+import type { Member } from "../db/members.js";
 
 const GOOGLE_FONTS =
   "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap";
@@ -677,4 +678,63 @@ function formatDate(iso: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+export function renderMemberList(workspace: string, members: Member[]): string {
+  const wsEnc = encodeURIComponent(workspace);
+  const rows = members.length === 0
+    ? `<tr><td colspan="4" style="text-align:center;color:var(--muted)">No members yet</td></tr>`
+    : members
+        .map(
+          (m) => `<tr>
+  <td><code>${esc(m.github_login)}</code></td>
+  <td>${esc(m.role)}</td>
+  <td>${m.invited_by ? esc(m.invited_by) : "—"}</td>
+  <td>${formatDate(m.created_at)}</td>
+  <td>
+    <button class="btn-danger" onclick="removeMember('${esc(wsEnc)}','${esc(m.github_login)}')">Remove</button>
+  </td>
+</tr>`
+        )
+        .join("\n");
+
+  return `<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><title>Members · ${esc(workspace)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="${GOOGLE_FONTS}" rel="stylesheet">
+<style>
+  body{font-family:Inter,sans-serif;margin:0;padding:2rem;background:#0d1117;color:#e6edf3}
+  a{color:#58a6ff;text-decoration:none}
+  table{width:100%;border-collapse:collapse;margin-top:1rem}
+  th,td{padding:.5rem .75rem;text-align:left;border-bottom:1px solid #30363d}
+  th{color:#8b949e;font-weight:600}
+  .btn-danger{background:#da3633;color:#fff;border:none;padding:.25rem .6rem;border-radius:4px;cursor:pointer}
+  .add-form{display:flex;gap:.5rem;margin-top:1.5rem}
+  .add-form input{flex:1;padding:.4rem .6rem;background:#161b22;border:1px solid #30363d;color:#e6edf3;border-radius:4px}
+  .add-form button{padding:.4rem .8rem;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer}
+</style>
+</head><body>
+<h1>Members — <a href="/ws/${wsEnc}">${esc(workspace)}</a></h1>
+<table>
+<thead><tr><th>GitHub Login</th><th>Role</th><th>Invited By</th><th>Joined</th><th></th></tr></thead>
+<tbody>${rows}</tbody>
+</table>
+<div class="add-form">
+  <input id="login-input" type="text" placeholder="github_login">
+  <button onclick="addMember()">Add Member</button>
+</div>
+<script>
+async function addMember() {
+  const login = document.getElementById('login-input').value.trim();
+  if (!login) return;
+  const r = await fetch('/ws/${wsEnc}/members', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({github_login:login})});
+  if (r.ok) location.reload(); else alert('Error: ' + (await r.json()).error);
+}
+async function removeMember(ws, login) {
+  if (!confirm('Remove ' + login + '?')) return;
+  const r = await fetch('/ws/' + ws + '/members/' + encodeURIComponent(login), {method:'DELETE'});
+  if (r.ok) location.reload(); else alert('Remove failed');
+}
+</script>
+</body></html>`;
 }

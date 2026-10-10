@@ -5,6 +5,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, copyFil
 export type Settings = {
   db_path: string;
   model_cache_dir: string;
+  mode?: "local" | "server";
+  github_client_id?: string;
+  mcp_port?: number;
+  gui_port?: number;
 };
 
 const SETTINGS_DIR  = join(homedir(), ".claude", "knowledge-base");

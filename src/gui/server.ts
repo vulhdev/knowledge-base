@@ -23,10 +23,17 @@ import {
 import { addComment, commitReview } from "../db/reviews.js";
 import type { ReviewComment } from "../db/reviews.js";
 import { listErrorLogs } from "../db/error-log.js";
+import { addMember, removeMember, listMembers } from "../db/members.js";
+import { renderMemberList } from "./render.js";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-export function createApp(db: Database.Database) {
+export type AppOpts = {
+  authMode?: boolean;
+};
+
+export function createApp(db: Database.Database, opts: AppOpts = {}) {
+  void opts; // opts reserved for future auth middleware
   const app = express();
   app.use(express.json());
 
@@ -212,6 +219,29 @@ export function createApp(db: Database.Database) {
     } catch {
       res.status(404).send("<p>Content not found</p>");
     }
+  });
+
+  app.get("/ws/:workspace/members", (req, res) => {
+    const { workspace } = req.params;
+    const members = listMembers(db, workspace);
+    res.send(renderMemberList(workspace, members));
+  });
+
+  app.post("/ws/:workspace/members", (req, res) => {
+    const { workspace } = req.params;
+    const { github_login } = req.body as { github_login?: string };
+    if (!github_login?.trim()) {
+      res.status(400).json({ error: "github_login is required" });
+      return;
+    }
+    addMember(db, github_login.trim(), workspace);
+    res.status(201).json({ github_login: github_login.trim(), workspace });
+  });
+
+  app.delete("/ws/:workspace/members/:login", (req, res) => {
+    const { workspace, login } = req.params;
+    removeMember(db, login, workspace);
+    res.status(204).end();
   });
 
   app.get("/errors", (_req, res) => {
