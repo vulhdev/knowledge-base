@@ -45,6 +45,31 @@ export function createApp(db: Database.Database, opts: AppOpts = {}) {
     res.send(renderWorkspaceList(workspaces, recent));
   });
 
+  // Member management routes — MUST be registered before /ws/:workspace/:feature
+  // to prevent Express matching "members" as a feature name.
+  app.get("/ws/:workspace/members", (req, res) => {
+    const { workspace } = req.params;
+    const members = listMembers(db, workspace);
+    res.send(renderMemberList(workspace, members));
+  });
+
+  app.post("/ws/:workspace/members", (req, res) => {
+    const { workspace } = req.params;
+    const { github_login } = req.body as { github_login?: string };
+    if (!github_login?.trim()) {
+      res.status(400).json({ error: "github_login is required" });
+      return;
+    }
+    addMember(db, github_login.trim(), workspace);
+    res.status(201).json({ github_login: github_login.trim(), workspace });
+  });
+
+  app.delete("/ws/:workspace/members/:login", (req, res) => {
+    const { workspace, login } = req.params;
+    removeMember(db, login, workspace);
+    res.status(204).end();
+  });
+
   app.get("/ws/:workspace", (req, res) => {
     const { workspace } = req.params;
     const features = listFeatures(db, workspace);
@@ -219,29 +244,6 @@ export function createApp(db: Database.Database, opts: AppOpts = {}) {
     } catch {
       res.status(404).send("<p>Content not found</p>");
     }
-  });
-
-  app.get("/ws/:workspace/members", (req, res) => {
-    const { workspace } = req.params;
-    const members = listMembers(db, workspace);
-    res.send(renderMemberList(workspace, members));
-  });
-
-  app.post("/ws/:workspace/members", (req, res) => {
-    const { workspace } = req.params;
-    const { github_login } = req.body as { github_login?: string };
-    if (!github_login?.trim()) {
-      res.status(400).json({ error: "github_login is required" });
-      return;
-    }
-    addMember(db, github_login.trim(), workspace);
-    res.status(201).json({ github_login: github_login.trim(), workspace });
-  });
-
-  app.delete("/ws/:workspace/members/:login", (req, res) => {
-    const { workspace, login } = req.params;
-    removeMember(db, login, workspace);
-    res.status(204).end();
   });
 
   app.get("/errors", (_req, res) => {
