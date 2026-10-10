@@ -410,3 +410,30 @@ describe("migration 13: members table", () => {
     expect(() => applySchema(db)).not.toThrow();
   });
 });
+
+describe("migration 14: created_by and updated_by columns", () => {
+  it("adds created_by column to contents table", () => {
+    const db = createTestDb();
+    const cols = db.prepare("SELECT name FROM pragma_table_info('contents')").all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toContain("created_by");
+  });
+
+  it("adds updated_by column to contents table", () => {
+    const db = createTestDb();
+    const cols = db.prepare("SELECT name FROM pragma_table_info('contents')").all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toContain("updated_by");
+  });
+
+  it("created_by and updated_by default to null on insert", () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO contents (type, body) VALUES ('idea', 'test')").run();
+    const row = db.prepare("SELECT created_by, updated_by FROM contents WHERE body = 'test'").get() as { created_by: string | null; updated_by: string | null };
+    expect(row.created_by).toBeNull();
+    expect(row.updated_by).toBeNull();
+  });
+
+  it("migration 14 is idempotent", () => {
+    const db = createTestDb();
+    expect(() => applySchema(db)).not.toThrow();
+  });
+});

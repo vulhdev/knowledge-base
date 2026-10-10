@@ -261,6 +261,21 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
   `);
 
+  // Migration 14: add created_by and updated_by for server-mode ownership tracking
+  const hasCreatedBy = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'created_by'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasCreatedBy) {
+    db.exec("ALTER TABLE contents ADD COLUMN created_by TEXT");
+  }
+
+  const hasUpdatedBy = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'updated_by'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasUpdatedBy) {
+    db.exec("ALTER TABLE contents ADD COLUMN updated_by TEXT");
+  }
+
   // Migration 12: sessions table for server-mode auth (bearer tokens, 30-day TTL)
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
