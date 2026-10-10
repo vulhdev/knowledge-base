@@ -12,6 +12,8 @@ export type Content = {
   created_at: string;
   updated_at: string;
   has_code_refs: boolean;
+  created_by: string | null;
+  updated_by: string | null;
 };
 
 export type SearchResult = Content & { score: number };
@@ -78,6 +80,7 @@ export type CreateContentResult = {
   created_at: string;
   conflicts: ConflictResult[];
   suggested_parents: SuggestedParent[];
+  created_by: string | null;
 };
 
 export type UpdateContentResult = Content & {

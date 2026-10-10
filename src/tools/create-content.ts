@@ -4,6 +4,7 @@ import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
 import { typesAfter } from "./_type-order.js";
+import { authCtx } from "../auth/middleware.js";
 
 const SUGGEST_LIMIT = 3;
 const SCORE_THRESHOLD = 0.25;
@@ -131,9 +132,11 @@ export async function createContent(
     }
   }
 
+  const created_by = authCtx.getStore()?.github_login ?? null;
+
   const { lastInsertRowid } = db
-    .prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)")
-    .run(type, title ?? null, body);
+    .prepare("INSERT INTO contents (type, title, body, created_by) VALUES (?, ?, ?, ?)")
+    .run(type, title ?? null, body, created_by);
 
   const contentId = Number(lastInsertRowid);
 
@@ -165,10 +168,10 @@ export async function createContent(
   }
 
   const row = db
-    .prepare("SELECT id, title, created_at FROM contents WHERE id = ?")
-    .get(contentId) as { id: number; title: string | null; created_at: string };
+    .prepare("SELECT id, title, created_at, created_by FROM contents WHERE id = ?")
+    .get(contentId) as { id: number; title: string | null; created_at: string; created_by: string | null };
 
   const suggested_parents = await suggestParents(db, workspace, contentId, type, body, embeddingBlob);
 
-  return { id: row.id, workspace, features: featureNamesSorted, type, title: row.title, created_at: row.created_at, conflicts, suggested_parents };
+  return { id: row.id, workspace, features: featureNamesSorted, type, title: row.title, created_at: row.created_at, created_by: row.created_by, conflicts, suggested_parents };
 }
