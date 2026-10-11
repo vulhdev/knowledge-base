@@ -738,3 +738,39 @@ async function removeMember(ws, login) {
 </script>
 </body></html>`;
 }
+
+export type ImportSessionRow = {
+  id: string;
+  github_login: string;
+  workspace: string;
+  created_at: string;
+  item_count: number;
+};
+
+export function renderImportList(sessions: ImportSessionRow[]): string {
+  const header = `<h1>Import Sessions</h1>
+<p class="page-subtitle">Data migrations pushed from local instances</p>`;
+
+  if (sessions.length === 0) {
+    return layout("Import Sessions", header + `<div class="empty-state">No import sessions found.</div>`);
+  }
+
+  const rows = sessions
+    .map(
+      (s) => `<tr>
+  <td><code>${esc(s.id)}</code></td>
+  <td><code>${esc(s.github_login)}</code></td>
+  <td><a href="/ws/${encodeURIComponent(s.workspace)}">${esc(s.workspace)}</a></td>
+  <td>${s.item_count}</td>
+  <td>${formatDate(s.created_at)}</td>
+</tr>`
+    )
+    .join("\n");
+
+  const body = `${header}
+<table>
+  <thead><tr><th>Session ID</th><th>Imported by</th><th>Workspace</th><th>Items</th><th>Date</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>`;
+  return layout("Import Sessions", body);
+}

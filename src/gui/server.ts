@@ -19,6 +19,7 @@ import {
   renderSearchResults,
   renderErrorList,
   renderDiff,
+  renderImportList,
 } from "./render.js";
 import { addComment, commitReview } from "../db/reviews.js";
 import type { ReviewComment } from "../db/reviews.js";
@@ -244,6 +245,19 @@ export function createApp(db: Database.Database, opts: AppOpts = {}) {
     } catch {
       res.status(404).send("<p>Content not found</p>");
     }
+  });
+
+  app.get("/admin/imports", (_req, res) => {
+    type ImportRow = { id: string; github_login: string; workspace: string; created_at: string; item_count: number };
+    const rows = db.prepare(`
+      SELECT s.id, s.github_login, s.workspace, s.created_at,
+             COUNT(c.content_id) AS item_count
+      FROM import_sessions s
+      LEFT JOIN import_session_contents c ON c.session_id = s.id
+      GROUP BY s.id
+      ORDER BY s.created_at DESC
+    `).all() as ImportRow[];
+    res.send(renderImportList(rows));
   });
 
   app.get("/errors", (_req, res) => {
