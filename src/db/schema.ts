@@ -301,6 +301,21 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS members_login ON members(github_login);
   `);
 
+  // Migration 15: import sessions and junction table for local-to-server data migration
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS import_sessions (
+      id           TEXT PRIMARY KEY,
+      github_login TEXT NOT NULL,
+      workspace    TEXT NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS import_session_contents (
+      session_id TEXT    NOT NULL REFERENCES import_sessions(id) ON DELETE CASCADE,
+      content_id INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+      PRIMARY KEY (session_id, content_id)
+    );
+  `);
+
   // Rebuild list-path indexes as partial indexes covering only is_latest=1 rows,
   // so list_contents queries retain their index-scan-ordered plan after the is_latest filter.
   const createdAtIdx = (

@@ -437,3 +437,40 @@ describe("migration 14: created_by and updated_by columns", () => {
     expect(() => applySchema(db)).not.toThrow();
   });
 });
+
+describe("migration 15: import_sessions and import_session_contents", () => {
+  it("creates import_sessions table with correct columns", () => {
+    const db = createTestDb();
+    const cols = db.prepare("SELECT name FROM pragma_table_info('import_sessions')").all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).toContain("id");
+    expect(names).toContain("github_login");
+    expect(names).toContain("workspace");
+    expect(names).toContain("created_at");
+  });
+
+  it("creates import_session_contents junction table", () => {
+    const db = createTestDb();
+    const table = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='import_session_contents'")
+      .get() as { name: string } | undefined;
+    expect(table?.name).toBe("import_session_contents");
+  });
+
+  it("CASCADE delete on import_sessions removes junction rows", () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO import_sessions (id, github_login, workspace) VALUES ('s1', 'alice', 'ws')").run();
+    db.prepare("INSERT INTO contents (type, body) VALUES ('idea', 'test')").run();
+    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'test'").get() as { id: number };
+    db.prepare("INSERT INTO import_session_contents (session_id, content_id) VALUES ('s1', ?)").run(contentId);
+
+    db.prepare("DELETE FROM import_sessions WHERE id = 's1'").run();
+    const n = (db.prepare("SELECT COUNT(*) AS n FROM import_session_contents").get() as { n: number }).n;
+    expect(n).toBe(0);
+  });
+
+  it("migration 15 is idempotent", () => {
+    const db = createTestDb();
+    expect(() => applySchema(db)).not.toThrow();
+  });
+});
