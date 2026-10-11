@@ -3,10 +3,15 @@ import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type Database from "better-sqlite3";
-import { validateSession } from "../auth/sessions.js";
+import { validateSession, createSession } from "../auth/sessions.js";
 import { authCtx } from "../auth/middleware.js";
+import { initiateDeviceFlow, pollDeviceFlow } from "../auth/device-flow.js";
 
 type Session = { transport: StreamableHTTPServerTransport };
+
+export type McpHttpAppOpts = {
+  clientId?: string;
+};
 
 function isInitializeRequest(body: unknown): boolean {
   return (
@@ -18,7 +23,8 @@ function isInitializeRequest(body: unknown): boolean {
 
 export function createMcpHttpApp(
   db: Database.Database,
-  server: McpServer
+  server: McpServer,
+  opts: McpHttpAppOpts = {}
 ): express.Application {
   const sessions = new Map<string, Session>();
   const app = express();
@@ -41,6 +47,54 @@ export function createMcpHttpApp(
     }
     return ctx;
   }
+
+  // Public: CLI device flow — initiate
+  app.post("/auth/device", async (req, res): Promise<void> => {
+    const clientId = opts.clientId;
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      res.status(503).json({ error: "Server not configured for GitHub OAuth (missing client_id or GITHUB_CLIENT_SECRET)" });
+      return;
+    }
+    try {
+      const result = await initiateDeviceFlow(clientId);
+      res.json(result);
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Public: CLI device flow — poll
+  app.post("/auth/device/token", async (req, res): Promise<void> => {
+    const clientId = opts.clientId;
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      res.status(503).json({ error: "Server not configured for GitHub OAuth (missing client_id or GITHUB_CLIENT_SECRET)" });
+      return;
+    }
+    const { device_code } = req.body as { device_code?: string };
+    if (!device_code) {
+      res.status(400).json({ error: "device_code is required" });
+      return;
+    }
+    try {
+      const result = await pollDeviceFlow(clientId, clientSecret, device_code);
+      if ("pending" in result && result.pending) {
+        res.json({ pending: true });
+        return;
+      }
+      const { github_login } = result as { access_token: string; github_login: string };
+      const sessionToken = createSession(db, github_login);
+      res.json({ session_token: sessionToken, github_login });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("expired_token")) {
+        res.status(410).json({ error: msg });
+      } else {
+        res.status(502).json({ error: msg });
+      }
+    }
+  });
 
   const route = async (
     req: express.Request,

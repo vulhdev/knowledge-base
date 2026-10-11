@@ -48,7 +48,7 @@ if (mcpPort !== preferredMcpPort) {
 
 const mcpServer = createKbServer(db, { guiPort });
 const guiApp = createApp(db, { authMode: true });
-const mcpApp = createMcpHttpApp(db, mcpServer);
+const mcpApp = createMcpHttpApp(db, mcpServer, { clientId: settings.github_client_id });
 
 guiApp.listen(guiPort, "127.0.0.1", () => {
   console.log(`knowledge-base GUI listening on http://127.0.0.1:${guiPort}`);
