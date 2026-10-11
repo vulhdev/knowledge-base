@@ -153,6 +153,36 @@ describe("GUI server routes", () => {
       expect(res.text).toContain("action-btns");
       expect(res.text).toContain("Copy");
     });
+
+    it("shows updated_by when set", async () => {
+      db.prepare("UPDATE contents SET updated_by = 'alice' WHERE id = (SELECT id FROM contents WHERE title = 'Auth Spec' LIMIT 1)").run();
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
+      const res = await request(app).get(`/ws/proj-a/auth/${id}`);
+      expect(res.text).toContain("alice");
+    });
+
+    it("shows created_by when different from updated_by", async () => {
+      db.prepare("UPDATE contents SET created_by = 'bob', updated_by = 'alice' WHERE id = (SELECT id FROM contents WHERE title = 'Auth Spec' LIMIT 1)").run();
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
+      const res = await request(app).get(`/ws/proj-a/auth/${id}`);
+      expect(res.text).toContain("alice");
+      expect(res.text).toContain("bob");
+    });
+
+    it("does not show Created by when creator same as updater", async () => {
+      db.prepare("UPDATE contents SET created_by = 'alice', updated_by = 'alice' WHERE id = (SELECT id FROM contents WHERE title = 'Auth Spec' LIMIT 1)").run();
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
+      const res = await request(app).get(`/ws/proj-a/auth/${id}`);
+      expect(res.text).toContain("alice");
+      expect(res.text).not.toContain("Created by");
+    });
+
+    it("shows nothing when both are null (local mode)", async () => {
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
+      const res = await request(app).get(`/ws/proj-a/auth/${id}`);
+      expect(res.text).not.toContain("Created by");
+      expect(res.text).not.toContain(" by <");
+    });
   });
 
   describe("GET /ws/:workspace/:feature/:id/export", () => {

@@ -250,10 +250,17 @@ export function renderContent(
   <a class="action-btn" href="${exportUrl}">↓ Export .md</a>
   <button id="copy-btn-${content.id}" class="action-btn" onclick="${esc(copyScript)}">Copy</button>
 </span>`;
+  const updatedBy = content.updated_by
+    ? ` by <strong>${esc(content.updated_by)}</strong>`
+    : "";
+  const createdBy =
+    content.created_by && content.created_by !== content.updated_by
+      ? ` &middot; Created by <strong>${esc(content.created_by)}</strong>`
+      : "";
   const body = `${crumb}
 <h1>${esc(title)}</h1>
 <p class="meta">
-  <span>${typeBadge(content.type)}&nbsp; Updated ${formatDate(content.updated_at)}</span>
+  <span>${typeBadge(content.type)}&nbsp; Updated ${formatDate(content.updated_at)}${updatedBy}${createdBy}</span>
   ${actions}
 </p>
 <hr />
