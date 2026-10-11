@@ -4,6 +4,7 @@ import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
 import { typesAfter } from "./_type-order.js";
+import { authCtx } from "../auth/middleware.js";
 import { buildFtsQuery } from "../text/cjk-bigram.js";
 import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
 
@@ -131,6 +132,8 @@ export async function createContent(
     }
   }
 
+  const created_by = authCtx.getStore()?.github_login ?? null;
+
   // Sections are computed before the transaction (the token counter is async); the row, its
   // features and its sections are then written atomically.
   const sections = await prepareSections(body);
@@ -139,11 +142,11 @@ export async function createContent(
     // provenance is written in the same INSERT, so an interrupted import never leaves a keyless copy
     const { lastInsertRowid } = provenance
       ? db
-          .prepare("INSERT INTO contents (type, title, body, source_key, source_sha) VALUES (?, ?, ?, ?, ?)")
-          .run(type, title ?? null, body, provenance.source_key, provenance.source_sha)
+          .prepare("INSERT INTO contents (type, title, body, source_key, source_sha, created_by) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(type, title ?? null, body, provenance.source_key, provenance.source_sha, created_by)
       : db
-          .prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)")
-          .run(type, title ?? null, body);
+          .prepare("INSERT INTO contents (type, title, body, created_by) VALUES (?, ?, ?, ?)")
+          .run(type, title ?? null, body, created_by);
 
     const id = Number(lastInsertRowid);
 
@@ -181,10 +184,10 @@ export async function createContent(
   }
 
   const row = db
-    .prepare("SELECT id, title, created_at FROM contents WHERE id = ?")
-    .get(contentId) as { id: number; title: string | null; created_at: string };
+    .prepare("SELECT id, title, created_at, created_by FROM contents WHERE id = ?")
+    .get(contentId) as { id: number; title: string | null; created_at: string; created_by: string | null };
 
   const suggested_parents = await suggestParents(db, workspace, contentId, type, body, embeddingBlob);
 
-  return { id: row.id, workspace, features: featureNamesSorted, type, title: row.title, created_at: row.created_at, conflicts, suggested_parents };
+  return { id: row.id, workspace, features: featureNamesSorted, type, title: row.title, created_at: row.created_at, created_by: row.created_by, conflicts, suggested_parents };
 }

@@ -5,6 +5,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, copyFil
 export type Settings = {
   db_path: string;
   model_cache_dir: string;
+  mode?: "local" | "server";
+  github_client_id?: string;
+  mcp_port?: number;
+  gui_port?: number;
+  server_url?: string;
+  session_token?: string;
 };
 
 const SETTINGS_DIR  = join(homedir(), ".claude", "knowledge-base");
@@ -19,6 +25,12 @@ export function loadSettings(): Settings {
   if (cached) return cached;
   cached = readOrMigrate();
   return cached;
+}
+
+export function writeSettings(settings: Settings): void {
+  mkdirSync(SETTINGS_DIR, { recursive: true });
+  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+  cached = settings;
 }
 
 function readOrMigrate(): Settings {

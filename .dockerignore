@@ -1,0 +1,9 @@
+node_modules
+src
+tests
+*.test.ts
+.git
+*.db
+*.db-wal
+*.db-shm
+coverage

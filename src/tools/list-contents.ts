@@ -51,7 +51,7 @@ export function listContents(
   if (feature !== undefined) {
     dataSql = `
     SELECT DISTINCT c.id, w.name AS workspace, c.type, c.title, c.body, c.root_id, c.version_number,
-           c.created_at, c.updated_at
+           c.created_at, c.updated_at, c.created_by, c.updated_by
     FROM contents c
     JOIN content_features cf ON cf.content_id = c.id
     JOIN features f ON cf.feature_id = f.id
@@ -66,7 +66,7 @@ export function listContents(
     // so the default and type-filtered listings avoid a temp sort over the whole workspace.
     dataSql = `
     SELECT c.id, ? AS workspace, c.type, c.title, c.body, c.root_id, c.version_number,
-           c.created_at, c.updated_at
+           c.created_at, c.updated_at, c.created_by, c.updated_by
     FROM contents c
     WHERE ${type !== undefined ? "c.type = ?" : "c.type != 'digest'"}
       AND c.is_latest = 1

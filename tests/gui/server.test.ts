@@ -153,6 +153,36 @@ describe("GUI server routes", () => {
       expect(res.text).toContain("action-btns");
       expect(res.text).toContain("Copy");
     });
+
+    it("shows updated_by when set", async () => {
+      db.prepare("UPDATE contents SET updated_by = 'alice' WHERE id = (SELECT id FROM contents WHERE title = 'Auth Spec' LIMIT 1)").run();
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
+      const res = await request(app).get(`/ws/proj-a/auth/${id}`);
+      expect(res.text).toContain("alice");
+    });
+
+    it("shows created_by when different from updated_by", async () => {
+      db.prepare("UPDATE contents SET created_by = 'bob', updated_by = 'alice' WHERE id = (SELECT id FROM contents WHERE title = 'Auth Spec' LIMIT 1)").run();
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
+      const res = await request(app).get(`/ws/proj-a/auth/${id}`);
+      expect(res.text).toContain("alice");
+      expect(res.text).toContain("bob");
+    });
+
+    it("does not show Created by when creator same as updater", async () => {
+      db.prepare("UPDATE contents SET created_by = 'alice', updated_by = 'alice' WHERE id = (SELECT id FROM contents WHERE title = 'Auth Spec' LIMIT 1)").run();
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
+      const res = await request(app).get(`/ws/proj-a/auth/${id}`);
+      expect(res.text).toContain("alice");
+      expect(res.text).not.toContain("Created by");
+    });
+
+    it("shows nothing when both are null (local mode)", async () => {
+      const id = getIdByTitle(db, "proj-a", "auth", "Auth Spec");
+      const res = await request(app).get(`/ws/proj-a/auth/${id}`);
+      expect(res.text).not.toContain("Created by");
+      expect(res.text).not.toContain(" by <");
+    });
   });
 
   describe("GET /ws/:workspace/:feature/:id/export", () => {
@@ -521,6 +551,45 @@ describe("GUI server routes", () => {
     it("redirects when from === to", async () => {
       const res = await request(app).get(`/ws/proj-a/auth/${docId}/diff?from=${docId}&to=${docId}`);
       expect(res.status).toBe(302);
+    });
+  });
+
+  describe("GET /admin/imports", () => {
+    it("returns 200 with empty-state message when no sessions exist", async () => {
+      const res = await request(app).get("/admin/imports");
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("No import sessions");
+    });
+
+    it("shows import sessions with user and workspace", async () => {
+      db.prepare("INSERT OR IGNORE INTO workspaces (name) VALUES ('proj-a')").run();
+      db.prepare(
+        "INSERT INTO import_sessions (id, github_login, workspace) VALUES ('sess-1', 'alice', 'proj-a')"
+      ).run();
+
+      const res = await request(app).get("/admin/imports");
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("sess-1");
+      expect(res.text).toContain("alice");
+      expect(res.text).toContain("proj-a");
+    });
+
+    it("shows item count per session", async () => {
+      db.prepare("INSERT OR IGNORE INTO workspaces (name) VALUES ('ws')").run();
+      const ws = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+      db.prepare("INSERT OR IGNORE INTO features (workspace_id, name) VALUES (?, 'f')").run(ws.id);
+      const ft = db.prepare("SELECT id FROM features WHERE workspace_id = ? AND name = 'f'").get(ws.id) as { id: number };
+
+      db.prepare("INSERT INTO import_sessions (id, github_login, workspace) VALUES ('s2', 'bob', 'ws')").run();
+      const { lastInsertRowid: c1 } = db.prepare("INSERT INTO contents (type, body) VALUES ('idea', 'b1')").run();
+      const { lastInsertRowid: c2 } = db.prepare("INSERT INTO contents (type, body) VALUES ('idea', 'b2')").run();
+      db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(Number(c1), ft.id);
+      db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(Number(c2), ft.id);
+      db.prepare("INSERT INTO import_session_contents (session_id, content_id) VALUES ('s2', ?)").run(Number(c1));
+      db.prepare("INSERT INTO import_session_contents (session_id, content_id) VALUES ('s2', ?)").run(Number(c2));
+
+      const res = await request(app).get("/admin/imports");
+      expect(res.text).toContain("2");
     });
   });
 });

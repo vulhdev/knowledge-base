@@ -29,7 +29,7 @@ const SECTION_BONUS_CAP = 3;
 const MAX_MATCHED_SECTIONS = 3;
 
 const CONTENT_COLUMNS = `c.id, w.name AS workspace, c.type, c.title, c.body,
-               c.root_id, c.version_number, c.created_at, c.updated_at,
+               c.root_id, c.version_number, c.created_at, c.updated_at, c.created_by, c.updated_by,
                EXISTS(SELECT 1 FROM code_refs WHERE content_id = c.id) AS has_code_refs`;
 
 export async function searchSemantic(

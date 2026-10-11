@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
 import { patchContent } from "../../src/tools/patch-content.js";
+import { authCtx } from "../../src/auth/middleware.js";
 
 vi.mock("../../src/embedding/model.js", () => ({
   isModelReady: vi.fn().mockReturnValue(false),
@@ -105,5 +106,24 @@ describe("patchContent", () => {
     const created = await createContent(db, "proj", ["docs"], "plan", body);
     const result = await patchContent(db, created.id, "- [ ] Task two", "- [x] Task two");
     expect(result.body).toBe("## Title\n\n- [ ] Task one\n- [x] Task two\n- [ ] Task three");
+  });
+});
+
+describe("patchContent — server-mode ownership", () => {
+  it("sets updated_by from authCtx in server mode", async () => {
+    const db = createTestDb();
+    const created = await createContent(db, "ws", ["feat"], "idea", "hello world");
+    let result: Awaited<ReturnType<typeof patchContent>>;
+    await authCtx.run({ github_login: "carol" }, async () => {
+      result = await patchContent(db, created.id, "world", "there");
+    });
+    expect(result!.updated_by).toBe("carol");
+  });
+
+  it("updated_by is null in local mode", async () => {
+    const db = createTestDb();
+    const created = await createContent(db, "ws", ["feat"], "idea", "hello world");
+    const result = await patchContent(db, created.id, "world", "there");
+    expect(result.updated_by).toBeNull();
   });
 });

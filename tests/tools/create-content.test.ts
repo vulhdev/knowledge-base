@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
 import { createContent } from "../../src/tools/create-content.js";
+import { authCtx } from "../../src/auth/middleware.js";
 
 vi.mock("../../src/embedding/model.js", () => ({
   isModelReady: vi.fn().mockReturnValue(false),
@@ -234,5 +235,32 @@ describe("createContent", () => {
     const parent = await createContent(db, "ws-jp", ["ft"], "idea", "見積金額は原価に掛率を乗じて算出する。");
     const child = await createContent(db, "ws-jp", ["ft"], "spec", "掛率 の 決め方");
     expect(child.suggested_parents.map((p) => p.id)).toContain(parent.id);
+  });
+});
+
+describe("createContent — server-mode ownership", () => {
+  it("sets created_by from authCtx in server mode", async () => {
+    const db = createTestDb();
+    let result: Awaited<ReturnType<typeof createContent>>;
+    await authCtx.run({ github_login: "alice" }, async () => {
+      result = await createContent(db, "ws", ["feat"], "idea", "body");
+    });
+    expect(result!.created_by).toBe("alice");
+  });
+
+  it("created_by is null in local mode (no authCtx)", async () => {
+    const db = createTestDb();
+    const result = await createContent(db, "ws", ["feat"], "idea", "body");
+    expect(result.created_by).toBeNull();
+  });
+
+  it("created_by is immutable — does not change after update", async () => {
+    const db = createTestDb();
+    let created: Awaited<ReturnType<typeof createContent>>;
+    await authCtx.run({ github_login: "alice" }, async () => {
+      created = await createContent(db, "ws", ["feat"], "idea", "original body");
+    });
+    const row = db.prepare("SELECT created_by FROM contents WHERE id = ?").get(created!.id) as { created_by: string | null };
+    expect(row.created_by).toBe("alice");
   });
 });

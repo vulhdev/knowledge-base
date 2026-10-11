@@ -291,6 +291,61 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
   `);
 
+  // Migration 14: add created_by and updated_by for server-mode ownership tracking
+  const hasCreatedBy = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'created_by'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasCreatedBy) {
+    db.exec("ALTER TABLE contents ADD COLUMN created_by TEXT");
+  }
+
+  const hasUpdatedBy = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'updated_by'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasUpdatedBy) {
+    db.exec("ALTER TABLE contents ADD COLUMN updated_by TEXT");
+  }
+
+  // Migration 12: sessions table for server-mode auth (bearer tokens, 30-day TTL)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id           INTEGER PRIMARY KEY,
+      github_login TEXT NOT NULL,
+      token_hash   TEXT NOT NULL UNIQUE,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at   TEXT NOT NULL
+    );
+  `);
+
+  // Migration 13: workspace membership for server-mode ACL
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS members (
+      id           INTEGER PRIMARY KEY,
+      github_login TEXT NOT NULL,
+      workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      role         TEXT NOT NULL DEFAULT 'contributor',
+      invited_by   TEXT,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(github_login, workspace_id)
+    );
+    CREATE INDEX IF NOT EXISTS members_login ON members(github_login);
+  `);
+
+  // Migration 15: import sessions and junction table for local-to-server data migration
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS import_sessions (
+      id           TEXT PRIMARY KEY,
+      github_login TEXT NOT NULL,
+      workspace    TEXT NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS import_session_contents (
+      session_id TEXT    NOT NULL REFERENCES import_sessions(id) ON DELETE CASCADE,
+      content_id INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+      PRIMARY KEY (session_id, content_id)
+    );
+  `);
+
   // Rebuild list-path indexes as partial indexes covering only is_latest=1 rows,
   // so list_contents queries retain their index-scan-ordered plan after the is_latest filter.
   const createdAtIdx = (
