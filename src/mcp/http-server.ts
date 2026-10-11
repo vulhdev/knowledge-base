@@ -6,6 +6,7 @@ import type Database from "better-sqlite3";
 import { validateSession, createSession } from "../auth/sessions.js";
 import { authCtx } from "../auth/middleware.js";
 import { initiateDeviceFlow, pollDeviceFlow } from "../auth/device-flow.js";
+import { isWorkspaceAdmin } from "../db/members.js";
 
 type Session = { transport: StreamableHTTPServerTransport };
 
@@ -94,6 +95,86 @@ export function createMcpHttpApp(
         res.status(502).json({ error: msg });
       }
     }
+  });
+
+  // Authenticated: batch import local contents to server workspace
+  app.post("/api/import", (req, res): void => {
+    const ctx = authenticate(req, res);
+    if (!ctx) return;
+
+    type ImportItem = { feature: string; type: string; title?: string; body: string };
+    const { workspace, items } = req.body as { workspace?: string; items?: ImportItem[] };
+
+    if (!workspace || typeof workspace !== "string") {
+      res.status(400).json({ error: "workspace is required" });
+      return;
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ error: "items must be a non-empty array" });
+      return;
+    }
+    for (const item of items) {
+      if (!item.feature || !item.type || !item.body) {
+        res.status(400).json({ error: "each item must have feature, type, and body" });
+        return;
+      }
+    }
+
+    const sessionId = randomUUID();
+
+    try {
+      db.transaction(() => {
+        db.prepare("INSERT OR IGNORE INTO workspaces (name) VALUES (?)").run(workspace);
+        const ws = db.prepare("SELECT id FROM workspaces WHERE name = ?").get(workspace) as { id: number };
+
+        db.prepare(
+          "INSERT INTO import_sessions (id, github_login, workspace) VALUES (?, ?, ?)"
+        ).run(sessionId, ctx.github_login, workspace);
+
+        for (const item of items) {
+          db.prepare("INSERT OR IGNORE INTO features (workspace_id, name) VALUES (?, ?)").run(ws.id, item.feature);
+          const ft = db.prepare("SELECT id FROM features WHERE workspace_id = ? AND name = ?").get(ws.id, item.feature) as { id: number };
+
+          const { lastInsertRowid } = db
+            .prepare("INSERT INTO contents (type, title, body, created_by) VALUES (?, ?, ?, ?)")
+            .run(item.type, item.title ?? null, item.body, ctx.github_login);
+
+          const contentId = Number(lastInsertRowid);
+          db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(contentId, ft.id);
+          db.prepare("INSERT INTO import_session_contents (session_id, content_id) VALUES (?, ?)").run(sessionId, contentId);
+        }
+      })();
+
+      res.json({ session_id: sessionId, imported: items.length });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Authenticated: rollback an import session (owner or workspace admin only)
+  app.delete("/api/import/:session_id", (req, res): void => {
+    const ctx = authenticate(req, res);
+    if (!ctx) return;
+
+    const { session_id } = req.params;
+    const session = db
+      .prepare("SELECT * FROM import_sessions WHERE id = ?")
+      .get(session_id) as { id: string; github_login: string; workspace: string } | undefined;
+
+    if (!session) {
+      res.status(404).json({ error: "Import session not found" });
+      return;
+    }
+
+    const isOwner = session.github_login === ctx.github_login;
+    const isAdmin = isWorkspaceAdmin(db, ctx.github_login, session.workspace);
+    if (!isOwner && !isAdmin) {
+      res.status(403).json({ error: "Forbidden: only the importer or a workspace admin can rollback" });
+      return;
+    }
+
+    db.prepare("DELETE FROM import_sessions WHERE id = ?").run(session_id);
+    res.json({ rolled_back: session_id });
   });
 
   const route = async (
