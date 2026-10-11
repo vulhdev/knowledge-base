@@ -10,6 +10,7 @@ export type Settings = {
   mcp_port?: number;
   gui_port?: number;
   server_url?: string;
+  session_token?: string;
 };
 
 const SETTINGS_DIR  = join(homedir(), ".claude", "knowledge-base");
