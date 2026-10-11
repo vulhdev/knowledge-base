@@ -26,12 +26,18 @@ switch (command) {
   case "link-code":
     await import("./link-code.js");
     break;
+  case "push":
+    await import("./push.js");
+    break;
+  case "rollback":
+    await import("./rollback.js");
+    break;
   case undefined:
     // No subcommand — start the MCP server (stdio transport, called by Claude Code)
     await import("../index.js");
     break;
   default:
     console.error(`Unknown command: ${command}`);
-    console.error("Usage: knowledge-base [init|gui|serve|login|invite|kick|update]");
+    console.error("Usage: knowledge-base [init|gui|serve|login|invite|kick|update|push|rollback]");
     process.exit(1);
 }
