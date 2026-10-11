@@ -12,7 +12,8 @@ export function addMember(
   db: Database.Database,
   github_login: string,
   workspace: string,
-  invited_by?: string
+  invited_by?: string,
+  role?: string
 ): void {
   const ws = db
     .prepare("SELECT id FROM workspaces WHERE name = ?")
@@ -27,8 +28,23 @@ export function addMember(
   ).id;
 
   db.prepare(
-    "INSERT OR IGNORE INTO members (github_login, workspace_id, invited_by) VALUES (?, ?, ?)"
-  ).run(github_login, wsId, invited_by ?? null);
+    "INSERT OR IGNORE INTO members (github_login, workspace_id, invited_by, role) VALUES (?, ?, ?, ?)"
+  ).run(github_login, wsId, invited_by ?? null, role ?? "contributor");
+}
+
+export function isWorkspaceAdmin(
+  db: Database.Database,
+  github_login: string,
+  workspace: string
+): boolean {
+  const ws = db
+    .prepare("SELECT id FROM workspaces WHERE name = ?")
+    .get(workspace) as { id: number } | undefined;
+  if (!ws) return false;
+  const row = db
+    .prepare("SELECT 1 FROM members WHERE github_login = ? AND workspace_id = ? AND role = 'admin'")
+    .get(github_login, ws.id);
+  return row !== undefined;
 }
 
 export function removeMember(

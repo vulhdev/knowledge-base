@@ -1,11 +1,62 @@
 import { describe, it, expect } from "vitest";
 import { createTestDb } from "../setup.js";
-import { addMember, removeMember, listMembers, isMember } from "../../src/db/members.js";
+import { addMember, removeMember, listMembers, isMember, isWorkspaceAdmin } from "../../src/db/members.js";
 
 function seedWorkspace(db: ReturnType<typeof createTestDb>, name = "ws") {
   db.prepare("INSERT OR IGNORE INTO workspaces (name) VALUES (?)").run(name);
   return (db.prepare("SELECT id FROM workspaces WHERE name = ?").get(name) as { id: number }).id;
 }
+
+describe("addMember — role param", () => {
+  it("stores role=admin when passed", () => {
+    const db = createTestDb();
+    addMember(db, "alice", "ws", undefined, "admin");
+    const wsId = (db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number }).id;
+    const row = db.prepare("SELECT role FROM members WHERE github_login = 'alice' AND workspace_id = ?").get(wsId) as { role: string };
+    expect(row.role).toBe("admin");
+  });
+
+  it("defaults to contributor when role is omitted", () => {
+    const db = createTestDb();
+    addMember(db, "bob", "ws");
+    const wsId = (db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number }).id;
+    const row = db.prepare("SELECT role FROM members WHERE github_login = 'bob' AND workspace_id = ?").get(wsId) as { role: string };
+    expect(row.role).toBe("contributor");
+  });
+});
+
+describe("isWorkspaceAdmin", () => {
+  it("returns true when user has role=admin in workspace", () => {
+    const db = createTestDb();
+    addMember(db, "alice", "ws", undefined, "admin");
+    expect(isWorkspaceAdmin(db, "alice", "ws")).toBe(true);
+  });
+
+  it("returns false when user is contributor", () => {
+    const db = createTestDb();
+    addMember(db, "alice", "ws");
+    expect(isWorkspaceAdmin(db, "alice", "ws")).toBe(false);
+  });
+
+  it("returns false for non-existent workspace", () => {
+    const db = createTestDb();
+    expect(isWorkspaceAdmin(db, "alice", "nowhere")).toBe(false);
+  });
+
+  it("returns false when user is not a member", () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO workspaces (name) VALUES ('ws')").run();
+    expect(isWorkspaceAdmin(db, "ghost", "ws")).toBe(false);
+  });
+
+  it("is per-workspace — admin in one workspace, not in another", () => {
+    const db = createTestDb();
+    addMember(db, "alice", "ws1", undefined, "admin");
+    addMember(db, "alice", "ws2");
+    expect(isWorkspaceAdmin(db, "alice", "ws1")).toBe(true);
+    expect(isWorkspaceAdmin(db, "alice", "ws2")).toBe(false);
+  });
+});
 
 describe("addMember", () => {
   it("inserts a member row", () => {
