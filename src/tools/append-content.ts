@@ -3,6 +3,7 @@ import type { Content } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { fetchFeatures } from "./_helpers.js";
 import { authCtx } from "../auth/middleware.js";
+import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
 
@@ -26,12 +27,16 @@ export async function appendContent(
   const newBody = bodyRow.body.endsWith("\n") ? bodyRow.body + text : bodyRow.body + "\n" + text;
 
   const updated_by = authCtx.getStore()?.github_login ?? null;
+  const sections = await prepareSections(newBody);
 
-  db.prepare("UPDATE contents SET body = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?").run(
-    newBody,
-    updated_by,
-    id,
-  );
+  db.transaction(() => {
+    db.prepare("UPDATE contents SET body = ?, updated_at = datetime('now'), updated_by = ? WHERE id = ?").run(
+      newBody,
+      updated_by,
+      id,
+    );
+    writeDocSections(db, id, sections);
+  })();
 
   if (isModelReady()) {
     getEmbedding(newBody)
@@ -42,6 +47,8 @@ export async function appendContent(
       .catch(() => {
         // embedding failure must not prevent content update
       });
+    // section embeddings follow the same fire-and-forget rule (embedDocSections never throws)
+    void embedDocSections(db, id);
   }
 
   const row = db

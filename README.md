@@ -158,8 +158,12 @@ Lists documents in a workspace, with optional filters for feature and/or type. R
 Semantic (vector) search using a local ONNX embedding model combined with BM25 full-text search via Reciprocal Rank Fusion. Returns a `SearchPage` object — finds relevant content even when exact words don't match. Supports any natural language including Vietnamese.
 
 Ranking signals applied in order:
-- **Vector similarity** (ANN via `sqlite-vec`) + **BM25** (FTS5, title weighted 5× over body) fused with RRF
+- **Vector similarity** (ANN via `sqlite-vec`) over document vectors **and section vectors** — sections are folded back onto their document (best section, small bonus when several match), so a document appears at most once
+- **BM25** (FTS5, title weighted 5× over body) over documents, plus BM25 over SOT pointer tokens; Chinese/Japanese text is indexed as character bigrams, so a two-character term in the middle of a sentence (`掛率`) is found and a longer query (`原価に掛率`) matches as a phrase
+- All lists are fused with RRF
 - **Recency boost** — documents updated more recently score slightly higher (max +20% today, 30-day half-life)
+
+Documents are split into sections by heading (`#`–`####`; small sections merged, large ones cut at paragraph/list/table/fence boundaries). Sections store only offsets and a hash — never text — and are embedded with a `title › heading › …` breadcrumb.
 
 Requires the embedding model to be downloaded first (`npx @vulhdev/knowledge-base init`). Embeddings for new and updated documents are generated automatically; existing documents are backfilled in the background on the next server startup after `init`.
 
@@ -181,6 +185,16 @@ Returns a `SearchPage`:
   "limit":         10
 }
 ```
+
+Each result may include `matched_sections` (at most 3, most relevant first):
+```json
+"matched_sections": [
+  { "chunk_key": "123#3.2", "heading_path": "Guide › Setup › Ports", "start_line": 120, "end_line": 168 },
+  { "chunk_key": "docs/design/F-002.md#1.3.9", "heading_path": "F-002 … › Use Cases › UC-F002-009 …",
+    "start_line": 408, "end_line": 442, "source_path": "docs/design/F-002.md", "source_commit": "f8c4702a…" }
+]
+```
+`chunk_key` is `<content_id>#<outline>` for documents and `<source_path>#<outline>` for SOT cards (`~n` marks part n of a long section). For an SOT card, open the section with `git -C <repo> show <source_commit>:<source_path>` and read lines `start_line`–`end_line`.
 
 ### `update_content`
 
@@ -375,6 +389,7 @@ Beyond the MCP tools, the package exposes a CLI for human developer workflows:
 | `npx @vulhdev/knowledge-base gui` | Open browser UI at `http://localhost:57891` — browse, search, review, and compare versions |
 | `npx @vulhdev/knowledge-base update` | Update installed Claude Code skills to the current version |
 | `npx @vulhdev/knowledge-base link-code` | Link the current HEAD commit to a plan task |
+| `npx @vulhdev/knowledge-base import-sources` | Import doc folders from several clones and git-tracked SOT folders into a database chosen by path |
 
 ### `link-code` subcommand
 
@@ -389,6 +404,23 @@ knowledge-base link-code --content-id 42 --task "Task 2"
 ```
 
 Reads the HEAD commit hash and changed files from git automatically. DB path is resolved from `~/.claude/knowledge-base/settings.json` — no env var setup needed. Prints `✓ Linked commit <hash> → plan #<id> (<task>)` on success.
+
+### `import-sources` subcommand
+
+```bash
+knowledge-base import-sources --db <path> --workspace <name> \
+  [--sot-workspace <name>]   # default "<workspace>-sot"
+  [--ref <git-ref>]          # default: upstream of the current branch, else HEAD
+  [--dry-run] [--plan-out plan.json] [--report report.md] \
+  <source-dir> [<source-dir> …]
+```
+
+- `--db` is required and must not be your live database: the command refuses `~/.claude/knowledge-base/knowledge-base.db` and the `db_path` in `settings.json` (also through symlinks).
+- Each file is classified by git, not by folder name: **tracked and not ignored ⇒ SOT** (a pointer-only card), **ignored or untracked ⇒ content import**.
+- **Content import** (`.md`, `.mmd`): identity is the path under `.claude/claude/` with the clone name dropped. Copies across clones are collapsed — identical ⇒ one doc, one side a superset ⇒ the superset, a FORK ⇒ the most recently modified copy plus a `fork-residue` child doc holding the other side's own lines; identical content under two paths ⇒ one doc (alias in the report); date-suffixed variants (`x.md`, `x-20260828.md`) ⇒ separate docs linked parent → child. `compacts/`, `scratch/`, chain step files, `*.jsonl` and binaries are skipped. Conflict detection (MCP sampling) is not run.
+- **SOT**: one card per file (path, ref, commit of its last change, sha256, read command, heading outline with line ranges, commit history) plus one pointer per section (path, commit, line range, hash, vector). **No SOT sentence is stored**; pointer tokens live in a contentless FTS table. Content is read from the ref, never from the working tree.
+- Provenance is kept in `contents.source_key` / `source_sha`: a second run over unchanged sources writes nothing (`"writes": 0`), a changed file is updated in place (same id), a file removed from the ref loses its card.
+- Output is one JSON line (`docs`, `cards`, `pointers`, `missing_embeddings`, `writes`, …). Exit code `0` ok, `1` content import errors or every SOT file failed, `2` bad arguments or refused database.
 
 ## Database Schema
 
@@ -416,7 +448,9 @@ CREATE TABLE contents (
   version_number INTEGER NOT NULL DEFAULT 1,
   is_latest      INTEGER NOT NULL DEFAULT 1,       -- 1 for the current version, 0 for old
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  source_key     TEXT,            -- import provenance, unique when set (Migration 14)
+  source_sha     TEXT             -- sha256 of the imported body / SOT file (Migration 14)
 );
 
 -- Provenance graph: tracks idea→spec→plan lineage chains
@@ -440,6 +474,30 @@ CREATE TABLE code_refs (
 
 -- Virtual table managed by sqlite-vec; kept in sync via INSERT/UPDATE/DELETE triggers
 CREATE VIRTUAL TABLE vec_contents USING vec0(embedding float[384]);
+
+-- Full-text index: contentless, fed by triggers through kb_cjk_bigram() (Migration 12)
+CREATE VIRTUAL TABLE contents_fts USING fts5(title, body, content='', contentless_delete=1, tokenize='unicode61');
+
+-- Sections of a document (kind 'doc') and SOT pointers (kind 'sot'): offsets/lines + hash, never text (Migration 13)
+CREATE TABLE content_chunks (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  content_id    INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  kind          TEXT NOT NULL,      -- "doc" | "sot"
+  chunk_key     TEXT NOT NULL,      -- outline position, e.g. "3.3.2.1~2"
+  ord           INTEGER NOT NULL,
+  heading_path  TEXT NOT NULL,      -- "H1 › H2 › …"
+  start_char    INTEGER,            -- doc: UTF-16 offsets into contents.body
+  end_char      INTEGER,
+  start_line    INTEGER NOT NULL,   -- 1-based inclusive (doc body / SOT file at source_commit)
+  end_line      INTEGER NOT NULL,
+  source_path   TEXT,               -- SOT only
+  source_commit TEXT,               -- SOT only
+  chunk_sha     TEXT NOT NULL,      -- sha256 of the lines start_line..end_line
+  embedding     BLOB,
+  UNIQUE(content_id, kind, chunk_key)
+);
+CREATE VIRTUAL TABLE vec_chunks USING vec0(embedding float[384]);            -- rowid = content_chunks.id
+CREATE VIRTUAL TABLE sot_chunks_fts USING fts5(heading, body, content='', contentless_delete=1, tokenize='unicode61');
 
 CREATE TABLE error_logs (
   id        INTEGER PRIMARY KEY,
@@ -480,6 +538,11 @@ Existing databases are automatically migrated on startup:
 - `resolved_at` column added to `review_comments` if missing (Migration 8)
 - Indexes on `contents(created_at)` and `contents(type, created_at)` added if missing (Migration 10)
 - `root_id`, `version_number`, `is_latest` columns added to `contents` if missing, with indexes on `root_id` and `is_latest` (Migration 11)
+- `contents_fts` rebuilt as a contentless table whose triggers index Chinese/Japanese as bigrams via `kb_cjk_bigram()`; refilled from `contents` (Migration 12)
+- `content_chunks`, `sot_chunks_fts` and `vec_chunks` added if missing; existing documents are split into sections and embedded by the background backfill (Migration 13)
+- `contents.source_key` / `source_sha` added with a partial unique index (Migration 14)
+
+> ⚠️ **Downgrade after Migration 12.** The `contents_fts` triggers call `kb_cjk_bigram()`, a function only this version registers. An older `knowledge-base` build — or the `sqlite3` CLI — can still read a migrated database but **every write to `contents` fails** with `no such function: kb_cjk_bigram`. To roll back: `DROP TRIGGER contents_ai; DROP TRIGGER contents_ad; DROP TRIGGER contents_au; DROP TABLE contents_fts;` and start the older build, which recreates its own FTS table (Migration 6).
 - Legacy database at `~/.claude/knowledge-base.db` automatically moved to `~/.claude/knowledge-base/knowledge-base.db` on first startup
 
 ## Running from a local checkout
