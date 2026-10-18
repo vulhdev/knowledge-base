@@ -4,17 +4,25 @@ import { createSwarm } from "./peer.js";
 import { deriveJoinTopic, handleJoinRequest } from "./join.js";
 import { decodeChangeset, encodeChangeset, getChanges, applyChanges } from "./changeset.js";
 import { rebuildFts } from "./rebuild.js";
-import { loadSettings } from "../config.js";
+import { loadSettings, writeSettings } from "../config.js";
 
 export type SyncHandle = {
   destroy: () => Promise<void>;
 };
 
+export function recordSyncTimestamp(workspaceName: string): void {
+  const s = loadSettings();
+  if (s.workspaces?.[workspaceName]?.team) {
+    s.workspaces[workspaceName].team!.last_synced_at = new Date().toISOString();
+    writeSettings(s);
+  }
+}
+
 type HandshakeMsg = { v: number; dbVersion: number };
 
 const PROTOCOL_VERSION = 1;
 
-function handleSyncConnection(db: Database.Database, socket: NodeJS.ReadWriteStream): void {
+function handleSyncConnection(db: Database.Database, workspaceName: string, socket: NodeJS.ReadWriteStream): void {
   let localDbVersion = 0;
   try {
     const row = db
@@ -58,6 +66,7 @@ function handleSyncConnection(db: Database.Database, socket: NodeJS.ReadWriteStr
           const rows = decodeChangeset(buf.slice(4, 4 + size));
           applyChanges(db, rows);
           rebuildFts(db);
+          recordSyncTimestamp(workspaceName);
         } catch {
           // ignore bad changeset
         }
@@ -105,7 +114,7 @@ export function startSync(db: Database.Database, workspaceName: string): SyncHan
 
   const { swarm, destroy: destroySwarm } = createSwarm(db, workspaceName);
   swarm.on("connection", (socket: NodeJS.ReadWriteStream) => {
-    handleSyncConnection(db, socket);
+    handleSyncConnection(db, workspaceName, socket);
   });
 
   let joinSwarm: InstanceType<typeof Hyperswarm> | null = null;

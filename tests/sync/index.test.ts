@@ -9,6 +9,13 @@ vi.mock("hyperswarm", () => ({
   })),
 }));
 
+vi.mock("../../src/sync/changeset.js", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../src/sync/changeset.js")>();
+  return { ...orig, getChanges: vi.fn().mockReturnValue([]), applyChanges: vi.fn() };
+});
+
+vi.mock("../../src/sync/rebuild.js", () => ({ rebuildFts: vi.fn() }));
+
 vi.mock("node:os", () => ({ homedir: vi.fn().mockReturnValue("/test/home") }));
 vi.mock("node:fs", () => ({
   existsSync: vi.fn().mockReturnValue(true),
@@ -65,6 +72,20 @@ describe("startSync", () => {
     startSync(db, "myws");
     const swarmInstance = vi.mocked(Hyperswarm).mock.results[0].value;
     expect(swarmInstance.on).toHaveBeenCalledWith("connection", expect.any(Function));
+  });
+
+  it("writes last_synced_at to settings via recordSyncTimestamp", async () => {
+    const { writeFileSync, readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(HOST_SETTINGS));
+
+    const { recordSyncTimestamp } = await import("../../src/sync/index.js");
+    recordSyncTimestamp("myws");
+
+    const calls = vi.mocked(writeFileSync).mock.calls;
+    const settingsCall = calls.find(([p, body]) =>
+      typeof p === "string" && p.includes("settings.json") && String(body).includes("last_synced_at")
+    );
+    expect(settingsCall).toBeDefined();
   });
 
   it("throws when workspace has no team config", async () => {
