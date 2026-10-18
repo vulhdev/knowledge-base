@@ -17,6 +17,9 @@ switch (command) {
   case "status":
     await import("./status.js");
     break;
+  case "team":
+    await import("./team.js");
+    break;
   case undefined:
     // No subcommand — start the MCP server (stdio transport, called by Claude Code)
     await import("../index.js");
