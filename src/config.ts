@@ -12,6 +12,7 @@ export type WorkspaceTeamConfig = {
   noise_keypair: NoiseKeypair;
   pending_token?: string;
   host_public_key?: string;
+  last_synced_at?: string;
 };
 
 export type Settings = {
