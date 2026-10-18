@@ -1,39 +1,43 @@
-import { randomBytes } from "node:crypto";
 import { loadSettings, writeSettings } from "../config.js";
 
 const HEX64 = /^[0-9a-f]{64}$/;
-const HEX32 = /^[0-9a-f]{32}$/;
+const GITHUB_USERNAME = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/;
 
-export function generatePendingToken(): string {
-  return randomBytes(16).toString("hex");
+export function buildInviteCode(hostPublicKey: string, workspaceName: string): string {
+  return `${hostPublicKey}:${workspaceName}`;
 }
 
-export function buildInviteKey(hostPublicKey: string, pendingToken: string): string {
-  return `${hostPublicKey}:${pendingToken}`;
+export function parseInviteCode(code: string): { hostPublicKey: string; workspaceName: string } {
+  const sep = code.indexOf(":");
+  if (sep === -1) throw new Error("Invalid invite code: missing ':'");
+  const hostPublicKey = code.slice(0, sep);
+  const workspaceName = code.slice(sep + 1);
+  if (!HEX64.test(hostPublicKey)) throw new Error("Invalid invite code: hostPublicKey must be 64 hex chars");
+  if (!workspaceName) throw new Error("Invalid invite code: workspaceName is empty");
+  return { hostPublicKey, workspaceName };
 }
 
-export function generateInvite(workspaceName: string): string {
+export function normalizeGithubUsername(raw: string): string {
+  const username = raw.startsWith("@") ? raw.slice(1) : raw;
+  if (!GITHUB_USERNAME.test(username)) throw new Error(`Invalid GitHub username: "${username}"`);
+  return username;
+}
+
+export function generateInvite(workspaceName: string, githubUsername: string): string {
   const settings = loadSettings();
   const team = settings.workspaces?.[workspaceName]?.team;
   if (!team) throw new Error(`No team config found for workspace "${workspaceName}"`);
-  if (team.role !== "host") throw new Error("Only the host can generate invite keys");
+  if (team.role !== "host") throw new Error("Only the host can generate invite codes");
 
-  const token = generatePendingToken();
   const updated = loadSettings();
   updated.workspaces ??= {};
   updated.workspaces[workspaceName] ??= {};
-  updated.workspaces[workspaceName].team = { ...team, pending_token: token };
+  const existing = updated.workspaces[workspaceName].team?.pending_github_usernames ?? [];
+  updated.workspaces[workspaceName].team = {
+    ...team,
+    pending_github_usernames: [...existing, githubUsername],
+  };
   writeSettings(updated);
 
-  return buildInviteKey(team.noise_keypair.publicKey, token);
-}
-
-export function parseInviteKey(key: string): { hostPublicKey: string; pendingToken: string } {
-  const sep = key.indexOf(":");
-  if (sep === -1) throw new Error("Invalid invite key: missing ':'");
-  const hostPublicKey = key.slice(0, sep);
-  const pendingToken = key.slice(sep + 1);
-  if (!HEX64.test(hostPublicKey)) throw new Error("Invalid invite key: hostPublicKey must be 64 hex chars");
-  if (!HEX32.test(pendingToken)) throw new Error("Invalid invite key: pendingToken must be 32 hex chars");
-  return { hostPublicKey, pendingToken };
+  return buildInviteCode(team.noise_keypair.publicKey, workspaceName);
 }

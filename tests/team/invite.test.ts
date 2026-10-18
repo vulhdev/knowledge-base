@@ -1,45 +1,129 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-describe("invite module", () => {
-  it("parseInviteKey splits valid key into hostPublicKey and pendingToken", async () => {
-    const { parseInviteKey } = await import("../../src/team/invite.js");
-    const hostPk = "a".repeat(64);
-    const token = "b".repeat(32);
-    const result = parseInviteKey(`${hostPk}:${token}`);
-    expect(result.hostPublicKey).toBe(hostPk);
-    expect(result.pendingToken).toBe(token);
+vi.mock("node:os", () => ({ homedir: vi.fn().mockReturnValue("/test/home") }));
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn().mockReturnValue(true),
+  mkdirSync: vi.fn(),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  chmodSync: vi.fn(),
+  renameSync: vi.fn(),
+  copyFileSync: vi.fn(),
+  unlinkSync: vi.fn(),
+}));
+
+const HOST_PK = "a".repeat(64);
+
+function makeSettings(overrides: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    db_path: "/db",
+    model_cache_dir: "/m",
+    workspaces: {
+      "my-ws": {
+        team: {
+          role: "host",
+          secret: "s".repeat(64),
+          noise_keypair: { publicKey: HOST_PK, secretKey: "k".repeat(64) },
+          ...overrides,
+        },
+      },
+    },
+  });
+}
+
+beforeEach(() => {
+  vi.resetModules();
+  vi.clearAllMocks();
+});
+
+describe("buildInviteCode", () => {
+  it("returns hostPublicKey:workspaceName", async () => {
+    const { buildInviteCode } = await import("../../src/team/invite.js");
+    expect(buildInviteCode(HOST_PK, "my-ws")).toBe(`${HOST_PK}:my-ws`);
+  });
+});
+
+describe("parseInviteCode", () => {
+  it("parses valid invite code", async () => {
+    const { parseInviteCode } = await import("../../src/team/invite.js");
+    const result = parseInviteCode(`${HOST_PK}:my-workspace`);
+    expect(result.hostPublicKey).toBe(HOST_PK);
+    expect(result.workspaceName).toBe("my-workspace");
   });
 
-  it("parseInviteKey throws on missing colon separator", async () => {
-    const { parseInviteKey } = await import("../../src/team/invite.js");
-    expect(() => parseInviteKey("a".repeat(96))).toThrow(/invalid invite key/i);
+  it("throws on missing colon", async () => {
+    const { parseInviteCode } = await import("../../src/team/invite.js");
+    expect(() => parseInviteCode("a".repeat(64))).toThrow(/invalid invite code/i);
   });
 
-  it("parseInviteKey throws when hostPublicKey is not 64 hex chars", async () => {
-    const { parseInviteKey } = await import("../../src/team/invite.js");
-    expect(() => parseInviteKey("tooshort:" + "b".repeat(32))).toThrow(/invalid invite key/i);
+  it("throws when hostPublicKey is not 64 hex chars", async () => {
+    const { parseInviteCode } = await import("../../src/team/invite.js");
+    expect(() => parseInviteCode("tooshort:my-ws")).toThrow(/invalid invite code/i);
   });
 
-  it("parseInviteKey throws when pendingToken is not 32 hex chars", async () => {
-    const { parseInviteKey } = await import("../../src/team/invite.js");
-    expect(() => parseInviteKey("a".repeat(64) + ":tooshort")).toThrow(/invalid invite key/i);
+  it("throws when workspaceName is empty", async () => {
+    const { parseInviteCode } = await import("../../src/team/invite.js");
+    expect(() => parseInviteCode(`${HOST_PK}:`)).toThrow(/workspaceName is empty/i);
+  });
+});
+
+describe("normalizeGithubUsername", () => {
+  it("strips @ prefix", async () => {
+    const { normalizeGithubUsername } = await import("../../src/team/invite.js");
+    expect(normalizeGithubUsername("@vulhdev")).toBe("vulhdev");
   });
 
-  it("parseInviteKey throws on non-hex characters", async () => {
-    const { parseInviteKey } = await import("../../src/team/invite.js");
-    expect(() => parseInviteKey("z".repeat(64) + ":" + "b".repeat(32))).toThrow(/invalid invite key/i);
+  it("accepts username without @", async () => {
+    const { normalizeGithubUsername } = await import("../../src/team/invite.js");
+    expect(normalizeGithubUsername("vulhdev")).toBe("vulhdev");
   });
 
-  it("buildInviteKey produces <hostPublicKey>:<pendingToken>", async () => {
-    const { buildInviteKey } = await import("../../src/team/invite.js");
-    const result = buildInviteKey("a".repeat(64), "b".repeat(32));
-    expect(result).toBe("a".repeat(64) + ":" + "b".repeat(32));
+  it("throws on invalid username", async () => {
+    const { normalizeGithubUsername } = await import("../../src/team/invite.js");
+    expect(() => normalizeGithubUsername("@")).toThrow(/invalid github username/i);
+    expect(() => normalizeGithubUsername("has space")).toThrow(/invalid github username/i);
+  });
+});
+
+describe("generateInvite", () => {
+  it("appends username to pending_github_usernames and returns invite code", async () => {
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(makeSettings());
+    const { generateInvite } = await import("../../src/team/invite.js");
+
+    const code = generateInvite("my-ws", "vulhdev");
+
+    expect(code).toBe(`${HOST_PK}:my-ws`);
+    const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
+    expect(written.workspaces["my-ws"].team.pending_github_usernames).toContain("vulhdev");
   });
 
-  it("generatePendingToken returns a 32-char hex string", async () => {
-    const { generatePendingToken } = await import("../../src/team/invite.js");
-    const token = generatePendingToken();
-    expect(token).toHaveLength(32);
-    expect(token).toMatch(/^[0-9a-f]{32}$/);
+  it("appends without overwriting existing pending usernames", async () => {
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(
+      makeSettings({ pending_github_usernames: ["alice"] }),
+    );
+    const { generateInvite } = await import("../../src/team/invite.js");
+
+    generateInvite("my-ws", "bob");
+
+    const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
+    expect(written.workspaces["my-ws"].team.pending_github_usernames).toEqual(["alice", "bob"]);
+  });
+
+  it("throws when no team config exists", async () => {
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ db_path: "/db", model_cache_dir: "/m" }));
+    const { generateInvite } = await import("../../src/team/invite.js");
+
+    expect(() => generateInvite("missing-ws", "vulhdev")).toThrow(/no team config/i);
+  });
+
+  it("throws when role is peer", async () => {
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(makeSettings({ role: "peer" }));
+    const { generateInvite } = await import("../../src/team/invite.js");
+
+    expect(() => generateInvite("my-ws", "vulhdev")).toThrow(/only the host/i);
   });
 });
