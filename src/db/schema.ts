@@ -300,6 +300,19 @@ function runMigrations(db: Database.Database): void {
       CREATE INDEX idx_contents_type_created_at ON contents(type, created_at) WHERE is_latest = 1;
     `);
   }
+
+  // Migration 13: add github_username to team_peers
+  const hasGithubUsername = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('team_peers') WHERE name = 'github_username'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasGithubUsername) {
+    const hasPeersTable = (
+      db.prepare("SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type='table' AND name='team_peers'").get() as { cnt: number }
+    ).cnt > 0;
+    if (hasPeersTable) {
+      db.exec("ALTER TABLE team_peers ADD COLUMN github_username TEXT");
+    }
+  }
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {
