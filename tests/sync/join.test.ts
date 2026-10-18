@@ -13,99 +13,124 @@ vi.mock("node:fs", () => ({
   copyFileSync: vi.fn(),
   unlinkSync: vi.fn(),
 }));
+vi.mock("../../src/team/github.js", () => ({
+  getGitHubUsername: vi.fn(),
+}));
 
 const HOST_CONFIG = {
   role: "host" as const,
   secret: "a".repeat(64),
   noise_keypair: { publicKey: "b".repeat(64), secretKey: "c".repeat(64) },
-  pending_token: "d".repeat(32),
+  pending_github_usernames: ["vulhdev"],
 };
+
+function makeSettingsJson(overrides: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    db_path: "/db",
+    model_cache_dir: "/m",
+    workspaces: { myws: { team: { ...HOST_CONFIG, ...overrides } } },
+  });
+}
 
 describe("handleJoinRequest (host side)", () => {
   let db: Database.Database;
+
   beforeEach(async () => {
     db = createTestDb();
     vi.resetModules();
     const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(
-      JSON.stringify({
-        db_path: "/db",
-        model_cache_dir: "/m",
-        workspaces: { myws: { team: HOST_CONFIG } },
-      }),
-    );
+    vi.mocked(readFileSync).mockReturnValue(makeSettingsJson());
   });
 
-  it("returns accepted=true when pending_token matches", async () => {
+  it("returns accepted=true when GitHub token resolves to an invited username", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
     const { handleJoinRequest } = await import("../../src/sync/join.js");
-    const result = handleJoinRequest(db, "myws", {
-      pendingToken: "d".repeat(32),
-      displayName: "Alice",
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
     });
     expect(result.accepted).toBe(true);
   });
 
   it("returns the workspace secret on acceptance", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
     const { handleJoinRequest } = await import("../../src/sync/join.js");
-    const result = handleJoinRequest(db, "myws", {
-      pendingToken: "d".repeat(32),
-      displayName: "Alice",
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
     });
     expect((result as { accepted: true; secret: string }).secret).toBe("a".repeat(64));
   });
 
-  it("inserts the new peer into team_peers on acceptance", async () => {
+  it("inserts peer into team_peers with github_username", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
     const { handleJoinRequest } = await import("../../src/sync/join.js");
-    handleJoinRequest(db, "myws", {
-      pendingToken: "d".repeat(32),
-      displayName: "Alice",
+
+    await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
     });
-    const row = db.prepare("SELECT display_name FROM team_peers WHERE public_key = ?").get("e".repeat(64)) as
-      | { display_name: string }
-      | undefined;
-    expect(row?.display_name).toBe("Alice");
+
+    const row = db
+      .prepare("SELECT display_name, github_username FROM team_peers WHERE public_key = ?")
+      .get("e".repeat(64)) as { display_name: string; github_username: string } | undefined;
+    expect(row?.github_username).toBe("vulhdev");
+    expect(row?.display_name).toBe("@vulhdev");
   });
 
-  it("clears pending_token in settings.json after acceptance", async () => {
+  it("removes username from pending_github_usernames after acceptance", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
     const { writeFileSync } = await import("node:fs");
     const { handleJoinRequest } = await import("../../src/sync/join.js");
-    handleJoinRequest(db, "myws", {
-      pendingToken: "d".repeat(32),
-      displayName: "Alice",
+
+    await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
     });
+
     const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
-    expect(written.workspaces.myws.team.pending_token).toBeUndefined();
+    expect(written.workspaces.myws.team.pending_github_usernames).not.toContain("vulhdev");
   });
 
-  it("returns accepted=false when pending_token does not match", async () => {
+  it("returns accepted=false when GitHub username is not in pending list", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("stranger");
     const { handleJoinRequest } = await import("../../src/sync/join.js");
-    const result = handleJoinRequest(db, "myws", {
-      pendingToken: "f".repeat(32),
-      displayName: "Alice",
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
     });
     expect(result.accepted).toBe(false);
+    expect((result as { accepted: false; reason: string }).reason).toMatch(/@stranger/);
   });
 
-  it("returns accepted=false when no pending_token is set (already used)", async () => {
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(
-      JSON.stringify({
-        db_path: "/db",
-        model_cache_dir: "/m",
-        workspaces: {
-          myws: { team: { ...HOST_CONFIG, pending_token: undefined } },
-        },
-      }),
-    );
+  it("returns accepted=false when GitHub token verification fails", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockRejectedValue(new Error("GitHub API error: 401"));
     const { handleJoinRequest } = await import("../../src/sync/join.js");
-    const result = handleJoinRequest(db, "myws", {
-      pendingToken: "d".repeat(32),
-      displayName: "Alice",
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "bad_token",
+      peerPublicKey: "e".repeat(64),
+    });
+    expect(result.accepted).toBe(false);
+    expect((result as { accepted: false; reason: string }).reason).toMatch(/verification failed/i);
+  });
+
+  it("returns accepted=false when no pending invites exist", async () => {
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(makeSettingsJson({ pending_github_usernames: [] }));
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
     });
     expect(result.accepted).toBe(false);

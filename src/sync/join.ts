@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { loadSettings, writeSettings } from "../config.js";
+import { getGitHubUsername } from "../team/github.js";
 import type Database from "better-sqlite3";
 
 export type JoinRequest = {
-  pendingToken: string;
-  displayName: string;
+  githubToken: string;
   peerPublicKey: string;
 };
 
@@ -16,25 +16,38 @@ export function deriveJoinTopic(workspaceName: string): Buffer {
   return createHash("sha256").update(`${workspaceName}:join`).digest();
 }
 
-export function handleJoinRequest(
+export async function handleJoinRequest(
   db: Database.Database,
   workspaceName: string,
   req: JoinRequest,
-): JoinResult {
+): Promise<JoinResult> {
   const settings = loadSettings();
   const team = settings.workspaces?.[workspaceName]?.team;
   if (!team) return { accepted: false, reason: "workspace not found" };
-  if (!team.pending_token) return { accepted: false, reason: "no pending invite" };
-  if (team.pending_token !== req.pendingToken) return { accepted: false, reason: "invalid token" };
+
+  const pending = team.pending_github_usernames ?? [];
+  if (pending.length === 0) return { accepted: false, reason: "no pending invites" };
+
+  let username: string;
+  try {
+    username = await getGitHubUsername(req.githubToken);
+  } catch {
+    return { accepted: false, reason: "GitHub token verification failed" };
+  }
+
+  if (!pending.includes(username)) {
+    return { accepted: false, reason: `@${username} is not invited` };
+  }
 
   db.prepare(
-    "INSERT OR IGNORE INTO team_peers (public_key, display_name) VALUES (?, ?)",
-  ).run(req.peerPublicKey, req.displayName);
+    "INSERT OR IGNORE INTO team_peers (public_key, display_name, github_username) VALUES (?, ?, ?)",
+  ).run(req.peerPublicKey, `@${username}`, username);
 
   const updated = loadSettings();
   if (updated.workspaces?.[workspaceName]?.team) {
-    const { pending_token: _drop, ...rest } = updated.workspaces[workspaceName].team!;
-    updated.workspaces[workspaceName].team = rest as typeof team;
+    const remaining = (updated.workspaces[workspaceName].team!.pending_github_usernames ?? [])
+      .filter((u) => u !== username);
+    updated.workspaces[workspaceName].team!.pending_github_usernames = remaining;
     writeSettings(updated);
   }
 
