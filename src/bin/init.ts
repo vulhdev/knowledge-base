@@ -8,6 +8,8 @@ import { openDb } from "../db/client.js";
 import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { isCrsqliteReady, downloadCrsqlite } from "../team/crsqlite.js";
+import { generateTeamConfig } from "../team/generate.js";
+import { loadSettings, writeSettings } from "../config.js";
 
 const CREATE_NEW = "__new__";
 const SKIP = "__skip__";
@@ -163,6 +165,61 @@ async function main(): Promise<void> {
 
   writeWorkspaceToClaude(workspaceName);
   p.log.success(`Written knowledge-base block to CLAUDE.md (workspace: ${workspaceName})`);
+
+  // Identity setup (global, stored once)
+  const settings = loadSettings();
+  if (!settings.identity) {
+    p.log.info("Set your identity (used to track who created/updated documents in team mode).");
+    const identityName = await p.text({
+      message: "Your name:",
+      placeholder: "Alice",
+      validate: (v) => (!v?.trim() ? "Name cannot be empty" : undefined),
+    });
+    if (p.isCancel(identityName)) { p.cancel("Cancelled."); process.exit(0); }
+
+    const identityEmail = await p.text({
+      message: "Your email:",
+      placeholder: "alice@example.com",
+      validate: (v) => (!v?.trim() ? "Email cannot be empty" : undefined),
+    });
+    if (p.isCancel(identityEmail)) { p.cancel("Cancelled."); process.exit(0); }
+
+    const updated = loadSettings();
+    updated.identity = { name: identityName as string, email: identityEmail as string };
+    writeSettings(updated);
+    p.log.success(`Identity saved: ${identityName} <${identityEmail}>`);
+  } else {
+    p.log.info(`Identity: ${settings.identity.name} <${settings.identity.email}>`);
+  }
+
+  // Team mode setup for this workspace
+  const hasTeam = settings.workspaces?.[workspaceName]?.team;
+  if (!hasTeam) {
+    const teamMode = await p.select<string>({
+      message: `Enable team mode for workspace "${workspaceName}"?`,
+      options: [
+        { value: "create", label: "Create new team (you are the host)" },
+        { value: "join",   label: "Join existing team (enter invite key later)" },
+        { value: SKIP,    label: "Skip — solo mode" },
+      ],
+    });
+    if (p.isCancel(teamMode)) { p.cancel("Cancelled."); process.exit(0); }
+
+    if ((teamMode as string) === "create") {
+      const cfg = generateTeamConfig();
+      const fresh = loadSettings();
+      fresh.workspaces ??= {};
+      fresh.workspaces[workspaceName] ??= {};
+      fresh.workspaces[workspaceName].team = cfg;
+      writeSettings(fresh);
+      p.log.success("Team created. Your public key (share with peers to invite them):");
+      p.log.info(`  ${cfg.noise_keypair.publicKey}`);
+    } else if ((teamMode as string) === "join") {
+      p.log.info("Run `npx @vulhdev/knowledge-base team join <invite-key>` to join a team.");
+    }
+  } else {
+    p.log.info(`Team mode already configured for "${workspaceName}" (role: ${hasTeam.role}).`);
+  }
 
   if (isModelReady()) {
     p.log.info("Embedding model already cached — skipping download.");
