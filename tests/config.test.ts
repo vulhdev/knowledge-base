@@ -6,6 +6,7 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
+  chmodSync: vi.fn(),
   renameSync: vi.fn(),
   copyFileSync: vi.fn(),
   unlinkSync: vi.fn(),
@@ -95,5 +96,90 @@ describe("loadSettings", () => {
     loadSettings();
 
     expect(readFileSync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("writeSettings", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it("writes serialized settings to SETTINGS_PATH", async () => {
+    const { writeFileSync } = await import("node:fs");
+    const { writeSettings } = await import("../src/config.js");
+
+    const settings = {
+      db_path: "/some/db.db",
+      model_cache_dir: "/some/models",
+    };
+    writeSettings(settings);
+
+    expect(writeFileSync).toHaveBeenCalledWith(
+      "/test/home/.claude/knowledge-base/settings.json",
+      JSON.stringify(settings, null, 2),
+    );
+  });
+
+  it("sets chmod 600 on settings.json after write", async () => {
+    const { chmodSync } = await import("node:fs");
+    const { writeSettings } = await import("../src/config.js");
+
+    writeSettings({ db_path: "/db", model_cache_dir: "/m" });
+
+    expect(chmodSync).toHaveBeenCalledWith(
+      "/test/home/.claude/knowledge-base/settings.json",
+      0o600,
+    );
+  });
+
+  it("invalidates cache so next loadSettings re-reads from disk", async () => {
+    const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
+    const { loadSettings, writeSettings } = await import("../src/config.js");
+
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({ db_path: "/first.db", model_cache_dir: "/m" }),
+    );
+
+    loadSettings(); // populate cache
+    writeSettings({ db_path: "/second.db", model_cache_dir: "/m" }); // invalidate cache
+
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({ db_path: "/second.db", model_cache_dir: "/m" }),
+    );
+    const s = loadSettings();
+
+    expect(readFileSync).toHaveBeenCalledTimes(2);
+    expect(s.db_path).toBe("/second.db");
+  });
+
+  it("persists team config with identity and workspace team settings", async () => {
+    const { writeFileSync } = await import("node:fs");
+    const { writeSettings } = await import("../src/config.js");
+
+    const settings = {
+      db_path: "/db",
+      model_cache_dir: "/m",
+      identity: { name: "Alice", email: "alice@example.com" },
+      workspaces: {
+        "my-project": {
+          team: {
+            role: "host" as const,
+            secret: "a".repeat(64),
+            noise_keypair: { publicKey: "b".repeat(64), secretKey: "c".repeat(64) },
+            pending_token: "d".repeat(32),
+          },
+        },
+      },
+    };
+    writeSettings(settings);
+
+    const written = JSON.parse(
+      vi.mocked(writeFileSync).mock.calls[0][1] as string,
+    );
+    expect(written.identity.name).toBe("Alice");
+    expect(written.workspaces["my-project"].team.role).toBe("host");
+    expect(written.workspaces["my-project"].team.secret).toBe("a".repeat(64));
   });
 });

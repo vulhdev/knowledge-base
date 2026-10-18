@@ -1,10 +1,24 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, copyFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, renameSync, copyFileSync, unlinkSync } from "node:fs";
+
+export type Identity = { name: string; email: string };
+
+export type NoiseKeypair = { publicKey: string; secretKey: string };
+
+export type WorkspaceTeamConfig = {
+  role: "host" | "peer";
+  secret: string;
+  noise_keypair: NoiseKeypair;
+  pending_token?: string;
+  host_public_key?: string;
+};
 
 export type Settings = {
   db_path: string;
   model_cache_dir: string;
+  identity?: Identity;
+  workspaces?: Record<string, { team?: WorkspaceTeamConfig }>;
 };
 
 const SETTINGS_DIR  = join(homedir(), ".claude", "knowledge-base");
@@ -19,6 +33,13 @@ export function loadSettings(): Settings {
   if (cached) return cached;
   cached = readOrMigrate();
   return cached;
+}
+
+export function writeSettings(settings: Settings): void {
+  mkdirSync(SETTINGS_DIR, { recursive: true });
+  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+  chmodSync(SETTINGS_PATH, 0o600);
+  cached = null;
 }
 
 function readOrMigrate(): Settings {
@@ -48,5 +69,6 @@ function readOrMigrate(): Settings {
   };
 
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+  chmodSync(SETTINGS_PATH, 0o600);
   return settings;
 }
