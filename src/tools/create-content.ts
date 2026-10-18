@@ -4,6 +4,7 @@ import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
 import { typesAfter } from "./_type-order.js";
+import { loadSettings } from "../config.js";
 
 const SUGGEST_LIMIT = 3;
 const SCORE_THRESHOLD = 0.25;
@@ -96,6 +97,7 @@ export async function createContent(
   body: string,
   title?: string,
   requestSampling?: RequestSampling,
+  createdBy?: string,
 ): Promise<CreateContentResult> {
   if (!body.trim()) {
     throw new Error("body must not be empty");
@@ -131,9 +133,12 @@ export async function createContent(
     }
   }
 
+  const identity = loadSettings().identity;
+  const resolvedCreatedBy = createdBy ?? (identity ? `${identity.name} <${identity.email}>` : null);
+
   const { lastInsertRowid } = db
-    .prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)")
-    .run(type, title ?? null, body);
+    .prepare("INSERT INTO contents (type, title, body, created_by, updated_by) VALUES (?, ?, ?, ?, ?)")
+    .run(type, title ?? null, body, resolvedCreatedBy, resolvedCreatedBy);
 
   const contentId = Number(lastInsertRowid);
 
