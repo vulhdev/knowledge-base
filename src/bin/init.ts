@@ -7,6 +7,7 @@ import * as p from "@clack/prompts";
 import { openDb } from "../db/client.js";
 import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
+import { isCrsqliteReady, downloadCrsqlite } from "../team/crsqlite.js";
 
 const CREATE_NEW = "__new__";
 const SKIP = "__skip__";
@@ -173,6 +174,20 @@ async function main(): Promise<void> {
       modelSpinner.stop("Embedding model downloaded.");
     } catch (err) {
       modelSpinner.stop("Model download failed. Run `npx @vulhdev/knowledge-base init` again to retry.");
+      p.log.warn(String(err));
+    }
+  }
+
+  if (isCrsqliteReady()) {
+    p.log.info("cr-sqlite extension already cached — skipping download.");
+  } else {
+    const crsqliteSpinner = p.spinner();
+    crsqliteSpinner.start("Downloading cr-sqlite extension (~1 MB, first time only)…");
+    try {
+      await downloadCrsqlite();
+      crsqliteSpinner.stop("cr-sqlite extension downloaded.");
+    } catch (err) {
+      crsqliteSpinner.stop("cr-sqlite download failed. Run `npx @vulhdev/knowledge-base init` again to retry.");
       p.log.warn(String(err));
     }
   }
