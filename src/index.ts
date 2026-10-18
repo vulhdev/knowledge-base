@@ -25,6 +25,7 @@ import { appendContent } from "./tools/append-content.js";
 import { createVersion } from "./tools/create-version.js";
 import { listVersions } from "./tools/list-versions.js";
 import { insertErrorLog } from "./db/error-log.js";
+import { startSyncIfConfigured } from "./sync/boot.js";
 
 const db = openDb();
 
@@ -513,3 +514,5 @@ server.tool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
+
+startSyncIfConfigured(db);
