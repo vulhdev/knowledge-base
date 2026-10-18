@@ -261,6 +261,31 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
   `);
 
+  // Migration 12: team_peers table + created_by/updated_by on contents
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS team_peers (
+      id           INTEGER PRIMARY KEY NOT NULL,
+      public_key   TEXT UNIQUE NOT NULL,
+      display_name TEXT NOT NULL,
+      is_active    INTEGER NOT NULL DEFAULT 1,
+      joined_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  const hasCreatedBy = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'created_by'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasCreatedBy) {
+    db.exec("ALTER TABLE contents ADD COLUMN created_by TEXT");
+  }
+
+  const hasUpdatedBy = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'updated_by'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasUpdatedBy) {
+    db.exec("ALTER TABLE contents ADD COLUMN updated_by TEXT");
+  }
+
   // Rebuild list-path indexes as partial indexes covering only is_latest=1 rows,
   // so list_contents queries retain their index-scan-ordered plan after the is_latest filter.
   const createdAtIdx = (
