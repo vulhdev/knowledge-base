@@ -9,6 +9,8 @@ import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { isCrsqliteReady, downloadCrsqlite } from "../team/crsqlite.js";
 import { generateTeamConfig } from "../team/generate.js";
+import { generateNoiseKeypair } from "../team/generate.js";
+import { parseInviteKey } from "../team/invite.js";
 import { loadSettings, writeSettings } from "../config.js";
 
 const CREATE_NEW = "__new__";
@@ -215,7 +217,31 @@ async function main(): Promise<void> {
       p.log.success("Team created. Your public key (share with peers to invite them):");
       p.log.info(`  ${cfg.noise_keypair.publicKey}`);
     } else if ((teamMode as string) === "join") {
-      p.log.info("Run `npx @vulhdev/knowledge-base team join <invite-key>` to join a team.");
+      const inviteKey = await p.text({
+        message: "Paste the invite key from your team host:",
+        placeholder: "<64-char host public key>:<32-char token>",
+        validate: (v) => {
+          if (!v?.trim()) return "Invite key cannot be empty";
+          try { parseInviteKey(v.trim()); } catch (e) { return String(e); }
+        },
+      });
+      if (p.isCancel(inviteKey)) { p.cancel("Cancelled."); process.exit(0); }
+
+      const { hostPublicKey, pendingToken } = parseInviteKey((inviteKey as string).trim());
+      const kp = generateNoiseKeypair();
+      const fresh = loadSettings();
+      fresh.workspaces ??= {};
+      fresh.workspaces[workspaceName] ??= {};
+      fresh.workspaces[workspaceName].team = {
+        role: "peer",
+        secret: "",
+        noise_keypair: kp,
+        pending_token: pendingToken,
+        host_public_key: hostPublicKey,
+      };
+      writeSettings(fresh);
+      p.log.success("Join config saved. Start the server to connect to your team host.");
+      p.log.info(`  Your public key: ${kp.publicKey}`);
     }
   } else {
     p.log.info(`Team mode already configured for "${workspaceName}" (role: ${hasTeam.role}).`);
