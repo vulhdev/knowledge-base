@@ -168,7 +168,7 @@ describe("writeSettings", () => {
             role: "host" as const,
             secret: "a".repeat(64),
             noise_keypair: { publicKey: "b".repeat(64), secretKey: "c".repeat(64) },
-            pending_token: "d".repeat(32),
+            pending_github_usernames: ["alice"],
           },
         },
       },

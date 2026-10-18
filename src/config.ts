@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, renameSync, copyFileSync, unlinkSync } from "node:fs";
 
-export type Identity = { name: string; email: string };
+export type Identity = { name: string; email: string; github_username?: string };
 
 export type NoiseKeypair = { publicKey: string; secretKey: string };
 
@@ -10,7 +10,7 @@ export type WorkspaceTeamConfig = {
   role: "host" | "peer";
   secret: string;
   noise_keypair: NoiseKeypair;
-  pending_token?: string;
+  pending_github_usernames?: string[];
   host_public_key?: string;
   last_synced_at?: string;
 };
