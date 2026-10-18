@@ -10,7 +10,7 @@ import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { isCrsqliteReady, downloadCrsqlite } from "../team/crsqlite.js";
 import { generateTeamConfig } from "../team/generate.js";
 import { generateNoiseKeypair } from "../team/generate.js";
-import { parseInviteKey } from "../team/invite.js";
+import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
 import { loadSettings, writeSettings } from "../config.js";
 
 const CREATE_NEW = "__new__";
@@ -201,47 +201,37 @@ async function main(): Promise<void> {
       message: `Enable team mode for workspace "${workspaceName}"?`,
       options: [
         { value: "create", label: "Create new team (you are the host)" },
-        { value: "join",   label: "Join existing team (enter invite key later)" },
         { value: SKIP,    label: "Skip — solo mode" },
       ],
     });
     if (p.isCancel(teamMode)) { p.cancel("Cancelled."); process.exit(0); }
 
     if ((teamMode as string) === "create") {
+      p.log.info("Authenticate with GitHub to verify your identity as team host.");
+      const flow = await startDeviceFlow();
+      p.log.info(`Open ${flow.verificationUri} and enter code: ${flow.userCode}`);
+      const spinner = p.spinner();
+      spinner.start("Waiting for GitHub authorization…");
+      let githubUsername: string;
+      try {
+        const token = await pollForToken(flow.deviceCode, flow.interval, flow.expiresIn);
+        githubUsername = await getGitHubUsername(token);
+        spinner.stop(`Authenticated as @${githubUsername}`);
+      } catch (err) {
+        spinner.stop("GitHub authentication failed");
+        p.log.error(String(err));
+        process.exit(1);
+      }
+
       const cfg = generateTeamConfig();
       const fresh = loadSettings();
       fresh.workspaces ??= {};
       fresh.workspaces[workspaceName] ??= {};
       fresh.workspaces[workspaceName].team = cfg;
+      fresh.identity = { ...(fresh.identity ?? { name: "", email: "" }), github_username: githubUsername };
       writeSettings(fresh);
-      p.log.success("Team created. Your public key (share with peers to invite them):");
-      p.log.info(`  ${cfg.noise_keypair.publicKey}`);
-    } else if ((teamMode as string) === "join") {
-      const inviteKey = await p.text({
-        message: "Paste the invite key from your team host:",
-        placeholder: "<64-char host public key>:<32-char token>",
-        validate: (v) => {
-          if (!v?.trim()) return "Invite key cannot be empty";
-          try { parseInviteKey(v.trim()); } catch (e) { return String(e); }
-        },
-      });
-      if (p.isCancel(inviteKey)) { p.cancel("Cancelled."); process.exit(0); }
-
-      const { hostPublicKey, pendingToken } = parseInviteKey((inviteKey as string).trim());
-      const kp = generateNoiseKeypair();
-      const fresh = loadSettings();
-      fresh.workspaces ??= {};
-      fresh.workspaces[workspaceName] ??= {};
-      fresh.workspaces[workspaceName].team = {
-        role: "peer",
-        secret: "",
-        noise_keypair: kp,
-        pending_token: pendingToken,
-        host_public_key: hostPublicKey,
-      };
-      writeSettings(fresh);
-      p.log.success("Join config saved. Start the server to connect to your team host.");
-      p.log.info(`  Your public key: ${kp.publicKey}`);
+      p.log.success(`Team created. Invite peers with:`);
+      p.log.info(`  knowledge-base team invite --workspace ${workspaceName} @<github-username>`);
     }
   } else {
     p.log.info(`Team mode already configured for "${workspaceName}" (role: ${hasTeam.role}).`);
