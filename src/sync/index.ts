@@ -90,17 +90,18 @@ function handleJoinConnection(
     try {
       const req = JSON.parse(line) as {
         type: string;
-        pendingToken: string;
-        displayName: string;
+        githubToken: string;
         peerPublicKey: string;
       };
       if (req.type !== "join_request") return;
-      const result = handleJoinRequest(db, workspaceName, {
-        pendingToken: req.pendingToken,
-        displayName: req.displayName,
+      handleJoinRequest(db, workspaceName, {
+        githubToken: req.githubToken,
         peerPublicKey: req.peerPublicKey,
+      }).then((result) => {
+        (socket as NodeJS.WritableStream).write(JSON.stringify({ type: "join_result", ...result }) + "\n");
+      }).catch(() => {
+        (socket as NodeJS.WritableStream).write(JSON.stringify({ type: "join_result", accepted: false, reason: "internal error" }) + "\n");
       });
-      (socket as NodeJS.WritableStream).write(JSON.stringify({ type: "join_result", ...result }) + "\n");
     } catch {
       // ignore malformed messages
     }

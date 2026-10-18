@@ -24,7 +24,7 @@ describe("generateInvite", () => {
     vi.clearAllMocks();
   });
 
-  it("returns invite key in <hostPublicKey>:<pendingToken> format", async () => {
+  it("returns invite code in <hostPublicKey>:<workspaceName> format", async () => {
     const { existsSync, readFileSync } = await import("node:fs");
     vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readFileSync).mockReturnValue(
@@ -35,12 +35,11 @@ describe("generateInvite", () => {
       }),
     );
     const { generateInvite } = await import("../../src/team/invite.js");
-    const key = generateInvite("myws");
-    expect(key).toMatch(/^[0-9a-f]{64}:[0-9a-f]{32}$/);
-    expect(key.startsWith("a".repeat(64))).toBe(true);
+    const code = generateInvite("myws", "vulhdev");
+    expect(code).toBe("a".repeat(64) + ":myws");
   });
 
-  it("saves pending_token to settings.json", async () => {
+  it("saves github username to pending_github_usernames in settings.json", async () => {
     const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
     vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readFileSync).mockReturnValue(
@@ -51,11 +50,10 @@ describe("generateInvite", () => {
       }),
     );
     const { generateInvite } = await import("../../src/team/invite.js");
-    const key = generateInvite("myws");
-    const token = key.split(":")[1];
+    generateInvite("myws", "vulhdev");
 
     const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
-    expect(written.workspaces.myws.team.pending_token).toBe(token);
+    expect(written.workspaces.myws.team.pending_github_usernames).toContain("vulhdev");
   });
 
   it("throws when workspace has no team config", async () => {
@@ -65,7 +63,7 @@ describe("generateInvite", () => {
       JSON.stringify({ db_path: "/db", model_cache_dir: "/m" }),
     );
     const { generateInvite } = await import("../../src/team/invite.js");
-    expect(() => generateInvite("myws")).toThrow(/no team config/i);
+    expect(() => generateInvite("myws", "vulhdev")).toThrow(/no team config/i);
   });
 
   it("throws when caller is not the host", async () => {
@@ -81,6 +79,6 @@ describe("generateInvite", () => {
       }),
     );
     const { generateInvite } = await import("../../src/team/invite.js");
-    expect(() => generateInvite("myws")).toThrow(/only the host/i);
+    expect(() => generateInvite("myws", "vulhdev")).toThrow(/only the host/i);
   });
 });

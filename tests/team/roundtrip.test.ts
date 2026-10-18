@@ -1,18 +1,14 @@
 import { describe, it, expect } from "vitest";
 
-describe("invite key roundtrip", () => {
-  it("generateInvite output can be parsed by parseInviteKey", async () => {
-    // This tests the full invite key format contracts work together
-    const { buildInviteKey, parseInviteKey, generatePendingToken } = await import(
-      "../../src/team/invite.js"
-    );
+describe("invite code roundtrip", () => {
+  it("buildInviteCode output can be parsed by parseInviteCode", async () => {
+    const { buildInviteCode, parseInviteCode } = await import("../../src/team/invite.js");
     const { generateNoiseKeypair } = await import("../../src/team/generate.js");
     const kp = generateNoiseKeypair();
-    const token = generatePendingToken();
-    const key = buildInviteKey(kp.publicKey, token);
-    const parsed = parseInviteKey(key);
+    const code = buildInviteCode(kp.publicKey, "my-workspace");
+    const parsed = parseInviteCode(code);
     expect(parsed.hostPublicKey).toBe(kp.publicKey);
-    expect(parsed.pendingToken).toBe(token);
+    expect(parsed.workspaceName).toBe("my-workspace");
   });
 
   it("deriveJoinTopic differs across workspace names", async () => {
@@ -55,10 +51,10 @@ describe("team manifest after kick", () => {
       "d".repeat(64), "Alice",
     );
     const firewallBefore = createFirewall(db);
-    expect(firewallBefore(Buffer.from("d".repeat(64), "hex"))).toBe(false); // allowed
+    expect(firewallBefore(Buffer.from("d".repeat(64), "hex"))).toBe(false);
 
     kickPeer(db, "d".repeat(64));
     const firewallAfter = createFirewall(db);
-    expect(firewallAfter(Buffer.from("d".repeat(64), "hex"))).toBe(true); // now blocked
+    expect(firewallAfter(Buffer.from("d".repeat(64), "hex"))).toBe(true);
   });
 });
