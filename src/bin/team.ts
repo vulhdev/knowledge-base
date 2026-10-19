@@ -2,9 +2,11 @@
 import * as p from "@clack/prompts";
 import Hyperswarm from "hyperswarm";
 import { loadSettings, writeSettings } from "../config.js";
+import { openDb } from "../db/client.js";
 import { generateNoiseKeypair } from "../team/generate.js";
 import { generateInvite, normalizeGithubUsername, parseInviteCode } from "../team/invite.js";
 import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
+import { kickPeer, listPeers, findPeerByUsername } from "../team/kick.js";
 import { deriveJoinTopic } from "../sync/join.js";
 
 const [, , , subcommand, ...args] = process.argv;
@@ -13,11 +15,17 @@ if (subcommand === "invite") {
   await runInvite(args);
 } else if (subcommand === "join") {
   await runJoin(args);
+} else if (subcommand === "list") {
+  await runList(args);
+} else if (subcommand === "kick") {
+  await runKick(args);
 } else {
   console.error(`Unknown team subcommand: ${subcommand ?? "(none)"}`);
   console.error("Usage:");
   console.error("  knowledge-base team invite --workspace <name> @<github-username>");
   console.error("  knowledge-base team join <invite-code>");
+  console.error("  knowledge-base team list --workspace <name>");
+  console.error("  knowledge-base team kick @<github-username> --workspace <name>");
   process.exit(1);
 }
 
@@ -183,4 +191,88 @@ async function attemptJoin(
 
     swarm.on("error", (...args: unknown[]) => reject(args[0]));
   });
+}
+
+async function runList(args: string[]): Promise<void> {
+  const wsIdx = args.indexOf("--workspace");
+  if (wsIdx === -1 || !args[wsIdx + 1]) {
+    console.error("Error: --workspace <name> is required");
+    process.exit(1);
+  }
+  const workspaceName = args[wsIdx + 1];
+
+  const settings = loadSettings();
+  const team = settings.workspaces?.[workspaceName]?.team;
+  if (!team) {
+    console.error(`Error: No team config found for workspace "${workspaceName}"`);
+    process.exit(1);
+  }
+  if (team.role !== "host") {
+    console.error("Error: Only the host can list team members");
+    process.exit(1);
+  }
+
+  const db = openDb();
+  const peers = listPeers(db);
+
+  if (peers.length === 0) {
+    console.log("(No members yet)");
+    return;
+  }
+
+  console.log("Status  Username                         Joined");
+  for (const peer of peers) {
+    const marker = peer.is_active ? "●" : "○";
+    const username = peer.github_username ? `@${peer.github_username}` : peer.display_name;
+    const label = peer.is_active ? username : `${username} (kicked)`;
+    const joined = peer.joined_at.slice(0, 10);
+    console.log(`${marker}       ${label.padEnd(33)}${joined}`);
+  }
+}
+
+async function runKick(args: string[]): Promise<void> {
+  const wsIdx = args.indexOf("--workspace");
+  if (wsIdx === -1 || !args[wsIdx + 1]) {
+    console.error("Error: --workspace <name> is required");
+    process.exit(1);
+  }
+  const workspaceName = args[wsIdx + 1];
+  const usernameRaw = args.find((a) => !a.startsWith("--") && a !== args[wsIdx + 1]);
+  if (!usernameRaw) {
+    console.error("Error: GitHub username is required (e.g. @alice)");
+    process.exit(1);
+  }
+
+  let githubUsername: string;
+  try {
+    githubUsername = normalizeGithubUsername(usernameRaw);
+  } catch (err) {
+    console.error(String(err));
+    process.exit(1);
+  }
+
+  const settings = loadSettings();
+  const team = settings.workspaces?.[workspaceName]?.team;
+  if (!team) {
+    console.error(`Error: No team config found for workspace "${workspaceName}"`);
+    process.exit(1);
+  }
+  if (team.role !== "host") {
+    console.error("Error: Only the host can kick team members");
+    process.exit(1);
+  }
+
+  const db = openDb();
+  const peer = findPeerByUsername(db, githubUsername);
+  if (!peer) {
+    console.error(`Error: Member not found: @${githubUsername}`);
+    process.exit(1);
+  }
+  if (peer.is_active === 0) {
+    console.error(`Error: Member @${githubUsername} is already inactive`);
+    process.exit(1);
+  }
+
+  kickPeer(db, peer.public_key);
+  console.log(`✓ Removed @${githubUsername} from team`);
 }
