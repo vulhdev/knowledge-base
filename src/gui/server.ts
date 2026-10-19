@@ -2,6 +2,7 @@ import express from "express";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
+import { loadSettings } from "../config.js";
 import { listWorkspaces } from "../db/workspaces.js";
 import { listFeatures, listWorkspaceSummaries, listRecentContents, listReviewComments } from "./db.js";
 import { listContents } from "../tools/list-contents.js";
@@ -19,9 +20,11 @@ import {
   renderSearchResults,
   renderErrorList,
   renderDiff,
+  renderTeamPage,
   slugifyTitle,
   buildExportBody,
 } from "./render.js";
+import { listPeers, findPeerByUsername, kickPeer } from "../team/kick.js";
 import { addComment, commitReview } from "../db/reviews.js";
 import { listErrorLogs } from "../db/error-log.js";
 
@@ -51,6 +54,42 @@ export function createApp(db: Database.Database) {
       }
     }
     res.send(renderFeatureList(workspace, features));
+  });
+
+  app.get("/ws/:workspace/team", (req, res) => {
+    const { workspace } = req.params;
+    const team = loadSettings().workspaces?.[workspace]?.team;
+    if (!team || team.role !== "host") {
+      res.status(403).send("<p>Forbidden: only the host can view the team page.</p>");
+      return;
+    }
+    const peers = listPeers(db);
+    res.send(renderTeamPage(workspace, peers));
+  });
+
+  app.post("/ws/:workspace/team/kick", (req, res) => {
+    const { workspace } = req.params;
+    const team = loadSettings().workspaces?.[workspace]?.team;
+    if (!team || team.role !== "host") {
+      res.status(403).send("<p>Forbidden</p>");
+      return;
+    }
+    const { github_username } = req.body as { github_username?: string };
+    if (!github_username) {
+      res.status(400).send("<p>github_username is required</p>");
+      return;
+    }
+    const peer = findPeerByUsername(db, github_username);
+    if (!peer) {
+      res.status(400).send(`<p>Member not found: @${github_username}</p>`);
+      return;
+    }
+    if (peer.is_active === 0) {
+      res.status(400).send(`<p>Member @${github_username} is already inactive</p>`);
+      return;
+    }
+    kickPeer(db, peer.public_key);
+    res.redirect(`/ws/${encodeURIComponent(workspace)}/team`);
   });
 
   app.get("/ws/:workspace/:feature", (req, res) => {
