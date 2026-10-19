@@ -35,9 +35,9 @@ describe("provenance parameter of createContent / updateContent", () => {
 
   it("writes source_key / source_sha in the INSERT and the UPDATE", async () => {
     const db = createTestDb();
-    const { id } = await createContent(db, "ws", ["ft"], "doc", "body", "t", undefined, { source_key: "doc:ws:a.md", source_sha: "s1" });
+    const { id } = await createContent(db, "ws", ["ft"], "doc", "body", "t", undefined, undefined, { source_key: "doc:ws:a.md", source_sha: "s1" });
     expect(prov(db, id)).toEqual({ source_key: "doc:ws:a.md", source_sha: "s1" });
-    await updateContent(db, id, "body 2", undefined, undefined, undefined, { source_key: "doc:ws:a.md", source_sha: "s2" });
+    await updateContent(db, id, "body 2", undefined, undefined, undefined, undefined, { source_key: "doc:ws:a.md", source_sha: "s2" });
     expect(prov(db, id)).toEqual({ source_key: "doc:ws:a.md", source_sha: "s2" });
   });
 
@@ -45,21 +45,21 @@ describe("provenance parameter of createContent / updateContent", () => {
     const db = createTestDb();
     const { id } = await createContent(db, "ws", ["ft"], "doc", "body");
     expect(prov(db, id)).toEqual({ source_key: null, source_sha: null });
-    const keyed = await createContent(db, "ws", ["ft"], "doc", "b", "t", undefined, { source_key: "doc:ws:k.md", source_sha: "x" });
+    const keyed = await createContent(db, "ws", ["ft"], "doc", "b", "t", undefined, undefined, { source_key: "doc:ws:k.md", source_sha: "x" });
     await updateContent(db, keyed.id, "changed by MCP");
     expect(prov(db, keyed.id)).toEqual({ source_key: "doc:ws:k.md", source_sha: "x" });
   });
 
   it("a duplicate source_key aborts the whole write (no orphan row)", async () => {
     const db = createTestDb();
-    await createContent(db, "ws", ["ft"], "doc", "b", "t", undefined, { source_key: "doc:ws:a.md", source_sha: "x" });
-    await expect(createContent(db, "ws", ["ft"], "doc", "b2", "t", undefined, { source_key: "doc:ws:a.md", source_sha: "y" })).rejects.toThrow(/UNIQUE/);
+    await createContent(db, "ws", ["ft"], "doc", "b", "t", undefined, undefined, { source_key: "doc:ws:a.md", source_sha: "x" });
+    await expect(createContent(db, "ws", ["ft"], "doc", "b2", "t", undefined, undefined, { source_key: "doc:ws:a.md", source_sha: "y" })).rejects.toThrow(/UNIQUE/);
     expect((db.prepare("SELECT count(*) AS n FROM contents").get() as { n: number }).n).toBe(1);
   });
 
   it("an SOT card (sot: key) gets no doc sections", async () => {
     const db = createTestDb();
-    const { id } = await createContent(db, "ws-sot", ["F-001"], "sot-spec", "# card\n- path: x", "card", undefined, { source_key: "sot:ws-sot:x.md", source_sha: "s" });
+    const { id } = await createContent(db, "ws-sot", ["F-001"], "sot-spec", "# card\n- path: x", "card", undefined, undefined, { source_key: "sot:ws-sot:x.md", source_sha: "s" });
     expect((db.prepare("SELECT count(*) AS n FROM content_chunks WHERE content_id = ?").get(id) as { n: number }).n).toBe(0);
   });
 });

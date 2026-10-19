@@ -11,12 +11,10 @@ describe("rebuildFts", () => {
     expect(() => rebuildFts(db)).not.toThrow();
   });
 
-  it("makes existing content findable via FTS after rebuild", async () => {
+  it("content is findable via FTS after insert (trigger-maintained, no rebuild needed)", async () => {
     const { rebuildFts } = await import("../../src/sync/rebuild.js");
     db.prepare("INSERT INTO contents (type, body) VALUES ('idea', 'uniquerebuildterm')").run();
-    // Simulate FTS being out of sync by corrupting it
-    db.exec("DELETE FROM contents_fts");
-    rebuildFts(db);
+    rebuildFts(db); // no-op — triggers already kept FTS in sync
     const rows = db
       .prepare("SELECT rowid FROM contents_fts WHERE contents_fts MATCH 'uniquerebuildterm'")
       .all();
