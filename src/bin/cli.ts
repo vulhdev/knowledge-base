@@ -20,12 +20,15 @@ switch (command) {
   case "team":
     await import("./team.js");
     break;
+  case "upgrade":
+    await import("./upgrade.js");
+    break;
   case undefined:
     // No subcommand — start the MCP server (stdio transport, called by Claude Code)
     await import("../index.js");
     break;
   default:
     console.error(`Unknown command: ${command}`);
-    console.error("Usage: knowledge-base [init|gui|update]");
+    console.error("Usage: knowledge-base [init|gui|update|upgrade|status|team|link-code]");
     process.exit(1);
 }
