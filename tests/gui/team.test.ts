@@ -149,7 +149,10 @@ describe("POST /ws/:workspace/team/kick", () => {
 describe("GET /ws/:workspace — Team link", () => {
   let db: Database.Database;
 
-  beforeEach(() => { db = createTestDb(); });
+  beforeEach(() => {
+    db = createTestDb();
+    db.prepare("INSERT INTO workspaces (name) VALUES (?)").run("proj-a");
+  });
 
   it("shows Team link for host workspace", async () => {
     await mockSettings(HOST_SETTINGS);

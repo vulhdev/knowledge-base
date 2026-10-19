@@ -53,7 +53,9 @@ export function createApp(db: Database.Database) {
         return;
       }
     }
-    res.send(renderFeatureList(workspace, features));
+    const team = loadSettings().workspaces?.[workspace]?.team;
+    const hasTeam = team?.role === "host";
+    res.send(renderFeatureList(workspace, features, hasTeam));
   });
 
   app.get("/ws/:workspace/team", (req, res) => {

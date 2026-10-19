@@ -2,10 +2,13 @@ import type { Feature } from "../db.js";
 import type { Content } from "../../types.js";
 import { layout, typeBadge, esc, formatDate } from "./_layout.js";
 
-export function renderFeatureList(workspace: string, features: Feature[]): string {
+export function renderFeatureList(workspace: string, features: Feature[], hasTeam = false): string {
   const crumb = `<p class="breadcrumb"><a href="/">Home</a> / ${esc(workspace)}</p>`;
+  const teamLink = hasTeam
+    ? ` <a href="/ws/${encodeURIComponent(workspace)}/team" class="team-link">Team →</a>`
+    : "";
   if (features.length === 0) {
-    return layout(workspace, crumb + "<p>No features in this workspace.</p>");
+    return layout(workspace, crumb + `<h2>${esc(workspace)}${teamLink}</h2>` + "<p>No features in this workspace.</p>");
   }
   const rows = features
     .map(
@@ -13,7 +16,7 @@ export function renderFeatureList(workspace: string, features: Feature[]): strin
         `<tr><td><a href="/ws/${encodeURIComponent(workspace)}/${encodeURIComponent(f.name)}">${esc(f.name)}</a></td></tr>`,
     )
     .join("\n");
-  const body = `${crumb}<h2>${esc(workspace)}</h2>
+  const body = `${crumb}<h2>${esc(workspace)}${teamLink}</h2>
 <table>
   <thead><tr><th>Feature</th></tr></thead>
   <tbody>${rows}</tbody>
