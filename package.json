@@ -43,6 +43,7 @@
     "@modelcontextprotocol/sdk": "1.12.0",
     "@types/better-sqlite3": "^7.6.13",
     "better-sqlite3": "^12.11.1",
+    "diff": "^9.0.0",
     "express": "^5.2.1",
     "hyperswarm": "^4.17.2",
     "marked": "^18.0.6",
@@ -50,6 +51,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@types/diff": "^7.0.2",
     "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
     "@types/supertest": "^7.2.1",

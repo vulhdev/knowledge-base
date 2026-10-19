@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import type { Content } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { fetchFeatures } from "./_helpers.js";
+import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
 
@@ -46,10 +47,15 @@ export async function patchContent(
     ? bodyRow.body.replaceAll(oldString, newString)
     : bodyRow.body.replace(oldString, newString);
 
-  db.prepare("UPDATE contents SET body = ?, updated_at = datetime('now') WHERE id = ?").run(
-    newBody,
-    id,
-  );
+  const sections = await prepareSections(newBody);
+
+  db.transaction(() => {
+    db.prepare("UPDATE contents SET body = ?, updated_at = datetime('now') WHERE id = ?").run(
+      newBody,
+      id,
+    );
+    writeDocSections(db, id, sections);
+  })();
 
   if (isModelReady()) {
     getEmbedding(newBody)
@@ -60,6 +66,8 @@ export async function patchContent(
       .catch(() => {
         // embedding failure must not prevent content update
       });
+    // section embeddings follow the same fire-and-forget rule (embedDocSections never throws)
+    void embedDocSections(db, id);
   }
 
   const row = db

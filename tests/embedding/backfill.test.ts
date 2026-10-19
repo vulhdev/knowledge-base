@@ -54,7 +54,11 @@ describe("startBackfill", () => {
       startBackfill(db, resolve);
     });
 
-    expect(getEmbedding).not.toHaveBeenCalled();
+    // the document vector is not recomputed (its body is never embedded again);
+    // only the new section rows get vectors
+    expect(vi.mocked(getEmbedding).mock.calls.filter((c) => c[0] === "already embedded").length).toBeLessThanOrEqual(1);
+    const row = db.prepare("SELECT embedding FROM contents WHERE id = ?").get(contentId) as { embedding: Buffer };
+    expect(Buffer.compare(row.embedding, fakeVec)).toBe(0);
   });
 
   it("does nothing when model is not ready", async () => {
@@ -68,5 +72,24 @@ describe("startBackfill", () => {
     });
 
     expect(getEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("re-sections and embeds docs whose sections lack vectors; does nothing without the model", async () => {
+    const { isModelReady, getEmbedding } = await import("../../src/embedding/model.js");
+    const db = createTestDb();
+    const body = "# 見積\n" + "原価に掛率を乗じる。".repeat(10) + "\n## 端数\n" + "切り捨てとする。".repeat(10);
+    await createContent(db, "ws", ["ft"], "doc", body, "T");
+    const pending = () => (db.prepare("SELECT count(*) AS n FROM content_chunks WHERE embedding IS NULL").get() as { n: number }).n;
+    expect(pending()).toBe(2);
+
+    const { startBackfill } = await import("../../src/embedding/backfill.js");
+    await new Promise<void>((resolve) => startBackfill(db, resolve));
+    expect(pending()).toBe(2);
+    expect(getEmbedding).not.toHaveBeenCalled();
+
+    vi.mocked(isModelReady).mockReturnValue(true);
+    await new Promise<void>((resolve) => startBackfill(db, resolve));
+    expect(pending()).toBe(0);
+    expect((db.prepare("SELECT count(*) AS n FROM vec_chunks").get() as { n: number }).n).toBe(2);
   });
 });

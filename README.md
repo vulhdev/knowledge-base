@@ -17,8 +17,10 @@ workspace → feature → content (idea | spec | plan | digest | doc)
 - **Code grounding** — link plan documents to git commits at task granularity; `attach_code_ref` records which commit implements which task, `get_code_refs` returns the full coverage map, `get_content` includes a `has_code_refs` signal so Claude knows to fetch refs without a round-trip
 - **Error log viewer** — every unhandled MCP tool exception is captured to SQLite and viewable in the GUI at `/errors`
 - **SQLite-backed** — single file database via `better-sqlite3`, no external services
+- **Content versioning** — create named snapshots of any document with `create_version`; browse the full version history with `list_versions`; `list_contents` and semantic search always show only the latest version
+- **GitHub-style diff viewer** — compare any two versions of a document in the GUI at `/ws/:workspace/:feature/:id/diff?from=<id>&to=<id>`; line-level unified diff with green additions and red deletions; version compare widget on every content page with ≥ 2 versions
 - **Inline review** — after saving a document, Claude opens a review session in the GUI; select any passage to add an inline comment, commit the review, and Claude processes each comment (edit, clarify, or expand) and marks it resolved — resolved comments are shown with a green badge in the GUI
-- **Claude Code skills** — 13 slash commands for create, list, search, get, update, delete, import, export, explore, digest, doc analysis, review, and resolve feedback
+- **Claude Code skills** — 14 slash commands for create, list, search, get, update, delete, import, export, explore, digest, doc analysis, review, resolve feedback, and version diff
 - **Claude Code agents** — reusable agent personas installed alongside skills; `kb-conflict-resolver` provides deep conflict analysis when `semantic_contradiction` is detected
 
 ## Requirements
@@ -94,7 +96,7 @@ To explore your knowledge base in a browser, run:
 npx @vulhdev/knowledge-base gui
 ```
 
-Opens a web UI at `http://localhost:3000` (override with `PORT=<n>`). Browse workspaces → features → documents, search across all content, open the **Errors** tab to inspect recent MCP tool failures, or view a **review session** with inline comments when opened via `open_for_review`.
+Opens a web UI at `http://localhost:57891` (override with `PORT=<n>`). Browse workspaces → features → documents, search across all content, open the **Errors** tab to inspect recent MCP tool failures, or view a **review session** with inline comments when opened via `open_for_review`. Content pages with multiple versions show a **version compare widget** — pick any two versions and click Compare, or use "What changed?" for a one-click latest-vs-previous diff.
 
 ## Claude Code Skills
 
@@ -115,6 +117,7 @@ Skills use colon namespace notation — type the part after the colon to get aut
 | `/doc` → `knowledge-base:doc` | Analyze a codebase feature and save structured docs (DB schema, backend flow, frontend) |
 | `/review` → `knowledge-base:review` | Proactively open an existing document for inline review in the GUI — creates a review session, prints the URL, waits for the user to commit, then hands off to resolve-feedback |
 | `/resolve-feedback` → `knowledge-base:resolve-feedback` | Process committed inline review comments — classifies each comment by intent (`edit_request`, `clarification`, `expand`, `positive`) and responds accordingly; marks each comment resolved via `resolve_comment` and the review via `resolve_review` |
+| `/diff` → `knowledge-base:diff` | Compare any two versions of a document — resolves the version list, lets you pick two versions interactively, renders a unified diff in chat (`--- removed` / `+++ added`), and prints the GUI diff URL |
 
 ## Claude Code Agents
 
@@ -155,8 +158,12 @@ Lists documents in a workspace, with optional filters for feature and/or type. R
 Semantic (vector) search using a local ONNX embedding model combined with BM25 full-text search via Reciprocal Rank Fusion. Returns a `SearchPage` object — finds relevant content even when exact words don't match. Supports any natural language including Vietnamese.
 
 Ranking signals applied in order:
-- **Vector similarity** (ANN via `sqlite-vec`) + **BM25** (FTS5, title weighted 5× over body) fused with RRF
+- **Vector similarity** (ANN via `sqlite-vec`) over document vectors **and section vectors** — sections are folded back onto their document (best section, small bonus when several match), so a document appears at most once
+- **BM25** (FTS5, title weighted 5× over body) over documents, plus BM25 over SOT pointer tokens; Chinese/Japanese text is indexed as character bigrams, so a two-character term in the middle of a sentence (`掛率`) is found and a longer query (`原価に掛率`) matches as a phrase
+- All lists are fused with RRF
 - **Recency boost** — documents updated more recently score slightly higher (max +20% today, 30-day half-life)
+
+Documents are split into sections by heading (`#`–`####`; small sections merged, large ones cut at paragraph/list/table/fence boundaries). Sections store only offsets and a hash — never text — and are embedded with a `title › heading › …` breadcrumb.
 
 Requires the embedding model to be downloaded first (`npx @vulhdev/knowledge-base init`). Embeddings for new and updated documents are generated automatically; existing documents are backfilled in the background on the next server startup after `init`.
 
@@ -179,6 +186,16 @@ Returns a `SearchPage`:
 }
 ```
 
+Each result may include `matched_sections` (at most 3, most relevant first):
+```json
+"matched_sections": [
+  { "chunk_key": "123#3.2", "heading_path": "Guide › Setup › Ports", "start_line": 120, "end_line": 168 },
+  { "chunk_key": "docs/design/F-002.md#1.3.9", "heading_path": "F-002 … › Use Cases › UC-F002-009 …",
+    "start_line": 408, "end_line": 442, "source_path": "docs/design/F-002.md", "source_commit": "f8c4702a…" }
+]
+```
+`chunk_key` is `<content_id>#<outline>` for documents and `<source_path>#<outline>` for SOT cards (`~n` marks part n of a long section). For an SOT card, open the section with `git -C <repo> show <source_commit>:<source_path>` and read lines `start_line`–`end_line`.
+
 ### `update_content`
 
 Updates the body (and optionally the type and title) of an existing document by ID. Omitting `title` preserves the existing value.
@@ -193,6 +210,42 @@ title  — (optional) new title, omit to keep existing
 ### `delete_content`
 
 Permanently deletes a document by its numeric ID. Returns the deleted document.
+
+```
+id       — document ID
+cascade  — (optional, default false) when true, deletes the entire version chain
+```
+
+Four deletion behaviors depending on the document's position in a version chain:
+- **Sole version** — deletes the document (existing behavior, unchanged)
+- **Non-root version** — deletes only that version; remaining versions are renumbered
+- **Root version, `cascade=false`** — promotes v2 to root (`root_id=NULL`); other chain members updated
+- **Any version, `cascade=true`** — deletes every version in the chain
+
+---
+
+### `create_version`
+
+Creates a new version of an existing document. The new row gets `version_number = prev_max + 1` and `is_latest = 1`; the previous latest row is set to `is_latest = 0`. Features and content links are copied to the new version; code refs are not.
+
+```
+id    — ID of any version in the chain (root or non-root)
+body  — body for the new version
+type  — (optional) new type, omit to keep the same
+title — (optional) new title, omit to keep the same
+```
+
+Returns a `CreateVersionResult` with the new document and `previous_version_id`.
+
+### `list_versions`
+
+Returns all versions in a chain sorted by `version_number ASC`. Safe to call with any version ID in the chain — always resolves to the root and returns the full list.
+
+```
+id  — ID of any version in the chain
+```
+
+Returns `{ root_id, versions: VersionSummary[] }` where each `VersionSummary` includes `id`, `version_number`, `is_latest`, `title`, `created_at`, `updated_at`.
 
 ---
 
@@ -255,7 +308,7 @@ Creates a review session for a document and returns the GUI URL. The user opens 
 
 ```
 content_id  — ID of the document to review
-port        — (optional) GUI server port, default 3000
+port        — (optional) GUI server port, default 57891
 ```
 
 Returns `{ review_id, url, note }`. Does not auto-open a browser — print the URL for the user to open manually. Start the GUI server first with `npx @vulhdev/knowledge-base gui`.
@@ -333,9 +386,10 @@ Beyond the MCP tools, the package exposes a CLI for human developer workflows:
 | Command | Description |
 |---|---|
 | `npx @vulhdev/knowledge-base init` | Link a project to a workspace, download embedding model, install skills and agents |
-| `npx @vulhdev/knowledge-base gui` | Open read-only browser UI at `http://localhost:3000` |
+| `npx @vulhdev/knowledge-base gui` | Open browser UI at `http://localhost:57891` — browse, search, review, and compare versions |
 | `npx @vulhdev/knowledge-base update` | Update installed Claude Code skills to the current version |
 | `npx @vulhdev/knowledge-base link-code` | Link the current HEAD commit to a plan task |
+| `npx @vulhdev/knowledge-base import-sources` | Import doc folders from several clones and git-tracked SOT folders into a database chosen by path |
 
 ### `link-code` subcommand
 
@@ -350,6 +404,23 @@ knowledge-base link-code --content-id 42 --task "Task 2"
 ```
 
 Reads the HEAD commit hash and changed files from git automatically. DB path is resolved from `~/.claude/knowledge-base/settings.json` — no env var setup needed. Prints `✓ Linked commit <hash> → plan #<id> (<task>)` on success.
+
+### `import-sources` subcommand
+
+```bash
+knowledge-base import-sources --db <path> --workspace <name> \
+  [--sot-workspace <name>]   # default "<workspace>-sot"
+  [--ref <git-ref>]          # default: upstream of the current branch, else HEAD
+  [--dry-run] [--plan-out plan.json] [--report report.md] \
+  <source-dir> [<source-dir> …]
+```
+
+- `--db` is required and must not be your live database: the command refuses `~/.claude/knowledge-base/knowledge-base.db` and the `db_path` in `settings.json` (also through symlinks).
+- Each file is classified by git, not by folder name: **tracked and not ignored ⇒ SOT** (a pointer-only card), **ignored or untracked ⇒ content import**.
+- **Content import** (`.md`, `.mmd`): identity is the path under `.claude/claude/` with the clone name dropped. Copies across clones are collapsed — identical ⇒ one doc, one side a superset ⇒ the superset, a FORK ⇒ the most recently modified copy plus a `fork-residue` child doc holding the other side's own lines; identical content under two paths ⇒ one doc (alias in the report); date-suffixed variants (`x.md`, `x-20260828.md`) ⇒ separate docs linked parent → child. `compacts/`, `scratch/`, chain step files, `*.jsonl` and binaries are skipped. Conflict detection (MCP sampling) is not run.
+- **SOT**: one card per file (path, ref, commit of its last change, sha256, read command, heading outline with line ranges, commit history) plus one pointer per section (path, commit, line range, hash, vector). **No SOT sentence is stored**; pointer tokens live in a contentless FTS table. Content is read from the ref, never from the working tree.
+- Provenance is kept in `contents.source_key` / `source_sha`: a second run over unchanged sources writes nothing (`"writes": 0`), a changed file is updated in place (same id), a file removed from the ref loses its card.
+- Output is one JSON line (`docs`, `cards`, `pointers`, `missing_embeddings`, `writes`, …). Exit code `0` ok, `1` content import errors or every SOT file failed, `2` bad arguments or refused database.
 
 ## Database Schema
 
@@ -367,14 +438,19 @@ CREATE TABLE features (
 );
 
 CREATE TABLE contents (
-  id         INTEGER PRIMARY KEY,
-  feature_id INTEGER NOT NULL REFERENCES features(id),
-  type       TEXT NOT NULL,   -- "idea" | "spec" | "plan" | "digest" | "doc"
-  title      TEXT,            -- optional short label
-  body       TEXT NOT NULL,
-  embedding  BLOB,            -- float[384] vector, NULL until model is downloaded
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  id             INTEGER PRIMARY KEY,
+  feature_id     INTEGER NOT NULL REFERENCES features(id),
+  type           TEXT NOT NULL,   -- "idea" | "spec" | "plan" | "digest" | "doc"
+  title          TEXT,            -- optional short label
+  body           TEXT NOT NULL,
+  embedding      BLOB,            -- float[384] vector, NULL until model is downloaded
+  root_id        INTEGER REFERENCES contents(id),  -- NULL on v1; points to root for v2+
+  version_number INTEGER NOT NULL DEFAULT 1,
+  is_latest      INTEGER NOT NULL DEFAULT 1,       -- 1 for the current version, 0 for old
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  source_key     TEXT,            -- import provenance, unique when set (Migration 14)
+  source_sha     TEXT             -- sha256 of the imported body / SOT file (Migration 14)
 );
 
 -- Provenance graph: tracks idea→spec→plan lineage chains
@@ -398,6 +474,30 @@ CREATE TABLE code_refs (
 
 -- Virtual table managed by sqlite-vec; kept in sync via INSERT/UPDATE/DELETE triggers
 CREATE VIRTUAL TABLE vec_contents USING vec0(embedding float[384]);
+
+-- Full-text index: contentless, fed by triggers through kb_cjk_bigram() (Migration 12)
+CREATE VIRTUAL TABLE contents_fts USING fts5(title, body, content='', contentless_delete=1, tokenize='unicode61');
+
+-- Sections of a document (kind 'doc') and SOT pointers (kind 'sot'): offsets/lines + hash, never text (Migration 13)
+CREATE TABLE content_chunks (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  content_id    INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  kind          TEXT NOT NULL,      -- "doc" | "sot"
+  chunk_key     TEXT NOT NULL,      -- outline position, e.g. "3.3.2.1~2"
+  ord           INTEGER NOT NULL,
+  heading_path  TEXT NOT NULL,      -- "H1 › H2 › …"
+  start_char    INTEGER,            -- doc: UTF-16 offsets into contents.body
+  end_char      INTEGER,
+  start_line    INTEGER NOT NULL,   -- 1-based inclusive (doc body / SOT file at source_commit)
+  end_line      INTEGER NOT NULL,
+  source_path   TEXT,               -- SOT only
+  source_commit TEXT,               -- SOT only
+  chunk_sha     TEXT NOT NULL,      -- sha256 of the lines start_line..end_line
+  embedding     BLOB,
+  UNIQUE(content_id, kind, chunk_key)
+);
+CREATE VIRTUAL TABLE vec_chunks USING vec0(embedding float[384]);            -- rowid = content_chunks.id
+CREATE VIRTUAL TABLE sot_chunks_fts USING fts5(heading, body, content='', contentless_delete=1, tokenize='unicode61');
 
 CREATE TABLE error_logs (
   id        INTEGER PRIMARY KEY,
@@ -437,7 +537,74 @@ Existing databases are automatically migrated on startup:
 - `reviews` and `review_comments` tables added if missing (Migration 7)
 - `resolved_at` column added to `review_comments` if missing (Migration 8)
 - Indexes on `contents(created_at)` and `contents(type, created_at)` added if missing (Migration 10)
+- `root_id`, `version_number`, `is_latest` columns added to `contents` if missing, with indexes on `root_id` and `is_latest` (Migration 11)
+- `contents_fts` rebuilt as a contentless table whose triggers index Chinese/Japanese as bigrams via `kb_cjk_bigram()`; refilled from `contents` (Migration 12)
+- `content_chunks`, `sot_chunks_fts` and `vec_chunks` added if missing; existing documents are split into sections and embedded by the background backfill (Migration 13)
+- `contents.source_key` / `source_sha` added with a partial unique index (Migration 14)
+
+> ⚠️ **Downgrade after Migration 12.** The `contents_fts` triggers call `kb_cjk_bigram()`, a function only this version registers. An older `knowledge-base` build — or the `sqlite3` CLI — can still read a migrated database but **every write to `contents` fails** with `no such function: kb_cjk_bigram`. To roll back: `DROP TRIGGER contents_ai; DROP TRIGGER contents_ad; DROP TRIGGER contents_au; DROP TABLE contents_fts;` and start the older build, which recreates its own FTS table (Migration 6).
 - Legacy database at `~/.claude/knowledge-base.db` automatically moved to `~/.claude/knowledge-base/knowledge-base.db` on first startup
+
+## Running from a local checkout
+
+Use this when you work on this repo, or want Claude Code to use your local build instead of the published npm package. One script prepares everything; you run it once after each reboot.
+
+`scripts/kb-up.sh` does, in order:
+
+1. Picks Node 22 (newest `~/.nvm/versions/node/v22.*`, else `node` on `PATH`), runs `npm install` if `node_modules` is missing or stale, and rebuilds `better-sqlite3` if it was compiled for another Node version
+2. Runs `npm run build` if `src/` changed since the last build
+3. Starts the MCP server once to check it answers `initialize` — this also applies every pending migration to your real database
+4. Checks the embedding model is downloaded (warns only; it never downloads ~465 MB on its own)
+5. Registers the MCP server in Claude Code as `kb-local`, **user scope** — available in every project folder — pointing at this checkout's `dist/bin/cli.js` with an absolute Node path
+6. (Re)starts the GUI on port `57891`, detached from the terminal so closing the tab does not stop it
+
+It then reports what is done and what, if anything, is left for you to do.
+
+> The MCP server is not a background service. Claude Code starts its own copy each time you open a session and stops it when you quit — the script only makes sure that start succeeds.
+
+### After every reboot — 3 steps
+
+**1. Open a plain terminal** — not inside Claude Code.
+
+**2. Go to the project you work on and run the script:**
+
+```bash
+cd /path/to/your-project
+/path/to/knowledge-base/scripts/kb-up.sh
+```
+
+**3. At the last question, press Enter:**
+
+```
+Open a Claude Code session in /path/to/your-project now?
+  y / Enter → yes, this terminal becomes that session
+  n         → no; everything stays ready, open sessions yourself later
+[Y/n]
+```
+
+Claude Code opens in your project with the knowledge-base tools available. Paths to your project's code and docs stay relative to your project.
+
+**More sessions at the same time:** open a new terminal tab and run `cd /path/to/your-project && claude`. Do not re-run the script — once per reboot is enough. All sessions share one database and one GUI.
+
+**Do not run the script from inside Claude Code** (for example with `!`): Claude Code's sandbox blocks the GUI from opening its port, and a session is already open anyway.
+
+### Other commands
+
+```bash
+scripts/kb-up.sh --no-launch   # prepare everything, never ask to open Claude Code
+scripts/kb-up.sh status        # show what is running; changes nothing
+scripts/kb-up.sh stop          # stop the GUI
+```
+
+### After pulling new code
+
+Run `scripts/kb-up.sh` again. It rebuilds, and if Claude Code sessions are still running the old build it tells you to type `/mcp` → `kb-local` → **Reconnect** in each of them.
+
+### Notes
+
+- macOS only for now — the script uses BSD `stat` / `date` and `lsof`.
+- If you also installed the plugin (`/plugin install knowledge-base`), Claude Code runs both servers against the same database and lists each tool twice, once per server. Disable one of them.
+- Which workspace a project uses comes from the `KNOWLEDGE_BASE_WORKSPACE=<name>` line in that project's `CLAUDE.md` (written by `init`).
 
 ## Development
 

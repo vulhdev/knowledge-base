@@ -3,12 +3,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
 import { listWorkspaces } from "../db/workspaces.js";
-import { listFeatures, listWorkspaceSummaries, listRecentContents } from "./db.js";
+import { listFeatures, listWorkspaceSummaries, listRecentContents, listReviewComments } from "./db.js";
 import { listContents } from "../tools/list-contents.js";
 import { getContent } from "../tools/get-content.js";
 import { getLineage } from "../tools/get-lineage.js";
+import { listVersions } from "../tools/list-versions.js";
 import { searchSemantic } from "../tools/search-semantic.js";
-import type { LineageResult, Content } from "../types.js";
+import type { LineageResult } from "../types.js";
 import {
   renderWorkspaceList,
   renderFeatureList,
@@ -17,9 +18,11 @@ import {
   renderReview,
   renderSearchResults,
   renderErrorList,
+  renderDiff,
+  slugifyTitle,
+  buildExportBody,
 } from "./render.js";
 import { addComment, commitReview } from "../db/reviews.js";
-import type { ReviewComment } from "../db/reviews.js";
 import { listErrorLogs } from "../db/error-log.js";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -72,7 +75,12 @@ export function createApp(db: Database.Database) {
       const content = getContent(db, id);
       let lineage: LineageResult | undefined;
       try { lineage = getLineage(db, id); } catch { /* no links or db error */ }
-      res.send(renderContent(content, lineage));
+      let versions;
+      try {
+        const vr = listVersions(db, id);
+        if (vr.versions.length >= 2) versions = vr.versions;
+      } catch { /* single-version or db error — no widget */ }
+      res.send(renderContent(content, lineage, versions));
     } catch {
       res.status(404).send("<p>Content not found</p>");
     }
@@ -105,11 +113,7 @@ export function createApp(db: Database.Database) {
     }
     try {
       const content = getContent(db, id);
-      const comments = db
-        .prepare(
-          "SELECT id, review_id, selected_text, comment, created_at FROM review_comments WHERE review_id = ? ORDER BY id",
-        )
-        .all(reviewId) as ReviewComment[];
+      const comments = listReviewComments(db, reviewId);
       res.send(renderReview(content, reviewId, comments));
     } catch {
       res.status(404).send("<p>Content not found</p>");
@@ -159,6 +163,54 @@ export function createApp(db: Database.Database) {
     }
   });
 
+  app.get("/ws/:workspace/:feature/:id/diff", (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(404).send("<p>Not found</p>");
+      return;
+    }
+    try {
+      const { workspace, feature } = req.params;
+      const contentUrl = `/ws/${encodeURIComponent(workspace)}/${encodeURIComponent(feature)}/${id}`;
+
+      let allVersions;
+      try {
+        allVersions = listVersions(db, id);
+      } catch {
+        res.status(404).send("<p>Content not found</p>");
+        return;
+      }
+
+      if (allVersions.versions.length < 2) {
+        res.redirect(contentUrl);
+        return;
+      }
+
+      const latest = allVersions.versions.find((v) => v.is_latest) ?? allVersions.versions[allVersions.versions.length - 1];
+      const secondLatest = allVersions.versions[allVersions.versions.indexOf(latest) - 1] ?? allVersions.versions[0];
+
+      const fromId = req.query.from ? Number(req.query.from) : secondLatest.id;
+      const toId = req.query.to ? Number(req.query.to) : latest.id;
+
+      if (fromId === toId) {
+        res.redirect(contentUrl);
+        return;
+      }
+
+      const ids = new Set(allVersions.versions.map((v) => v.id));
+      if (!ids.has(fromId) || !ids.has(toId)) {
+        res.status(400).send("<p>Versions do not belong to the same document</p>");
+        return;
+      }
+
+      const fromContent = getContent(db, fromId);
+      const toContent = getContent(db, toId);
+      res.send(renderDiff(fromContent, toContent, allVersions.versions));
+    } catch {
+      res.status(404).send("<p>Content not found</p>");
+    }
+  });
+
   app.get("/errors", (_req, res) => {
     const errors = listErrorLogs(db);
     res.send(renderErrorList(errors));
@@ -177,23 +229,4 @@ export function createApp(db: Database.Database) {
   });
 
   return app;
-}
-
-function slugifyTitle(title: string): string {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "content";
-}
-
-function buildExportBody(content: Content): string {
-  const exported = new Date().toISOString().slice(0, 10);
-  const frontmatter = [
-    "---",
-    `title: ${content.title ?? ""}`,
-    `type: ${content.type}`,
-    `feature: ${content.features[0] ?? ""}`,
-    `workspace: ${content.workspace}`,
-    `exported: ${exported}`,
-    "---",
-    "",
-  ].join("\n");
-  return frontmatter + content.body;
 }

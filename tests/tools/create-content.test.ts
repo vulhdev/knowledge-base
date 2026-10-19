@@ -229,4 +229,10 @@ describe("createContent", () => {
       expect(row.ws).toBe("ws");
     }
   });
+
+  it("FTS fallback of suggested_parents finds a doc sharing a Japanese term (CJK is no longer stripped)", async () => {
+    const parent = await createContent(db, "ws-jp", ["ft"], "idea", "見積金額は原価に掛率を乗じて算出する。");
+    const child = await createContent(db, "ws-jp", ["ft"], "spec", "掛率 の 決め方");
+    expect(child.suggested_parents.map((p) => p.id)).toContain(parent.id);
+  });
 });

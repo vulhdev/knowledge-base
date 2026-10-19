@@ -37,6 +37,20 @@ Search the knowledge base for documents stored under the current workspace.
 
    Always include the document ID for follow-up actions (e.g. `get_content` to read the full body).
 
+   When a result has `matched_sections`, show them under it — they say *where* in the document the match is:
+
+   ```
+   #12 · doc · auth — "DB Schema"
+       § DB Schema › Tables › sessions  (L120–168)
+   #57 · sot-spec · F-002 — "F-002-genka-kentosho.md · F-002 原価検討書 …"
+       § … › Use Cases › UC-F002-009 …  (L408–442 @ f8c4702, docs/design/business-design/F-002-genka-kentosho.md)
+   ```
+
+   - Each element is `{chunk_key, heading_path, start_line, end_line}`; at most 3, most relevant first.
+   - For a document, `chunk_key` is `<id>#<outline>` and the lines are lines of its body (`get_content`, then read those lines).
+   - For an SOT card (`source_path` and `source_commit` present) the card body holds no SOT text. Read the section from the repository: `git -C <repo> show <source_commit>:<source_path>` and take lines `start_line`–`end_line` (the card body states the repository path in its `read:` line).
+   - Japanese/Chinese terms are matched even in the middle of a sentence, so a short term such as `掛率` is a good query.
+
 6. If no results are found, suggest broadening the query or listing all contents with `list_contents`.
 
 ## Example invocations
