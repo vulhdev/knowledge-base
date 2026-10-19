@@ -81,12 +81,12 @@ export async function importSotCard(db: Database.Database, card: PlanCard): Prom
   try {
     let id: number;
     if (existing) {
-      await updateContent(db, existing.id, card.body, card.type, card.title, undefined, provenance);
+      await updateContent(db, existing.id, card.body, card.type, card.title, undefined, undefined, provenance);
       id = existing.id;
       // replace, never patch: old pointers (and, via trigger, their vectors and FTS rows) go first
       db.prepare("DELETE FROM content_chunks WHERE content_id = ? AND kind = 'sot'").run(id);
     } else {
-      id = (await createContent(db, card.workspace, card.features, card.type, card.body, card.title, undefined, provenance)).id;
+      id = (await createContent(db, card.workspace, card.features, card.type, card.body, card.title, undefined, undefined, provenance)).id;
     }
     sections.forEach((s, i) => {
       const { lastInsertRowid } = insertPointer.run(

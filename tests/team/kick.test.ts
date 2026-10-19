@@ -33,6 +33,60 @@ describe("kickPeer", () => {
   });
 });
 
+describe("listPeers", () => {
+  let db: Database.Database;
+  beforeEach(() => { db = createTestDb(); });
+
+  it("returns empty array when no peers", async () => {
+    const { listPeers } = await import("../../src/team/kick.js");
+    expect(listPeers(db)).toEqual([]);
+  });
+
+  it("returns all peers sorted by joined_at", async () => {
+    const { listPeers } = await import("../../src/team/kick.js");
+    db.prepare("INSERT INTO team_peers (public_key, display_name, joined_at) VALUES (?, ?, ?)").run("pk2", "Bob", "2026-10-05");
+    db.prepare("INSERT INTO team_peers (public_key, display_name, joined_at) VALUES (?, ?, ?)").run("pk1", "Alice", "2026-10-01");
+    const rows = listPeers(db);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].public_key).toBe("pk1");
+    expect(rows[1].public_key).toBe("pk2");
+  });
+
+  it("includes inactive peers", async () => {
+    const { listPeers } = await import("../../src/team/kick.js");
+    seedPeer(db, "pk1", "Alice");
+    db.prepare("UPDATE team_peers SET is_active = 0 WHERE public_key = 'pk1'").run();
+    const rows = listPeers(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].is_active).toBe(0);
+  });
+});
+
+describe("findPeerByUsername", () => {
+  let db: Database.Database;
+  beforeEach(() => { db = createTestDb(); });
+
+  it("returns undefined when not found", async () => {
+    const { findPeerByUsername } = await import("../../src/team/kick.js");
+    expect(findPeerByUsername(db, "ghost")).toBeUndefined();
+  });
+
+  it("returns public_key and is_active when found", async () => {
+    const { findPeerByUsername } = await import("../../src/team/kick.js");
+    db.prepare("INSERT INTO team_peers (public_key, display_name, github_username) VALUES (?, ?, ?)").run("pk1", "Alice", "alice");
+    const result = findPeerByUsername(db, "alice");
+    expect(result).toEqual({ public_key: "pk1", is_active: 1 });
+  });
+
+  it("returns is_active=0 for kicked peer", async () => {
+    const { findPeerByUsername } = await import("../../src/team/kick.js");
+    db.prepare("INSERT INTO team_peers (public_key, display_name, github_username) VALUES (?, ?, ?)").run("pk1", "Alice", "alice");
+    db.prepare("UPDATE team_peers SET is_active = 0 WHERE public_key = 'pk1'").run();
+    const result = findPeerByUsername(db, "alice");
+    expect(result?.is_active).toBe(0);
+  });
+});
+
 describe("getTeamManifest", () => {
   let db: Database.Database;
   beforeEach(() => { db = createTestDb(); });
