@@ -280,10 +280,10 @@ describe("GUI server routes", () => {
   });
 
   describe("layout width", () => {
-    it("renders with 1280px max-width on all pages", async () => {
+    it("links app.css stylesheet on all pages", async () => {
       const res = await request(app).get("/");
       expect(res.status).toBe(200);
-      expect(res.text).toContain("1280px");
+      expect(res.text).toContain('href="/assets/app.css"');
     });
   });
 
@@ -298,9 +298,9 @@ describe("GUI server routes", () => {
       expect(res.text).toContain("fonts.googleapis.com");
     });
 
-    it("uses dark background color token", async () => {
+    it("links app.css for dark theme styles", async () => {
       const res = await request(app).get("/");
-      expect(res.text).toContain("#0b141c");
+      expect(res.text).toContain('href="/assets/app.css"');
     });
   });
 

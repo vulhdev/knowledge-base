@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { ReviewComment } from "../db/reviews.js";
 
 export type Feature = { id: number; name: string };
 
@@ -62,4 +63,12 @@ export function listWorkspaceSummaries(db: Database.Database): WorkspaceSummary[
        ORDER BY w.name ASC`,
     )
     .all() as WorkspaceSummary[];
+}
+
+export function listReviewComments(db: Database.Database, reviewId: number): ReviewComment[] {
+  return db
+    .prepare(
+      "SELECT id, review_id, selected_text, comment, created_at FROM review_comments WHERE review_id = ? ORDER BY id",
+    )
+    .all(reviewId) as ReviewComment[];
 }
