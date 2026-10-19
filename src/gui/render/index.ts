@@ -7,3 +7,4 @@ export { renderDiff } from "./diff.js";
 export { renderSearchResults } from "./search.js";
 export { renderErrorList } from "./errors.js";
 export { slugifyTitle, buildExportBody } from "./export.js";
+export { renderTeamPage } from "./team.js";
