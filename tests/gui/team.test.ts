@@ -77,6 +77,24 @@ describe("renderTeamPage", () => {
   });
 });
 
+describe("esc() helper", () => {
+  it("SEC-7: escapes single quotes as &#39;", async () => {
+    const { esc } = await import("../../src/gui/render/_layout.js");
+    expect(esc("it's")).toBe("it&#39;s");
+  });
+
+  it("SEC-7: confirm team confirmMsg uses raw username (no double-escape)", async () => {
+    const { renderTeamPage } = await import("../../src/gui/render/team.js");
+    const peers = [{
+      public_key: "pk1", display_name: "@alice", github_username: "alice",
+      is_active: 1, joined_at: "2026-10-01 00:00:00",
+    }];
+    const html = renderTeamPage("my-ws", peers);
+    expect(html).toContain("Remove @alice from team?");
+    expect(html).not.toContain("&amp;");
+  });
+});
+
 // --- Route tests ---
 
 describe("GET /ws/:workspace/team", () => {

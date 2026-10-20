@@ -6,7 +6,7 @@ function renderPeerRow(workspace: string, peer: PeerRow): string {
   const joined = peer.joined_at.slice(0, 10);
 
   if (peer.is_active) {
-    const confirmMsg = `Remove ${username.replace(/&amp;/g, "&")} from team?`;
+    const confirmMsg = `Remove @${peer.github_username ?? peer.display_name} from team?`;
     return `<tr>
       <td class="peer-status">●</td>
       <td class="peer-name">${username}</td>
