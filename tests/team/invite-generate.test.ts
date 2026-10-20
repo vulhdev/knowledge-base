@@ -39,6 +39,29 @@ describe("generateInvite", () => {
     expect(code).toBe("a".repeat(64) + ":myws");
   });
 
+  it("SUGG-2: saves pending_invites entry with invited_at ISO timestamp", async () => {
+    const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({
+        db_path: "/db",
+        model_cache_dir: "/m",
+        workspaces: { myws: { team: MOCK_HOST_CONFIG } },
+      }),
+    );
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T10:00:00.000Z"));
+    const { generateInvite } = await import("../../src/team/invite.js");
+    generateInvite("myws", "vulhdev");
+
+    const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
+    const invites = written.workspaces.myws.team.pending_invites as Array<{ username: string; invited_at: string }>;
+    expect(invites).toHaveLength(1);
+    expect(invites[0].username).toBe("vulhdev");
+    expect(invites[0].invited_at).toBe("2026-10-20T10:00:00.000Z");
+    vi.useRealTimers();
+  });
+
   it("saves github username to pending_github_usernames in settings.json", async () => {
     const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
     vi.mocked(existsSync).mockReturnValue(true);

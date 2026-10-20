@@ -11,6 +11,7 @@ export type ChangesetRow = {
 };
 
 export const MAX_CHANGESET_BYTES = 10 * 1024 * 1024; // 10 MB
+export const MAX_CHANGESET_ROWS = 10_000;
 
 export const CRDT_TABLES = new Set([
   "workspaces",
@@ -43,6 +44,9 @@ export function getChanges(db: Database.Database, sinceVersion: number): Changes
 }
 
 export function applyChanges(db: Database.Database, rows: ChangesetRow[]): void {
+  if (rows.length > MAX_CHANGESET_ROWS) {
+    throw new Error(`Changeset too many rows: ${rows.length} (max ${MAX_CHANGESET_ROWS})`);
+  }
   for (const row of rows) {
     if (!CRDT_TABLES.has(row.tbl)) {
       throw new Error(`Changeset targets non-CRDT table: ${row.tbl}`);

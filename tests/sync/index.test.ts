@@ -180,6 +180,46 @@ describe("handleJoinConnection — security guards", () => {
     expect(response.reason ?? "").not.toMatch(/public key mismatch/i);
   });
 
+  it("unknown message type rejects and destroys socket", async () => {
+    const noiseKeyHex = "a".repeat(64);
+    const noiseKey = Buffer.from(noiseKeyHex, "hex");
+    const db = createTestDb();
+    const { handleJoinConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    let destroyed = false;
+    socket.destroy = () => { destroyed = true; };
+    handleJoinConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream, noiseKey);
+
+    const msg = JSON.stringify({ type: "sync_request", peerPublicKey: noiseKeyHex }) + "\n";
+    socket.emit("data", Buffer.from(msg));
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(destroyed).toBe(true);
+    const last = socket.writes.at(-1);
+    expect(last).toBeDefined();
+    const resp = JSON.parse(last!.toString().trim()) as { accepted: boolean; reason?: string };
+    expect(resp.accepted).toBe(false);
+    expect(resp.reason).toMatch(/expected join_request/i);
+  });
+
+  it("oversized join request destroys socket before handling", async () => {
+    const noiseKey = Buffer.from("a".repeat(64), "hex");
+    const db = createTestDb();
+    const { handleJoinConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    let destroyed = false;
+    socket.destroy = () => { destroyed = true; };
+    handleJoinConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream, noiseKey);
+
+    // 9 KB of data — exceeds MAX_JOIN_REQUEST_BYTES (8 KB)
+    socket.emit("data", Buffer.alloc(9 * 1024, 0x41));
+
+    expect(destroyed).toBe(true);
+    expect(socket.writes).toHaveLength(0); // no response written
+  });
+
   it("ignores a second join_request on the same socket (handled guard)", async () => {
     const noiseKeyHex = "a".repeat(64);
     const noiseKey = Buffer.from(noiseKeyHex, "hex");
@@ -206,8 +246,46 @@ describe("handleJoinConnection — security guards", () => {
 describe("handleSyncConnection — buf framing", () => {
   beforeEach(async () => {
     vi.resetModules();
+    vi.clearAllMocks(); // reset spy call counts so tests don't accumulate
     const { readFileSync } = await import("node:fs");
     vi.mocked(readFileSync).mockReturnValue(JSON.stringify(HOST_SETTINGS));
+  });
+
+  it("two frames in one data event — both are applied", async () => {
+    const db = createSyncTestDb();
+    const { applyChanges, encodeChangeset } = await import("../../src/sync/changeset.js");
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    handleSyncConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream);
+
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+
+    // Build two frames and concatenate into a single data event
+    const frame = (rows: unknown[]) => {
+      const encoded = encodeChangeset(rows as Parameters<typeof encodeChangeset>[0]);
+      const header = Buffer.allocUnsafe(4);
+      header.writeUInt32BE(encoded.length, 0);
+      return Buffer.concat([header, encoded]);
+    };
+    socket.emit("data", Buffer.concat([frame([]), frame([])]));
+
+    expect(vi.mocked(applyChanges)).toHaveBeenCalledTimes(2);
+  });
+
+  it("oversized handshake destroys socket before processing", async () => {
+    const db = createSyncTestDb();
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    let destroyed = false;
+    socket.destroy = () => { destroyed = true; };
+    handleSyncConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream);
+
+    // Send 5 KB without a newline — exceeds MAX_HANDSHAKE_BYTES (4 KB)
+    socket.emit("data", Buffer.alloc(5 * 1024, 0x41));
+
+    expect(destroyed).toBe(true);
   });
 
   it("oversized header closes the socket immediately", async () => {

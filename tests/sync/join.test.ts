@@ -233,6 +233,16 @@ describe("handleJoinRequest (host side)", () => {
     expect(result.accepted).toBe(true);
   });
 
+  it("rejects github token longer than 255 characters", async () => {
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "x".repeat(256),
+      peerPublicKey: "e".repeat(64),
+    });
+    expect(result.accepted).toBe(false);
+    expect((result as { accepted: false; reason: string }).reason).toMatch(/invalid github token/i);
+  });
+
   it("SEC-10: rejects a kicked peer who re-joins under a new keypair", async () => {
     const { getGitHubUsername } = await import("../../src/team/github.js");
     vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");

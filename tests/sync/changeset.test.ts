@@ -95,6 +95,15 @@ describe("applyChanges", () => {
     expect(() => applyChanges({} as unknown as Database.Database, rows)).toThrow(/non-CRDT table/i);
   });
 
+  it("throws when row count exceeds MAX_CHANGESET_ROWS", async () => {
+    const { applyChanges, MAX_CHANGESET_ROWS } = await import("../../src/sync/changeset.js");
+    const rows = Array.from({ length: MAX_CHANGESET_ROWS + 1 }, () => ({
+      tbl: "contents", pk: "01", cid: "title", val: "x",
+      col_version: 1, db_version: 1, site_id: "aa",
+    }));
+    expect(() => applyChanges({} as unknown as Database.Database, rows)).toThrow(/too many rows/i);
+  });
+
   it("SEC-2: CRDT_TABLES export contains the five registered tables", async () => {
     const { CRDT_TABLES } = await import("../../src/sync/changeset.js");
     expect(CRDT_TABLES.has("workspaces")).toBe(true);

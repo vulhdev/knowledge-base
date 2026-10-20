@@ -37,6 +37,10 @@ export async function handleJoinRequest(
     return { accepted: false, reason: "no pending invites" };
   }
 
+  if (!req.githubToken || req.githubToken.length > 255) {
+    return { accepted: false, reason: "invalid github token" };
+  }
+
   let username: string;
   try {
     username = await getGitHubUsername(req.githubToken);

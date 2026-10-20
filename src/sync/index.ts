@@ -3,6 +3,9 @@ import Hyperswarm from "hyperswarm";
 import { createSwarm } from "./peer.js";
 import { deriveJoinTopic, handleJoinRequest } from "./join.js";
 import { decodeChangeset, encodeChangeset, getChanges, applyChanges, MAX_CHANGESET_BYTES } from "./changeset.js";
+
+const MAX_HANDSHAKE_BYTES = 4 * 1024;   // generous for {"v":1,"dbVersion":9999999}
+const MAX_JOIN_REQUEST_BYTES = 8 * 1024; // generous for a join_request JSON
 import { rebuildFts } from "./rebuild.js";
 import { loadSettings, writeSettings } from "../config.js";
 
@@ -43,6 +46,10 @@ export function handleSyncConnection(db: Database.Database, workspaceName: strin
     buf = Buffer.concat([buf, chunk]);
 
     if (peerVersion === null) {
+      if (buf.length > MAX_HANDSHAKE_BYTES) {
+        (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy();
+        return;
+      }
       const newline = buf.indexOf(0x0a);
       if (newline === -1) return;
       const line = buf.slice(0, newline).toString("utf8");
@@ -58,11 +65,12 @@ export function handleSyncConnection(db: Database.Database, workspaceName: strin
       } catch {
         return;
       }
-    } else if (buf.length >= 4) {
-      const size = buf.readUInt32BE(0);
-      if (size === 0) { buf = buf.slice(4); return; }
-      if (size > MAX_CHANGESET_BYTES) { (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy(); return; }
-      if (buf.length >= 4 + size) {
+    } else {
+      while (buf.length >= 4) {
+        const size = buf.readUInt32BE(0);
+        if (size === 0) { buf = buf.slice(4); continue; }
+        if (size > MAX_CHANGESET_BYTES) { (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy(); return; }
+        if (buf.length < 4 + size) break;
         try {
           const rows = decodeChangeset(buf.slice(4, 4 + size));
           applyChanges(db, rows);
@@ -88,6 +96,10 @@ export function handleJoinConnection(
 
   const dataHandler = (chunk: Buffer) => {
     buf = Buffer.concat([buf, chunk]);
+    if (buf.length > MAX_JOIN_REQUEST_BYTES) {
+      (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy();
+      return;
+    }
     const newline = buf.indexOf(0x0a);
     if (newline === -1) return;
     if (handled) return;
@@ -102,7 +114,13 @@ export function handleJoinConnection(
         peerPublicKey: string;
         githubUsername?: string;
       };
-      if (req.type !== "join_request") return;
+      if (req.type !== "join_request") {
+        (socket as NodeJS.WritableStream).write(
+          JSON.stringify({ type: "join_result", accepted: false, reason: "expected join_request" }) + "\n",
+        );
+        (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy();
+        return;
+      }
       if (req.peerPublicKey !== noisePublicKey.toString("hex")) {
         (socket as NodeJS.WritableStream).write(
           JSON.stringify({ type: "join_result", accepted: false, reason: "public key mismatch" }) + "\n",

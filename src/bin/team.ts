@@ -108,19 +108,22 @@ async function runJoin(args: string[]): Promise<void> {
   spinner.start(`Connecting to host…`);
 
   const swarm = new Hyperswarm();
-  const result = await Promise.race([
-    attemptJoin(swarm, hostPublicKey, workspaceName, kp.publicKey, githubToken, githubUsername),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => {
-        swarm.destroy().catch(() => undefined);
-        reject(new Error("Host is not online, try again when host is running"));
-      }, 30_000),
-    ),
-  ]).catch((err: Error) => {
+  let result: { accepted: true; secret: string } | { accepted: false; reason: string };
+  try {
+    result = await Promise.race([
+      attemptJoin(swarm, hostPublicKey, workspaceName, kp.publicKey, githubToken, githubUsername),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => {
+          swarm.destroy().catch(() => undefined);
+          reject(new Error("Host is not online, try again when host is running"));
+        }, 30_000),
+      ),
+    ]);
+  } catch (err: unknown) {
     spinner.stop("Connection failed");
-    p.log.error(err.message);
+    p.log.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
-  });
+  }
 
   if (!result.accepted) {
     spinner.stop("Join rejected");
