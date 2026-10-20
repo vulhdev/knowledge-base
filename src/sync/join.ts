@@ -77,6 +77,13 @@ export async function handleJoinRequest(
       return { accepted: false, reason: `@${username} is not invited` };
     }
 
+    const kicked = db
+      .prepare("SELECT 1 FROM team_peers WHERE github_username = ? AND is_active = 0")
+      .get(username);
+    if (kicked) {
+      return { accepted: false, reason: `@${username} has been removed from this team` };
+    }
+
     db.prepare(
       "INSERT OR IGNORE INTO team_peers (public_key, display_name, github_username) VALUES (?, ?, ?)",
     ).run(req.peerPublicKey, `@${username}`, username);

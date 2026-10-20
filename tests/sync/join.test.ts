@@ -233,6 +233,24 @@ describe("handleJoinRequest (host side)", () => {
     expect(result.accepted).toBe(true);
   });
 
+  it("SEC-10: rejects a kicked peer who re-joins under a new keypair", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    // Pre-insert a kicked row for vulhdev with an old keypair
+    db.prepare(
+      "INSERT INTO team_peers (public_key, display_name, github_username, is_active) VALUES (?, ?, ?, 0)",
+    ).run("old".repeat(21) + "x", "@vulhdev", "vulhdev"); // 64-char hex-ish key
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "e".repeat(64), // new keypair
+    });
+    expect(result.accepted).toBe(false);
+    expect((result as { accepted: false; reason: string }).reason).toMatch(/removed/i);
+  });
+
   it("TOCTOU: second concurrent join for same username is rejected", async () => {
     // Use a stateful settings store so writeSettings propagates to subsequent loadSettings calls
     const { readFileSync, writeFileSync } = await import("node:fs");
