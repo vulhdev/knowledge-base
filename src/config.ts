@@ -11,6 +11,8 @@ export type PendingInvite = { username: string; invited_at: string };
 export type WorkspaceTeamConfig = {
   role: "host" | "peer";
   secret: string;
+  // noise_keypair.secretKey is stored unencrypted in settings.json (mode 0600).
+  // Future: encrypt at rest with a passphrase or OS keychain.
   noise_keypair: NoiseKeypair;
   pending_github_usernames?: string[];
   pending_invites?: PendingInvite[];
