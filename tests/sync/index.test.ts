@@ -210,6 +210,27 @@ describe("handleSyncConnection — buf framing", () => {
     vi.mocked(readFileSync).mockReturnValue(JSON.stringify(HOST_SETTINGS));
   });
 
+  it("oversized header closes the socket immediately", async () => {
+    const db = createSyncTestDb();
+    const { MAX_CHANGESET_BYTES } = await import("../../src/sync/changeset.js");
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    let destroyed = false;
+    socket.destroy = () => { destroyed = true; };
+    handleSyncConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream);
+
+    // Complete handshake
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+
+    // Send a header claiming MAX+1 bytes
+    const oversizedHeader = Buffer.allocUnsafe(4);
+    oversizedHeader.writeUInt32BE(MAX_CHANGESET_BYTES + 1, 0);
+    socket.emit("data", oversizedHeader);
+
+    expect(destroyed).toBe(true);
+  });
+
   it("size === 0 keep-alive: buf advances so next valid frame is processed", async () => {
     const db = createSyncTestDb();
     const { applyChanges, encodeChangeset } = await import("../../src/sync/changeset.js");

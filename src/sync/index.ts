@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import Hyperswarm from "hyperswarm";
 import { createSwarm } from "./peer.js";
 import { deriveJoinTopic, handleJoinRequest } from "./join.js";
-import { decodeChangeset, encodeChangeset, getChanges, applyChanges } from "./changeset.js";
+import { decodeChangeset, encodeChangeset, getChanges, applyChanges, MAX_CHANGESET_BYTES } from "./changeset.js";
 import { rebuildFts } from "./rebuild.js";
 import { loadSettings, writeSettings } from "../config.js";
 
@@ -61,6 +61,7 @@ export function handleSyncConnection(db: Database.Database, workspaceName: strin
     } else if (buf.length >= 4) {
       const size = buf.readUInt32BE(0);
       if (size === 0) { buf = buf.slice(4); return; }
+      if (size > MAX_CHANGESET_BYTES) { (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy(); return; }
       if (buf.length >= 4 + size) {
         try {
           const rows = decodeChangeset(buf.slice(4, 4 + size));
