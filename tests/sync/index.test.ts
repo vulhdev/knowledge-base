@@ -20,6 +20,14 @@ vi.mock("hyperswarm", () => ({
   })),
 }));
 
+vi.mock("../../src/sync/join.js", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../src/sync/join.js")>();
+  return {
+    ...orig,
+    handleJoinRequest: vi.fn().mockResolvedValue({ accepted: true, secret: "s".repeat(64) }),
+  };
+});
+
 vi.mock("../../src/sync/changeset.js", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../src/sync/changeset.js")>();
   return { ...orig, getChanges: vi.fn().mockReturnValue([]), applyChanges: vi.fn() };
@@ -118,6 +126,82 @@ function createSyncTestDb() {
   );
   return db;
 }
+
+describe("handleJoinConnection — security guards", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(HOST_SETTINGS));
+  });
+
+  it("rejects join_request when wire peerPublicKey differs from Noise transport key", async () => {
+    const noiseKey = Buffer.from("a".repeat(64), "hex");
+    const db = createTestDb();
+    const { handleJoinConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    handleJoinConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream, noiseKey);
+
+    const msg = JSON.stringify({
+      type: "join_request",
+      githubToken: "gho_abc",
+      peerPublicKey: "b".repeat(64), // different from noiseKey's hex
+      githubUsername: "vulhdev",
+    });
+    socket.emit("data", Buffer.from(msg + "\n"));
+
+    await new Promise((r) => setTimeout(r, 10));
+    const response = JSON.parse(socket.writes.at(-1)!.toString().trim()) as { accepted: boolean; reason?: string };
+    expect(response.accepted).toBe(false);
+    expect(response.reason).toMatch(/public key mismatch/i);
+  });
+
+  it("does not reject join_request when wire peerPublicKey matches Noise transport key", async () => {
+    const noiseKeyHex = "a".repeat(64);
+    const noiseKey = Buffer.from(noiseKeyHex, "hex");
+    const db = createTestDb();
+    const { handleJoinConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    handleJoinConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream, noiseKey);
+
+    const msg = JSON.stringify({
+      type: "join_request",
+      githubToken: "gho_abc",
+      peerPublicKey: noiseKeyHex,
+      githubUsername: "vulhdev",
+    });
+    socket.emit("data", Buffer.from(msg + "\n"));
+
+    await new Promise((r) => setTimeout(r, 20));
+    const lastWrite = socket.writes.at(-1);
+    expect(lastWrite).toBeDefined();
+    const response = JSON.parse(lastWrite!.toString().trim()) as { reason?: string };
+    expect(response.reason ?? "").not.toMatch(/public key mismatch/i);
+  });
+
+  it("ignores a second join_request on the same socket (handled guard)", async () => {
+    const noiseKeyHex = "a".repeat(64);
+    const noiseKey = Buffer.from(noiseKeyHex, "hex");
+    const db = createTestDb();
+    const { handleJoinConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    handleJoinConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream, noiseKey);
+
+    const msg = JSON.stringify({
+      type: "join_request",
+      githubToken: "gho_abc",
+      peerPublicKey: noiseKeyHex,
+    }) + "\n";
+
+    // Two messages in one data event — only one response should be sent
+    socket.emit("data", Buffer.from(msg + msg));
+
+    await new Promise((r) => setTimeout(r, 30));
+    expect(socket.writes).toHaveLength(1);
+  });
+});
 
 describe("handleSyncConnection — buf framing", () => {
   beforeEach(async () => {

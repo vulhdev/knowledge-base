@@ -76,18 +76,24 @@ export function handleSyncConnection(db: Database.Database, workspaceName: strin
   });
 }
 
-function handleJoinConnection(
+export function handleJoinConnection(
   db: Database.Database,
   workspaceName: string,
   socket: NodeJS.ReadWriteStream,
+  noisePublicKey: Buffer,
 ): void {
   let buf = Buffer.alloc(0);
-  (socket as NodeJS.ReadableStream).on("data", (chunk: Buffer) => {
+  let handled = false;
+
+  const dataHandler = (chunk: Buffer) => {
     buf = Buffer.concat([buf, chunk]);
     const newline = buf.indexOf(0x0a);
     if (newline === -1) return;
+    if (handled) return;
+    handled = true;
+    (socket as NodeJS.ReadableStream).removeListener("data", dataHandler);
+
     const line = buf.slice(0, newline).toString("utf8");
-    buf = buf.slice(newline + 1);
     try {
       const req = JSON.parse(line) as {
         type: string;
@@ -96,20 +102,36 @@ function handleJoinConnection(
         githubUsername?: string;
       };
       if (req.type !== "join_request") return;
+      if (req.peerPublicKey !== noisePublicKey.toString("hex")) {
+        (socket as NodeJS.WritableStream).write(
+          JSON.stringify({ type: "join_result", accepted: false, reason: "public key mismatch" }) + "\n",
+        );
+        return;
+      }
       handleJoinRequest(db, workspaceName, {
         githubToken: req.githubToken,
         peerPublicKey: req.peerPublicKey,
         githubUsername: req.githubUsername,
       }).then((result) => {
-        (socket as NodeJS.WritableStream).write(JSON.stringify({ type: "join_result", ...result }) + "\n");
+        if ((socket as unknown as MockableSocket).writable !== false) {
+          (socket as NodeJS.WritableStream).write(JSON.stringify({ type: "join_result", ...result }) + "\n");
+        }
       }).catch(() => {
-        (socket as NodeJS.WritableStream).write(JSON.stringify({ type: "join_result", accepted: false, reason: "internal error" }) + "\n");
+        if ((socket as unknown as MockableSocket).writable !== false) {
+          (socket as NodeJS.WritableStream).write(
+            JSON.stringify({ type: "join_result", accepted: false, reason: "internal error" }) + "\n",
+          );
+        }
       });
     } catch {
       // ignore malformed messages
     }
-  });
+  };
+
+  (socket as NodeJS.ReadableStream).on("data", dataHandler);
 }
+
+type MockableSocket = { writable?: boolean };
 
 export function startSync(db: Database.Database, workspaceName: string): SyncHandle {
   const settings = loadSettings();
@@ -129,8 +151,8 @@ export function startSync(db: Database.Database, workspaceName: string): SyncHan
     };
     joinSwarm = new Hyperswarm({ keyPair });
     joinSwarm.join(deriveJoinTopic(workspaceName, team.noise_keypair.publicKey));
-    joinSwarm.on("connection", (socket: NodeJS.ReadWriteStream) => {
-      handleJoinConnection(db, workspaceName, socket);
+    joinSwarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
+      handleJoinConnection(db, workspaceName, socket, info.publicKey);
     });
   }
 
