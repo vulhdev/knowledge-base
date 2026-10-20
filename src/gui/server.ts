@@ -93,11 +93,11 @@ export function createApp(db: Database.Database) {
     }
     const peer = findPeerByUsername(db, github_username);
     if (!peer) {
-      res.status(400).send(`<p>Member not found: @${github_username}</p>`);
+      res.status(400).send(`<p>Member not found: @${esc(github_username)}</p>`);
       return;
     }
     if (peer.is_active === 0) {
-      res.status(400).send(`<p>Member @${github_username} is already inactive</p>`);
+      res.status(400).send(`<p>Member @${esc(github_username)} is already inactive</p>`);
       return;
     }
     kickPeer(db, peer.public_key);

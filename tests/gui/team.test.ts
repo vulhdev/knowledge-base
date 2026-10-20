@@ -166,6 +166,26 @@ describe("POST /ws/:workspace/team/kick", () => {
     expect(res.status).toBe(400);
   });
 
+  it("SEC-5: escapes github_username in 400 'not found' response", async () => {
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "http://localhost")
+      .send({ github_username: "<script>alert(1)</script>" });
+    expect(res.status).toBe(400);
+    expect(res.text).not.toContain("<script>");
+    expect(res.text).toContain("&lt;script&gt;");
+  });
+
+  it("SEC-5: escapes github_username in 400 'already inactive' response", async () => {
+    db.prepare("UPDATE team_peers SET is_active = 0 WHERE github_username = 'alice'").run();
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "http://localhost")
+      .send({ github_username: "alice<script>" });
+    expect(res.status).toBe(400);
+    expect(res.text).not.toContain("<script>");
+  });
+
   it("returns 400 for already-kicked member", async () => {
     db.prepare("UPDATE team_peers SET is_active = 0 WHERE github_username = 'alice'").run();
     const res = await request(app)
