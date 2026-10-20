@@ -92,11 +92,13 @@ function handleJoinConnection(
         type: string;
         githubToken: string;
         peerPublicKey: string;
+        githubUsername?: string;
       };
       if (req.type !== "join_request") return;
       handleJoinRequest(db, workspaceName, {
         githubToken: req.githubToken,
         peerPublicKey: req.peerPublicKey,
+        githubUsername: req.githubUsername,
       }).then((result) => {
         (socket as NodeJS.WritableStream).write(JSON.stringify({ type: "join_result", ...result }) + "\n");
       }).catch(() => {

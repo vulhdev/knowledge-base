@@ -108,7 +108,7 @@ async function runJoin(args: string[]): Promise<void> {
   spinner.start(`Connecting to host…`);
 
   const result = await Promise.race([
-    attemptJoin(hostPublicKey, workspaceName, kp.publicKey, githubToken),
+    attemptJoin(hostPublicKey, workspaceName, kp.publicKey, githubToken, githubUsername),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("Host is not online, try again when host is running")), 30_000),
     ),
@@ -149,6 +149,7 @@ async function attemptJoin(
   workspaceName: string,
   peerPublicKey: string,
   githubToken: string,
+  githubUsername: string,
 ): Promise<{ accepted: true; secret: string } | { accepted: false; reason: string }> {
   const swarm = new Hyperswarm();
   const joinTopic = deriveJoinTopic(workspaceName, hostPublicKey);
@@ -166,6 +167,7 @@ async function attemptJoin(
         type: "join_request",
         githubToken,
         peerPublicKey,
+        githubUsername,
       });
       (socket as NodeJS.WritableStream).write(msg + "\n");
 

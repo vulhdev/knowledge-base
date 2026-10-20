@@ -6,6 +6,7 @@ import type Database from "better-sqlite3";
 export type JoinRequest = {
   githubToken: string;
   peerPublicKey: string;
+  githubUsername?: string;
 };
 
 export type JoinResult =
@@ -39,6 +40,10 @@ export async function handleJoinRequest(
     username = await getGitHubUsername(req.githubToken);
   } catch {
     return { accepted: false, reason: "GitHub token verification failed" };
+  }
+
+  if (req.githubUsername !== undefined && req.githubUsername !== username) {
+    return { accepted: false, reason: `username mismatch: claimed @${req.githubUsername} but token resolves to @${username}` };
   }
 
   if (pendingInvites !== undefined) {

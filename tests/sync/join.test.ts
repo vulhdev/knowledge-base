@@ -186,6 +186,33 @@ describe("handleJoinRequest (host side)", () => {
     });
     expect(result.accepted).toBe(true);
   });
+
+  it("SUGG-1: rejects when claimed githubUsername does not match resolved token", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "e".repeat(64),
+      githubUsername: "hacker",
+    });
+    expect(result.accepted).toBe(false);
+    expect((result as { accepted: false; reason: string }).reason).toMatch(/username mismatch/i);
+  });
+
+  it("SUGG-1: accepts when claimed githubUsername matches resolved token", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "e".repeat(64),
+      githubUsername: "vulhdev",
+    });
+    expect(result.accepted).toBe(true);
+  });
 });
 
 describe("deriveJoinTopic", () => {
