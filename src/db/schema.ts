@@ -404,6 +404,17 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE contents ADD COLUMN source_sha TEXT");
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_contents_source_key ON contents(source_key) WHERE source_key IS NOT NULL");
+
+  // Migration 17: register CRDT-replicated tables with cr-sqlite (idempotent)
+  // Only runs when the cr-sqlite extension is loaded in this DB instance.
+  const isCrsqlLoaded = (() => {
+    try { db.prepare("SELECT crsql_site_id()").get(); return true; } catch { return false; }
+  })();
+  if (isCrsqlLoaded) {
+    for (const tbl of ["workspaces", "features", "contents", "content_features", "content_links"]) {
+      db.exec(`SELECT crsql_as_crr('${tbl}')`);
+    }
+  }
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {
