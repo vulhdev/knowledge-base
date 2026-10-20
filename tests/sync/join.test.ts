@@ -201,6 +201,25 @@ describe("handleJoinRequest (host side)", () => {
     expect((result as { accepted: false; reason: string }).reason).toMatch(/username mismatch/i);
   });
 
+  it("accepts user in pending_github_usernames when pending_invites is empty array", async () => {
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(
+      makeSettingsJson({
+        pending_github_usernames: ["vulhdev"],
+        pending_invites: [], // empty array — not undefined
+      }),
+    );
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const result = await handleJoinRequest(createTestDb(), "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "e".repeat(64),
+    });
+    expect(result.accepted).toBe(true);
+  });
+
   it("SUGG-1: accepts when claimed githubUsername matches resolved token", async () => {
     const { getGitHubUsername } = await import("../../src/team/github.js");
     vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");

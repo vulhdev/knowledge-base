@@ -63,13 +63,17 @@ export async function handleJoinRequest(
     const freshPendingInvites = freshTeam.pending_invites;
     const freshPendingUsernames = freshTeam.pending_github_usernames ?? [];
 
-    if (freshPendingInvites !== undefined) {
+    let foundViaInvite = false;
+    if (freshPendingInvites !== undefined && freshPendingInvites.length > 0) {
       const invite = freshPendingInvites.find((i) => i.username === username);
-      if (!invite) return { accepted: false, reason: `@${username} is not invited` };
-      if (Date.now() - new Date(invite.invited_at).getTime() > INVITE_TTL_MS) {
-        return { accepted: false, reason: `invite for @${username} has expired` };
+      if (invite) {
+        if (Date.now() - new Date(invite.invited_at).getTime() > INVITE_TTL_MS) {
+          return { accepted: false, reason: `invite for @${username} has expired` };
+        }
+        foundViaInvite = true;
       }
-    } else if (!freshPendingUsernames.includes(username)) {
+    }
+    if (!foundViaInvite && !freshPendingUsernames.includes(username)) {
       return { accepted: false, reason: `@${username} is not invited` };
     }
 
