@@ -3,14 +3,26 @@ import Hyperswarm from "hyperswarm";
 import { createSwarm } from "./peer.js";
 import { deriveJoinTopic, handleJoinRequest } from "./join.js";
 import { decodeChangeset, encodeChangeset, getChanges, applyChanges, MAX_CHANGESET_BYTES } from "./changeset.js";
-
-const MAX_HANDSHAKE_BYTES = 4 * 1024;   // generous for {"v":1,"dbVersion":9999999}
-const MAX_JOIN_REQUEST_BYTES = 8 * 1024; // generous for a join_request JSON
+import type { ChangesetRow } from "./changeset.js";
+import type { ActivityLogger } from "./activity.js";
 import { rebuildFts } from "./rebuild.js";
 import { loadSettings, writeSettings } from "../config.js";
 
+const MAX_HANDSHAKE_BYTES = 4 * 1024;   // generous for {"v":1,"dbVersion":9999999}
+const MAX_JOIN_REQUEST_BYTES = 8 * 1024; // generous for a join_request JSON
+
 export type SyncHandle = {
   destroy: () => Promise<void>;
+};
+
+type SyncCallbacks = {
+  onChangesReceived?: (rows: ChangesetRow[]) => void;
+  onChangesSent?: (count: number) => void;
+};
+
+type JoinCallbacks = {
+  onJoinAttempt?: (githubUsername: string) => void;
+  onJoinResult?: (githubUsername: string, accepted: boolean, reason?: string) => void;
 };
 
 export function recordSyncTimestamp(workspaceName: string): void {
@@ -25,7 +37,12 @@ type HandshakeMsg = { v: number; dbVersion: number };
 
 const PROTOCOL_VERSION = 1;
 
-export function handleSyncConnection(db: Database.Database, workspaceName: string, socket: NodeJS.ReadWriteStream): void {
+export function handleSyncConnection(
+  db: Database.Database,
+  workspaceName: string,
+  socket: NodeJS.ReadWriteStream,
+  callbacks?: SyncCallbacks,
+): void {
   let localDbVersion = 0;
   try {
     const row = db
@@ -62,6 +79,7 @@ export function handleSyncConnection(db: Database.Database, workspaceName: strin
         const header = Buffer.allocUnsafe(4);
         header.writeUInt32BE(encoded.length, 0);
         (socket as NodeJS.WritableStream).write(Buffer.concat([header, encoded]));
+        if (changes.length > 0) callbacks?.onChangesSent?.(changes.length);
       } catch {
         return;
       }
@@ -76,6 +94,7 @@ export function handleSyncConnection(db: Database.Database, workspaceName: strin
           applyChanges(db, rows);
           rebuildFts(db);
           recordSyncTimestamp(workspaceName);
+          if (rows.length > 0) callbacks?.onChangesReceived?.(rows);
         } catch {
           // ignore bad changeset
         }
@@ -90,6 +109,7 @@ export function handleJoinConnection(
   workspaceName: string,
   socket: NodeJS.ReadWriteStream,
   noisePublicKey: Buffer,
+  callbacks?: JoinCallbacks,
 ): void {
   let buf = Buffer.alloc(0);
   let handled = false;
@@ -127,15 +147,21 @@ export function handleJoinConnection(
         );
         return;
       }
+
+      const claimedUsername = req.githubUsername ?? "(unknown)";
+      callbacks?.onJoinAttempt?.(claimedUsername);
+
       handleJoinRequest(db, workspaceName, {
         githubToken: req.githubToken,
         peerPublicKey: req.peerPublicKey,
         githubUsername: req.githubUsername,
       }).then((result) => {
+        callbacks?.onJoinResult?.(claimedUsername, result.accepted, result.accepted ? undefined : (result as { reason: string }).reason);
         if ((socket as unknown as MockableSocket).writable !== false) {
           (socket as NodeJS.WritableStream).write(JSON.stringify({ type: "join_result", ...result }) + "\n");
         }
       }).catch(() => {
+        callbacks?.onJoinResult?.(claimedUsername, false, "internal error");
         if ((socket as unknown as MockableSocket).writable !== false) {
           (socket as NodeJS.WritableStream).write(
             JSON.stringify({ type: "join_result", accepted: false, reason: "internal error" }) + "\n",
@@ -152,14 +178,38 @@ export function handleJoinConnection(
 
 type MockableSocket = { writable?: boolean };
 
-export function startSync(db: Database.Database, workspaceName: string): SyncHandle {
+function lookupUsername(db: Database.Database, publicKey: string): string | null {
+  try {
+    const row = db
+      .prepare("SELECT github_username FROM team_peers WHERE public_key = ?")
+      .get(publicKey) as { github_username: string | null } | undefined;
+    return row?.github_username ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function startSync(
+  db: Database.Database,
+  workspaceName: string,
+  logger?: ActivityLogger,
+): SyncHandle {
   const settings = loadSettings();
   const team = settings.workspaces?.[workspaceName]?.team;
   if (!team) throw new Error(`No team config for workspace "${workspaceName}"`);
 
   const { swarm, destroy: destroySwarm } = createSwarm(db, workspaceName);
-  swarm.on("connection", (socket: NodeJS.ReadWriteStream) => {
-    handleSyncConnection(db, workspaceName, socket);
+  swarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
+    const publicKey = info.publicKey.toString("hex");
+    const username = lookupUsername(db, publicKey);
+    logger?.onPeerConnect(workspaceName, username, publicKey);
+    (socket as NodeJS.EventEmitter).once("close", () => {
+      logger?.onPeerDisconnect(workspaceName, username, publicKey);
+    });
+    handleSyncConnection(db, workspaceName, socket, {
+      onChangesReceived: (rows) => logger?.onChangesetReceived(workspaceName, username, rows, db),
+      onChangesSent: (count) => logger?.onChangesetSent(workspaceName, username, count),
+    });
   });
 
   let joinSwarm: InstanceType<typeof Hyperswarm> | null = null;
@@ -171,7 +221,10 @@ export function startSync(db: Database.Database, workspaceName: string): SyncHan
     joinSwarm = new Hyperswarm({ keyPair });
     joinSwarm.join(deriveJoinTopic(workspaceName, team.noise_keypair.publicKey));
     joinSwarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
-      handleJoinConnection(db, workspaceName, socket, info.publicKey);
+      handleJoinConnection(db, workspaceName, socket, info.publicKey, {
+        onJoinAttempt: (u) => logger?.onJoinAttempt(workspaceName, u),
+        onJoinResult: (u, accepted, reason) => logger?.onJoinResult(workspaceName, u, accepted, reason),
+      });
     });
   }
 
