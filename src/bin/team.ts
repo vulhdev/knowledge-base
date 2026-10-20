@@ -8,6 +8,9 @@ import { generateInvite, normalizeGithubUsername, parseInviteCode } from "../tea
 import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
 import { kickPeer, listPeers, findPeerByUsername } from "../team/kick.js";
 import { deriveJoinTopic } from "../sync/join.js";
+import { startSync, type SyncHandle } from "../sync/index.js";
+import { makeConsoleLogger } from "../sync/activity.js";
+import { deriveTopicBuffer } from "../sync/peer.js";
 
 const [, , , subcommand, ...args] = process.argv;
 
@@ -19,6 +22,8 @@ if (subcommand === "invite") {
   await runList(args);
 } else if (subcommand === "kick") {
   await runKick(args);
+} else if (subcommand === "server") {
+  await runServer(args);
 } else {
   console.error(`Unknown team subcommand: ${subcommand ?? "(none)"}`);
   console.error("Usage:");
@@ -26,6 +31,7 @@ if (subcommand === "invite") {
   console.error("  knowledge-base team join <invite-code>");
   console.error("  knowledge-base team list --workspace <name>");
   console.error("  knowledge-base team kick @<github-username> --workspace <name>");
+  console.error("  knowledge-base team server [--workspace <name>]");
   process.exit(1);
 }
 
@@ -289,4 +295,51 @@ async function runKick(args: string[]): Promise<void> {
 
   kickPeer(db, peer.public_key);
   console.log(`✓ Removed @${githubUsername} from team`);
+}
+
+async function runServer(args: string[]): Promise<void> {
+  const wsIdx = args.indexOf("--workspace");
+  const targetWorkspace: string | null = wsIdx !== -1 ? (args[wsIdx + 1] ?? null) : null;
+
+  const settings = loadSettings();
+  const allWorkspaces = settings.workspaces ?? {};
+
+  let workspaceNames: string[];
+  if (targetWorkspace !== null) {
+    if (!allWorkspaces[targetWorkspace]?.team) {
+      console.error(`Error: No team config found for workspace "${targetWorkspace}"`);
+      process.exit(1);
+    }
+    workspaceNames = [targetWorkspace];
+  } else {
+    workspaceNames = Object.entries(allWorkspaces)
+      .filter(([, ws]) => ws.team !== undefined)
+      .map(([name]) => name);
+    if (workspaceNames.length === 0) {
+      console.error("Error: No team workspaces configured.");
+      process.exit(1);
+    }
+  }
+
+  const db = openDb();
+  const logger = makeConsoleLogger();
+  const handles: SyncHandle[] = [];
+
+  console.log(`Sync server started — watching ${workspaceNames.length} workspace(s)\n`);
+  for (const name of workspaceNames) {
+    const team = allWorkspaces[name].team!;
+    const topic = deriveTopicBuffer(name, team.secret).toString("hex");
+    console.log(`  ${name.padEnd(20)} topic: ${topic.slice(0, 6)}…   role: ${team.role}`);
+    handles.push(startSync(db, name, logger));
+  }
+  console.log("");
+
+  const shutdown = async () => {
+    console.log("\nShutting down…");
+    await Promise.all(handles.map((h) => h.destroy()));
+    process.exit(0);
+  };
+
+  process.on("SIGINT", () => { shutdown().catch(() => process.exit(1)); });
+  process.on("SIGTERM", () => { shutdown().catch(() => process.exit(1)); });
 }
