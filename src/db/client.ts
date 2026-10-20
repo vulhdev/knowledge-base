@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { load as loadSqliteVec } from "sqlite-vec";
+import { loadCrsqlite } from "../team/crsqlite.js";
 import { homedir } from "node:os";
 import { join, dirname, basename, resolve } from "node:path";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
@@ -17,6 +18,7 @@ export function openDb(): Database.Database {
   try {
     instance = new Database(dbPath);
     loadSqliteVec(instance);
+    try { loadCrsqlite(instance); } catch { /* extension not downloaded — team sync disabled */ }
   } catch (err) {
     throw new Error(
       `Failed to load better-sqlite3. Build tools may be missing.\n\n` +

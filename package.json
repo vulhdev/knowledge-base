@@ -45,6 +45,7 @@
     "better-sqlite3": "^12.11.1",
     "diff": "^9.0.0",
     "express": "^5.2.1",
+    "hyperswarm": "^4.17.2",
     "marked": "^18.0.6",
     "sqlite-vec": "^0.1.9",
     "zod": "^3.24.0"

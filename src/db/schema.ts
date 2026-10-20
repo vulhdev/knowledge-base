@@ -291,6 +291,32 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
   `);
 
+  // Migration 12: team_peers table + created_by/updated_by on contents
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS team_peers (
+      id           INTEGER PRIMARY KEY NOT NULL,
+      public_key   TEXT UNIQUE NOT NULL,
+      display_name TEXT NOT NULL,
+      is_active    INTEGER NOT NULL DEFAULT 1,
+      joined_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  const hasCreatedBy = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'created_by'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasCreatedBy) {
+    db.exec("ALTER TABLE contents ADD COLUMN created_by TEXT");
+  }
+
+  const hasUpdatedBy = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'updated_by'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasUpdatedBy) {
+    db.exec("ALTER TABLE contents ADD COLUMN updated_by TEXT");
+  }
+
+
   // Rebuild list-path indexes as partial indexes covering only is_latest=1 rows,
   // so list_contents queries retain their index-scan-ordered plan after the is_latest filter.
   const createdAtIdx = (
@@ -305,21 +331,34 @@ function runMigrations(db: Database.Database): void {
       CREATE INDEX idx_contents_type_created_at ON contents(type, created_at) WHERE is_latest = 1;
     `);
   }
-  // Migration 12: contents_fts becomes contentless and indexes CJK as bigrams (kb_cjk_bigram)
-  const fts12 = (
+  // Migration 13: add github_username to team_peers
+  const hasGithubUsername = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('team_peers') WHERE name = 'github_username'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasGithubUsername) {
+    const hasPeersTable = (
+      db.prepare("SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type='table' AND name='team_peers'").get() as { cnt: number }
+    ).cnt > 0;
+    if (hasPeersTable) {
+      db.exec("ALTER TABLE team_peers ADD COLUMN github_username TEXT");
+    }
+  }
+
+  // Migration 14: contents_fts becomes contentless and indexes CJK as bigrams (kb_cjk_bigram)
+  const fts14 = (
     db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contents_fts'")
       .get() as { sql: string } | undefined
   )?.sql ?? "";
-  const trigger12 = (
+  const trigger14 = (
     db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'contents_ai'")
       .get() as { sql: string } | undefined
   )?.sql ?? "";
 
-  if (!fts12.includes("contentless_delete") || !trigger12.includes("kb_cjk_bigram")) {
+  if (!fts14.includes("contentless_delete") || !trigger14.includes("kb_cjk_bigram")) {
     recreateContentsFts(db);
   }
 
-  // Migration 13: section rows (offset-only, no text) for docs and SOT pointers, plus the
+  // Migration 15: section rows (offset-only, no text) for docs and SOT pointers, plus the
   // contentless FTS that holds SOT section tokens. vec_chunks and its triggers live in the VEC block.
   db.exec(`
     CREATE TABLE IF NOT EXISTS content_chunks (
@@ -347,7 +386,7 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
-  // Migration 14: provenance of imported rows — source_key (unique when set) and source_sha
+  // Migration 16: provenance of imported rows — source_key (unique when set) and source_sha
   const hasSourceKey = (
     db
       .prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('contents') WHERE name = 'source_key'")
@@ -365,6 +404,17 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE contents ADD COLUMN source_sha TEXT");
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_contents_source_key ON contents(source_key) WHERE source_key IS NOT NULL");
+
+  // Migration 17: register CRDT-replicated tables with cr-sqlite (idempotent)
+  // Only runs when the cr-sqlite extension is loaded in this DB instance.
+  const isCrsqlLoaded = (() => {
+    try { db.prepare("SELECT crsql_site_id()").get(); return true; } catch { return false; }
+  })();
+  if (isCrsqlLoaded) {
+    for (const tbl of ["workspaces", "features", "contents", "content_features", "content_links"]) {
+      db.exec(`SELECT crsql_as_crr('${tbl}')`);
+    }
+  }
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {

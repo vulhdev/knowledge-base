@@ -2,14 +2,15 @@ import express from "express";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
+import { loadSettings } from "../config.js";
 import { listWorkspaces } from "../db/workspaces.js";
-import { listFeatures, listWorkspaceSummaries, listRecentContents } from "./db.js";
+import { listFeatures, listWorkspaceSummaries, listRecentContents, listReviewComments } from "./db.js";
 import { listContents } from "../tools/list-contents.js";
 import { getContent } from "../tools/get-content.js";
 import { getLineage } from "../tools/get-lineage.js";
 import { listVersions } from "../tools/list-versions.js";
 import { searchSemantic } from "../tools/search-semantic.js";
-import type { LineageResult, Content } from "../types.js";
+import type { LineageResult } from "../types.js";
 import {
   renderWorkspaceList,
   renderFeatureList,
@@ -19,16 +20,21 @@ import {
   renderSearchResults,
   renderErrorList,
   renderDiff,
+  renderTeamPage,
+  slugifyTitle,
+  buildExportBody,
+  esc,
 } from "./render.js";
+import { listPeers, findPeerByUsername, kickPeer } from "../team/kick.js";
 import { addComment, commitReview } from "../db/reviews.js";
-import type { ReviewComment } from "../db/reviews.js";
 import { listErrorLogs } from "../db/error-log.js";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-export function createApp(db: Database.Database) {
+export function createApp(db: Database.Database, port?: number) {
   const app = express();
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
 
   app.use("/assets", express.static(join(PACKAGE_ROOT, "assets")));
 
@@ -45,11 +51,68 @@ export function createApp(db: Database.Database) {
       const workspaces = listWorkspaces(db);
       const exists = workspaces.some((w) => w.name === workspace);
       if (!exists) {
-        res.status(404).send(`<p>Workspace not found: ${workspace}</p>`);
+        res.status(404).send(`<p>Workspace not found: ${esc(workspace)}</p>`);
         return;
       }
     }
-    res.send(renderFeatureList(workspace, features));
+    const team = loadSettings().workspaces?.[workspace]?.team;
+    const hasTeam = team?.role === "host";
+    res.send(renderFeatureList(workspace, features, hasTeam));
+  });
+
+  app.get("/ws/:workspace/team", (req, res) => {
+    const { workspace } = req.params;
+    const team = loadSettings().workspaces?.[workspace]?.team;
+    if (!team || team.role !== "host") {
+      res.status(403).send("<p>Forbidden: only the host can view the team page.</p>");
+      return;
+    }
+    const peers = listPeers(db);
+    res.send(renderTeamPage(workspace, peers));
+  });
+
+  app.post("/ws/:workspace/team/kick", (req, res) => {
+    const origin = req.headers.origin ?? "";
+    let originOk = false;
+    try {
+      const u = new URL(origin);
+      const isLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+      if (isLocal) {
+        if (port !== undefined) {
+          const originPort = u.port ? Number(u.port) : (u.protocol === "https:" ? 443 : 80);
+          originOk = originPort === port;
+        } else {
+          originOk = true;
+        }
+      }
+    } catch { /* bad origin */ }
+    if (!originOk) {
+      res.status(403).send("<p>Forbidden</p>");
+      return;
+    }
+
+    const { workspace } = req.params;
+    const team = loadSettings().workspaces?.[workspace]?.team;
+    if (!team || team.role !== "host") {
+      res.status(403).send("<p>Forbidden</p>");
+      return;
+    }
+    const { github_username } = req.body as { github_username?: string };
+    if (!github_username) {
+      res.status(400).send("<p>github_username is required</p>");
+      return;
+    }
+    const peer = findPeerByUsername(db, github_username);
+    if (!peer) {
+      res.status(400).send(`<p>Member not found: @${esc(github_username)}</p>`);
+      return;
+    }
+    if (peer.is_active === 0) {
+      res.status(400).send(`<p>Member @${esc(github_username)} is already inactive</p>`);
+      return;
+    }
+    kickPeer(db, peer.public_key);
+    res.redirect(`/ws/${encodeURIComponent(workspace)}/team`);
   });
 
   app.get("/ws/:workspace/:feature", (req, res) => {
@@ -57,7 +120,7 @@ export function createApp(db: Database.Database) {
     const features = listFeatures(db, workspace);
     const featureExists = features.some((f) => f.name === feature);
     if (!featureExists) {
-      res.status(404).send(`<p>Feature not found: ${workspace}/${feature}</p>`);
+      res.status(404).send(`<p>Feature not found: ${esc(workspace)}/${esc(feature)}</p>`);
       return;
     }
     const { results: contents } = listContents(db, workspace, feature);
@@ -112,11 +175,7 @@ export function createApp(db: Database.Database) {
     }
     try {
       const content = getContent(db, id);
-      const comments = db
-        .prepare(
-          "SELECT id, review_id, selected_text, comment, created_at FROM review_comments WHERE review_id = ? ORDER BY id",
-        )
-        .all(reviewId) as ReviewComment[];
+      const comments = listReviewComments(db, reviewId);
       res.send(renderReview(content, reviewId, comments));
     } catch {
       res.status(404).send("<p>Content not found</p>");
@@ -232,23 +291,4 @@ export function createApp(db: Database.Database) {
   });
 
   return app;
-}
-
-function slugifyTitle(title: string): string {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "content";
-}
-
-function buildExportBody(content: Content): string {
-  const exported = new Date().toISOString().slice(0, 10);
-  const frontmatter = [
-    "---",
-    `title: ${content.title ?? ""}`,
-    `type: ${content.type}`,
-    `feature: ${content.features[0] ?? ""}`,
-    `workspace: ${content.workspace}`,
-    `exported: ${exported}`,
-    "---",
-    "",
-  ].join("\n");
-  return frontmatter + content.body;
 }

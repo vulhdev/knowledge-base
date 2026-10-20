@@ -47,6 +47,7 @@ describe("createVersion", () => {
     expect(keys(result.content.id)).toEqual(keys(original.id));
   });
 
+
   it("sets is_latest=1 on new version and is_latest=0 on previous", async () => {
     const original = await createContent(db, "ws", ["feat"], "spec", "v1 body");
     const result = createVersion(db, original.id);

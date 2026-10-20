@@ -7,6 +7,11 @@ import * as p from "@clack/prompts";
 import { openDb } from "../db/client.js";
 import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
+import { isCrsqliteReady, downloadCrsqlite } from "../team/crsqlite.js";
+import { generateTeamConfig } from "../team/generate.js";
+import { generateNoiseKeypair } from "../team/generate.js";
+import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
+import { loadSettings, writeSettings } from "../config.js";
 
 const CREATE_NEW = "__new__";
 const SKIP = "__skip__";
@@ -166,6 +171,75 @@ async function main(): Promise<void> {
   writeWorkspaceToClaude(workspaceName);
   p.log.success(`Written knowledge-base block to CLAUDE.md (workspace: ${workspaceName})`);
 
+  // Identity setup (global, stored once)
+  const settings = loadSettings();
+  if (!settings.identity) {
+    p.log.info("Set your identity (used to track who created/updated documents in team mode).");
+    const identityName = await p.text({
+      message: "Your name:",
+      placeholder: "Alice",
+      validate: (v) => (!v?.trim() ? "Name cannot be empty" : undefined),
+    });
+    if (p.isCancel(identityName)) { p.cancel("Cancelled."); process.exit(0); }
+
+    const identityEmail = await p.text({
+      message: "Your email:",
+      placeholder: "alice@example.com",
+      validate: (v) => (!v?.trim() ? "Email cannot be empty" : undefined),
+    });
+    if (p.isCancel(identityEmail)) { p.cancel("Cancelled."); process.exit(0); }
+
+    const updated = loadSettings();
+    updated.identity = { name: identityName as string, email: identityEmail as string };
+    writeSettings(updated);
+    p.log.success(`Identity saved: ${identityName} <${identityEmail}>`);
+  } else {
+    p.log.info(`Identity: ${settings.identity.name} <${settings.identity.email}>`);
+  }
+
+  // Team mode setup for this workspace
+  const hasTeam = settings.workspaces?.[workspaceName]?.team;
+  if (!hasTeam) {
+    const teamMode = await p.select<string>({
+      message: `Enable team mode for workspace "${workspaceName}"?`,
+      options: [
+        { value: "create", label: "Create new team (you are the host)" },
+        { value: SKIP,    label: "Skip — solo mode" },
+      ],
+    });
+    if (p.isCancel(teamMode)) { p.cancel("Cancelled."); process.exit(0); }
+
+    if ((teamMode as string) === "create") {
+      p.log.info("Authenticate with GitHub to verify your identity as team host.");
+      const flow = await startDeviceFlow();
+      p.log.info(`Open ${flow.verificationUri} and enter code: ${flow.userCode}`);
+      const spinner = p.spinner();
+      spinner.start("Waiting for GitHub authorization…");
+      let githubUsername: string;
+      try {
+        const token = await pollForToken(flow.deviceCode, flow.interval, flow.expiresIn);
+        githubUsername = await getGitHubUsername(token);
+        spinner.stop(`Authenticated as @${githubUsername}`);
+      } catch (err) {
+        spinner.stop("GitHub authentication failed");
+        p.log.error(String(err));
+        process.exit(1);
+      }
+
+      const cfg = generateTeamConfig();
+      const fresh = loadSettings();
+      fresh.workspaces ??= {};
+      fresh.workspaces[workspaceName] ??= {};
+      fresh.workspaces[workspaceName].team = cfg;
+      fresh.identity = { ...(fresh.identity ?? { name: "", email: "" }), github_username: githubUsername };
+      writeSettings(fresh);
+      p.log.success(`Team created. Invite peers with:`);
+      p.log.info(`  knowledge-base team invite --workspace ${workspaceName} @<github-username>`);
+    }
+  } else {
+    p.log.info(`Team mode already configured for "${workspaceName}" (role: ${hasTeam.role}).`);
+  }
+
   if (isModelReady()) {
     p.log.info("Embedding model already cached — skipping download.");
   } else {
@@ -176,6 +250,20 @@ async function main(): Promise<void> {
       modelSpinner.stop("Embedding model downloaded.");
     } catch (err) {
       modelSpinner.stop("Model download failed. Run `npx @vulhdev/knowledge-base init` again to retry.");
+      p.log.warn(String(err));
+    }
+  }
+
+  if (isCrsqliteReady()) {
+    p.log.info("cr-sqlite extension already cached — skipping download.");
+  } else {
+    const crsqliteSpinner = p.spinner();
+    crsqliteSpinner.start("Downloading cr-sqlite extension (~1 MB, first time only)…");
+    try {
+      await downloadCrsqlite();
+      crsqliteSpinner.stop("cr-sqlite extension downloaded.");
+    } catch (err) {
+      crsqliteSpinner.stop("cr-sqlite download failed. Run `npx @vulhdev/knowledge-base init` again to retry.");
       p.log.warn(String(err));
     }
   }

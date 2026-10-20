@@ -4,6 +4,7 @@ import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
 import { typesAfter } from "./_type-order.js";
+import { loadSettings } from "../config.js";
 import { buildFtsQuery } from "../text/cjk-bigram.js";
 import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
 
@@ -95,6 +96,7 @@ export async function createContent(
   body: string,
   title?: string,
   requestSampling?: RequestSampling,
+  createdBy?: string,
   provenance?: Provenance,
 ): Promise<CreateContentResult> {
   if (!body.trim()) {
@@ -131,19 +133,21 @@ export async function createContent(
     }
   }
 
+  const identity = loadSettings().identity;
+  const resolvedCreatedBy = createdBy ?? (identity ? `${identity.name} <${identity.email}>` : null);
+
   // Sections are computed before the transaction (the token counter is async); the row, its
   // features and its sections are then written atomically.
   const sections = await prepareSections(body);
 
   const contentId = db.transaction(() => {
-    // provenance is written in the same INSERT, so an interrupted import never leaves a keyless copy
     const { lastInsertRowid } = provenance
       ? db
-          .prepare("INSERT INTO contents (type, title, body, source_key, source_sha) VALUES (?, ?, ?, ?, ?)")
-          .run(type, title ?? null, body, provenance.source_key, provenance.source_sha)
+          .prepare("INSERT INTO contents (type, title, body, created_by, updated_by, source_key, source_sha) VALUES (?, ?, ?, ?, ?, ?, ?)")
+          .run(type, title ?? null, body, resolvedCreatedBy, resolvedCreatedBy, provenance.source_key, provenance.source_sha)
       : db
-          .prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)")
-          .run(type, title ?? null, body);
+          .prepare("INSERT INTO contents (type, title, body, created_by, updated_by) VALUES (?, ?, ?, ?, ?)")
+          .run(type, title ?? null, body, resolvedCreatedBy, resolvedCreatedBy);
 
     const id = Number(lastInsertRowid);
 

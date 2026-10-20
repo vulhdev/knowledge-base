@@ -35,10 +35,10 @@ export async function applyDocs(db: Database.Database, plan: LoadPlan, r: ApplyR
       const existing = db.prepare("SELECT id, source_sha FROM contents WHERE source_key = ?").get(item.source_key) as { id: number; source_sha: string } | undefined;
       if (!existing) {
         // no requestSampling: a CLI run has no MCP client, so conflict detection is skipped (FR-A9)
-        idOf.set(item.source_key, (await createContent(db, item.workspace, item.features, item.type, item.body, item.title, undefined, prov)).id);
+        idOf.set(item.source_key, (await createContent(db, item.workspace, item.features, item.type, item.body, item.title, undefined, undefined, prov)).id);
         r.docs.created++;
       } else if (existing.source_sha !== item.source_sha) {
-        await updateContent(db, existing.id, item.body, item.type, item.title, undefined, prov);
+        await updateContent(db, existing.id, item.body, item.type, item.title, undefined, undefined, prov);
         idOf.set(item.source_key, existing.id);
         r.docs.updated++;
       } else {

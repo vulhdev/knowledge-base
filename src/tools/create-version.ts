@@ -61,6 +61,7 @@ export function createVersion(db: Database.Database, id: number): CreateVersionR
        FROM content_chunks WHERE content_id = ? AND kind = 'doc'`,
     ).run(newId, id);
 
+
     // Copy content_features
     db.prepare(
       `INSERT OR IGNORE INTO content_features (content_id, feature_id)

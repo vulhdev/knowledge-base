@@ -4,6 +4,7 @@ import type { Content, ContentType, ConflictResult, UpdateContentResult, Provena
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
+import { loadSettings } from "../config.js";
 import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
@@ -15,11 +16,15 @@ export async function updateContent(
   type?: ContentType,
   title?: string,
   requestSampling?: RequestSampling,
+  updatedBy?: string,
   provenance?: Provenance,
 ): Promise<UpdateContentResult> {
   if (!body.trim()) {
     throw new Error("body must not be empty");
   }
+
+  const identity = loadSettings().identity;
+  const resolvedUpdatedBy = updatedBy ?? (identity ? `${identity.name} <${identity.email}>` : null);
 
   const sections = await prepareSections(body);
 
@@ -30,17 +35,18 @@ export async function updateContent(
           .prepare(
             `UPDATE contents
              SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title), updated_at = datetime('now'),
-                 source_key = ?, source_sha = ?
+                 updated_by = COALESCE(?, updated_by), source_key = ?, source_sha = ?
              WHERE id = ?`,
           )
-          .run(body, type ?? null, title ?? null, provenance.source_key, provenance.source_sha, id)
+          .run(body, type ?? null, title ?? null, resolvedUpdatedBy, provenance.source_key, provenance.source_sha, id)
       : db
           .prepare(
             `UPDATE contents
-             SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title), updated_at = datetime('now')
+             SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title), updated_at = datetime('now'),
+                 updated_by = COALESCE(?, updated_by)
              WHERE id = ?`,
           )
-          .run(body, type ?? null, title ?? null, id);
+          .run(body, type ?? null, title ?? null, resolvedUpdatedBy, id);
 
     if (changes === 0 || !before) {
       throw new Error(`Content not found: id=${id}`);
