@@ -18,22 +18,22 @@ export const PLATFORM_ZIP_MAP: Record<string, PlatformEntry> = {
   "darwin-arm64": {
     zipName: "crsqlite-darwin-aarch64.zip",
     binName: "crsqlite-darwin-aarch64.dylib",
-    sha256: "452338a18acc1157132ae0cd1031c1f71124bc8ea748c4677d9030b1a818c1bb",
+    sha256: "286def64d5361a72bc730b499f6d2ff5be2986c5c974cc43c90204b9c36c0fb7",
   },
   "darwin-x64": {
     zipName: "crsqlite-darwin-x86_64.zip",
     binName: "crsqlite-darwin-x86_64.dylib",
-    sha256: "da539db918c012f44cb1de153258484844689e9e14fa4efe2b98c2e6cd12deed",
+    sha256: "6195125c6761b789863ad77ba063c0b8e31ac1c41c803ebf7b1fc43955c11585",
   },
   "linux-x64": {
     zipName: "crsqlite-linux-x86_64.zip",
     binName: "crsqlite-linux-x86_64.so",
-    sha256: "e525fab1dbe7eaf5688d5c3f1f288d6e674229a0650c97ce35c166914228aace",
+    sha256: "2778a12c910e5ecdb5b344bbf172e9080cbf6508186342fa1451a4d807fd73d0",
   },
   "win32-x64": {
     zipName: "crsqlite-win-x86_64.zip",
     binName: "crsqlite-win-x86_64.dll",
-    sha256: "08651f86c28ab4784e56b88eb9506be297fe52a07a6b3b0a6cad6d4039558c0c",
+    sha256: "902785b0569d6bb0e095b80fa0243d04b85c2b0a73baf6a594828128c8a76b24",
   },
 };
 
