@@ -68,8 +68,9 @@ export function extractZipEntry(zipBuf: Buffer, entryName: string): Buffer {
     const compressedSize = zipBuf.readUInt32LE(offset + 18);
     const filenameLen = zipBuf.readUInt16LE(offset + 26);
     const extraLen = zipBuf.readUInt16LE(offset + 28);
-    const filename = zipBuf.subarray(offset + 30, offset + 30 + filenameLen).toString("utf8");
     const dataStart = offset + 30 + filenameLen + extraLen;
+    if (dataStart + compressedSize > zipBuf.length) break;
+    const filename = zipBuf.subarray(offset + 30, offset + 30 + filenameLen).toString("utf8");
     const compressedData = zipBuf.subarray(dataStart, dataStart + compressedSize);
 
     if (filename === entryName) {

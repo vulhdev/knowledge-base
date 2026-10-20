@@ -112,6 +112,48 @@ describe("crsqlite module", () => {
   });
 });
 
+describe("extractZipEntry — ZIP bounds checks", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it("extracts the entry when the zip is well-formed", async () => {
+    const { extractZipEntry } = await import("../../src/team/crsqlite.js");
+    const content = Buffer.from("binary-data");
+    const zip = buildStoreZip("file.so", content);
+    expect(extractZipEntry(zip, "file.so")).toEqual(content);
+  });
+
+  it("throws when filenameLen overruns the buffer (crafted zip)", async () => {
+    const { extractZipEntry } = await import("../../src/team/crsqlite.js");
+    // Build a header where filenameLen is 60000, far past the 30-byte buffer
+    const buf = Buffer.allocUnsafe(30);
+    buf.fill(0);
+    buf.writeUInt32LE(0x04034b50, 0); // local file header signature
+    buf.writeUInt16LE(0, 8);          // compression: STORE
+    buf.writeUInt32LE(0, 18);         // compressedSize = 0
+    buf.writeUInt32LE(0, 22);         // uncompressedSize = 0
+    buf.writeUInt16LE(60000, 26);     // filenameLen way past end of buf
+    buf.writeUInt16LE(0, 28);
+    expect(() => extractZipEntry(buf, "anything")).toThrow(/not found/);
+  });
+
+  it("throws when dataStart + compressedSize overruns the buffer (crafted zip)", async () => {
+    const { extractZipEntry } = await import("../../src/team/crsqlite.js");
+    const fn = Buffer.from("file.so");
+    const header = Buffer.allocUnsafe(30 + fn.length);
+    header.fill(0);
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt16LE(0, 8);          // STORE
+    header.writeUInt32LE(0xffffffff, 18); // compressedSize = max uint32, overflows
+    header.writeUInt32LE(0xffffffff, 22);
+    header.writeUInt16LE(fn.length, 26);
+    fn.copy(header, 30);
+    expect(() => extractZipEntry(header, "file.so")).toThrow(/not found/);
+  });
+});
+
 describe("SEC-3: downloadCrsqlite checksum and zip extraction", () => {
   beforeEach(() => {
     vi.resetModules();
