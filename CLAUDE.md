@@ -228,6 +228,7 @@ This project is linked to workspace **knowledge-base**. Use the `knowledge-base`
 - **After creating a git commit** — if the current session has an active plan doc, call `attach_code_ref` to link the commit to that plan. Read the session context to find the plan's `content_id` and the matching `task_ref` (e.g. the task description that was just implemented), then call `attach_code_ref(content_id, commit_hash, file_paths, task_ref)`. Skip silently if no plan doc is active in the session.
 - **Before starting a bug fix**, ask: *"Search knowledge-base for prior context first?"* If user agrees, call `search_semantic(query="...", workspace="knowledge-base")`.
 - **Before starting a new feature**, silently call `list_contents(workspace="knowledge-base")` and surface any relevant prior docs if found.
+- **When referencing a document by ID** — always include the `gui_url` from the tool result to make it Cmd+clickable. Format: `type#id (gui_url)`. Example: `idea#123 (http://localhost:57891/content/123)`.
 
 ## Never Do
 
@@ -241,12 +242,15 @@ This project is linked to workspace **knowledge-base**. Use the `knowledge-base`
 | Tool / Skill | Use for |
 |------|---------|
 | `/knowledge-base-create` (skill) | Save a new spec / plan / idea / doc — use for all user-initiated saves |
+| `/knowledge-base-diff` (skill) | Compare two versions of a doc — shows unified diff in chat + GUI URL |
 | `create_content` | Internal/programmatic saves only (e.g. derive, digest tools) |
 | `get_content` | Fetch a specific doc by ID |
 | `list_contents` | Browse all docs in a workspace; filter by feature and/or type |
 | `search_semantic` | Semantic search by vector similarity (multilingual, 50+ languages) |
 | `update_content` | Update body, type, or title of an existing doc by ID |
-| `delete_content` | Permanently delete a doc by ID |
+| `delete_content` | Permanently delete a doc by ID (add `cascade=true` to delete all versions) |
+| `create_version` | Snapshot the current doc body as a new version |
+| `list_versions` | List all versions in a document's chain |
 | `link_content` | Link two docs as parent → child |
 | `derive_content` | Create a new doc linked to a parent in one step |
 | `get_lineage` | Get full ancestor/descendant chain for a doc |
