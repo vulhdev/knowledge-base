@@ -2,6 +2,7 @@
 import { createServer } from "node:net";
 import { openDb } from "../db/client.js";
 import { createApp } from "../gui/server.js";
+import { startSyncIfConfigured } from "../sync/boot.js";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -36,3 +37,5 @@ if (port !== preferredPort) {
 createApp(db, port).listen(port, () => {
   console.log(`knowledge-base gui listening on http://localhost:${port}`);
 });
+
+startSyncIfConfigured(db);
