@@ -407,13 +407,28 @@ function runMigrations(db: Database.Database): void {
 
   // Migration 17: register CRDT-replicated tables with cr-sqlite (idempotent)
   // Only runs when the cr-sqlite extension is loaded in this DB instance.
+  //
+  // workspaces and features are excluded: cr-sqlite forbids UNIQUE indices beyond the PK on CRR
+  // tables (workspaces.name and features(workspace_id,name) are UNIQUE). These are structural/
+  // config tables managed locally by each peer and do not need CRDT replication.
+  //
+  // contents has two partial unique indices that must be dropped before crsql_as_crr:
+  //   - idx_contents_source_key (migration 16, always present)
+  //   - uq_feature_digest (migration 2, only on older DBs that had the CHECK constraint)
+  // Both are recreated as non-unique indices afterward to preserve query performance.
   const isCrsqlLoaded = (() => {
     try { db.prepare("SELECT crsql_site_id()").get(); return true; } catch { return false; }
   })();
   if (isCrsqlLoaded) {
-    for (const tbl of ["workspaces", "features", "contents", "content_features", "content_links"]) {
-      db.exec(`SELECT crsql_as_crr('${tbl}')`);
-    }
+    ensureContentsIdNotNull(db);
+    db.exec("DROP INDEX IF EXISTS idx_contents_source_key");
+    db.exec("DROP INDEX IF EXISTS uq_feature_digest");
+    db.exec(`SELECT crsql_as_crr('contents')`);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_contents_source_key ON contents(source_key) WHERE source_key IS NOT NULL");
+    ensureContentFeaturesForCrr(db);
+    db.exec(`SELECT crsql_as_crr('content_features')`);
+    ensureContentLinksForCrr(db);
+    db.exec(`SELECT crsql_as_crr('content_links')`);
   }
 }
 
@@ -507,5 +522,124 @@ function removeCheckConstraint(db: Database.Database): void {
     repopulateContentsFts(db);
   })();
 
+  db.exec("PRAGMA foreign_keys = ON");
+}
+
+function ensureContentsIdNotNull(db: Database.Database): void {
+  // cr-sqlite requires the primary key to have notnull=1 in PRAGMA table_info.
+  // SQLite's INTEGER PRIMARY KEY implicitly reports notnull=0 even though the rowid
+  // alias is never null. Recreate contents with an explicit NOT NULL on the PK.
+  const cols = db.prepare("PRAGMA table_info('contents')").all() as Array<{
+    name: string; notnull: number; pk: number; dflt_value: string | null;
+  }>;
+  const idCol = cols.find(r => r.pk === 1);
+  // cr-sqlite CRR requirements: PK must be notnull=1; every NOT NULL non-PK column must have a
+  // DEFAULT so the table can evolve across schema versions on different peers.
+  const needsRebuild =
+    (idCol !== undefined && idCol.notnull === 0) ||
+    cols.some(r => r.pk === 0 && r.notnull === 1 && r.dflt_value === null);
+  if (!needsRebuild) return;
+
+  db.exec("PRAGMA foreign_keys = OFF");
+
+  db.exec(`
+    BEGIN;
+
+    DROP TRIGGER IF EXISTS contents_ai;
+    DROP TRIGGER IF EXISTS contents_au;
+    DROP TRIGGER IF EXISTS contents_ad;
+    DROP TABLE IF EXISTS contents_fts;
+
+    CREATE TABLE contents_new (
+      id             INTEGER NOT NULL PRIMARY KEY,
+      type           TEXT NOT NULL DEFAULT '',
+      title          TEXT,
+      body           TEXT NOT NULL DEFAULT '',
+      embedding      BLOB,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      root_id        INTEGER,
+      version_number INTEGER NOT NULL DEFAULT 1,
+      is_latest      INTEGER NOT NULL DEFAULT 1,
+      created_by     TEXT,
+      updated_by     TEXT,
+      source_key     TEXT,
+      source_sha     TEXT
+    );
+
+    INSERT INTO contents_new
+      SELECT id, type, title, body, embedding, created_at, updated_at,
+             root_id, version_number, is_latest, created_by, updated_by,
+             source_key, source_sha
+      FROM contents;
+
+    DROP TABLE contents;
+    ALTER TABLE contents_new RENAME TO contents;
+
+    CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
+    CREATE INDEX IF NOT EXISTS idx_contents_created_at ON contents(created_at) WHERE is_latest = 1;
+    CREATE INDEX IF NOT EXISTS idx_contents_type_created_at ON contents(type, created_at) WHERE is_latest = 1;
+
+    COMMIT;
+  `);
+
+  db.transaction(() => {
+    db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
+    repopulateContentsFts(db);
+  })();
+
+  db.exec("PRAGMA foreign_keys = ON");
+}
+
+function ensureContentFeaturesForCrr(db: Database.Database): void {
+  // cr-sqlite forbids checked (enforced) FK constraints on CRR tables, and requires
+  // NOT NULL non-PK columns to have DEFAULT values. Recreate without FK constraints.
+  const sql = (
+    db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='content_features'").get() as
+      | { sql: string } | undefined
+  )?.sql ?? "";
+  if (!sql.includes("REFERENCES")) return;
+
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec(`
+    BEGIN;
+    CREATE TABLE content_features_new (
+      content_id INTEGER NOT NULL DEFAULT 0,
+      feature_id INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (content_id, feature_id)
+    );
+    INSERT INTO content_features_new SELECT content_id, feature_id FROM content_features;
+    DROP TABLE content_features;
+    ALTER TABLE content_features_new RENAME TO content_features;
+    CREATE INDEX IF NOT EXISTS idx_content_features_feature ON content_features(feature_id);
+    COMMIT;
+  `);
+  db.exec("PRAGMA foreign_keys = ON");
+}
+
+function ensureContentLinksForCrr(db: Database.Database): void {
+  // cr-sqlite forbids checked FK constraints on CRR tables, and requires NOT NULL non-PK
+  // columns with DEFAULT values. Recreate without FK constraints.
+  const sql = (
+    db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='content_links'").get() as
+      | { sql: string } | undefined
+  )?.sql ?? "";
+  if (!sql.includes("REFERENCES")) return;
+
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec(`
+    BEGIN;
+    CREATE TABLE content_links_new (
+      parent_id  INTEGER NOT NULL DEFAULT 0,
+      child_id   INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (parent_id, child_id)
+    );
+    INSERT INTO content_links_new SELECT parent_id, child_id, created_at FROM content_links;
+    DROP TABLE content_links;
+    ALTER TABLE content_links_new RENAME TO content_links;
+    CREATE INDEX IF NOT EXISTS idx_content_links_child ON content_links(child_id);
+    COMMIT;
+  `);
   db.exec("PRAGMA foreign_keys = ON");
 }
