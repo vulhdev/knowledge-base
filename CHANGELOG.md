@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Team P2P sync** — workspaces can be shared across machines via Hyperswarm; `npx knowledge-base init` prompts for name/email (saved as global identity) and offers create/join/skip team mode per workspace; create generates a Noise keypair + secret stored in `settings.json`; `startSync` boots automatically on server startup when a team config is present and syncs changesets encoded with cr-sqlite
+- **GitHub Device Flow auth + username-based invites** — team members are identified by GitHub username; `knowledge-base team join <invite-code>` triggers Device Flow to prove ownership; invite codes encode the host's public key and a pending GitHub username; the join handler verifies the token against the GitHub API before admitting the peer
+- **Member management CLI** — `knowledge-base team list --workspace <name>` lists all active and kicked members; `knowledge-base team kick @<username>` soft-revokes a peer (`is_active=0`) without deleting history
+- **Member management GUI** — workspace pages show a "Team" link (host-only); `/ws/:workspace/team` renders a member table with ●/○ status, joined date, and a Remove button for active members
+- **`knowledge-base status` command** — reports P2P sync health: connected peers, last sync timestamp, workspace team config
+- **Content versioning** — documents can have multiple versions tracked as a chain; `create_version(content_id)` atomically creates a new version (flips `is_latest`, copies `content_features` + `content_links`); `list_versions(content_id)` returns the full chain sorted oldest→newest with `is_latest` flag; `list_contents` and `search_semantic` automatically filter to `is_latest=1`; `get_content` gains a `version_count` field
+- **`delete_content`: cascade mode** — new `cascade` parameter (default `false`); `cascade=true` deletes the entire version chain atomically; without cascade, deleting a non-root version renumbers the chain and restores `is_latest` on the predecessor
+- **GitHub-style diff viewer in GUI** — content detail page shows a "History" tab with a side-by-side diff between any two versions using the `diff` package
+- **`created_by` / `updated_by` on contents** — `create_content` and `update_content` record the author's identity (from `settings.json`) so team edits are attributable in the GUI
+- **Versioning step in `knowledge-base-create` skill** — after conflict detection, if a `semantic_contradiction` matches the same feature + type, the skill offers to save as a new version of the existing doc instead of creating a separate document
 - **Section-level search** — documents are split into sections by heading (`#`–`####`, small ones merged, large ones cut at paragraph/list/table/fence boundaries) on every write path, in the same transaction as the body. Sections are stored offset-only in `content_chunks` (no text) with vectors in `vec_chunks`, embedded with a `title › heading` breadcrumb, never blocking a write, and backfilled in the background. `search_semantic` results gain an optional `matched_sections` field (up to 3 `{chunk_key, heading_path, start_line, end_line}`); every existing field is unchanged and a document still appears once
 - **SOT pointers** — git-tracked source-of-truth files are imported as pointer-only cards: the card holds path, ref, commit, sha256, the read command, the heading outline and the commit history; each section is a pointer (path, commit, line range, hash, vector). No SOT sentence is stored; pointer tokens live in the contentless `sot_chunks_fts`. Matching SOT sections carry `source_path` and `source_commit`
 - **`import-sources` CLI** — imports doc folders from several clones and SOT folders into a database given by `--db` (refuses the live database). Files are classified by git (tracked ⇒ SOT, ignored/untracked ⇒ content). Content copies are collapsed across clones (identical, superset, FORK ⇒ canonical + `fork-residue` child doc, alias, date-suffixed series linked parent → child). Provenance in `source_key` / `source_sha` makes re-runs idempotent (`writes: 0`). `--dry-run --plan-out --report` emit a load plan and a dedup report
@@ -384,7 +394,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - FTS5 full-text search index with INSERT/UPDATE/DELETE triggers
 - TypeScript project with `better-sqlite3`, Zod, `@modelcontextprotocol/sdk`, and Vitest
 
-[Unreleased]: https://github.com/vulhdev/knowledge-base/compare/v1.10.3...HEAD
+[Unreleased]: https://github.com/vulhdev/knowledge-base/compare/v1.17.0...HEAD
 [1.10.3]: https://github.com/vulhdev/knowledge-base/compare/v1.10.2...v1.10.3
 [1.10.2]: https://github.com/vulhdev/knowledge-base/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/vulhdev/knowledge-base/compare/v1.10.0...v1.10.1
