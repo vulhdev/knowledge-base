@@ -22,7 +22,7 @@ type HandshakeMsg = { v: number; dbVersion: number };
 
 const PROTOCOL_VERSION = 1;
 
-function handleSyncConnection(db: Database.Database, workspaceName: string, socket: NodeJS.ReadWriteStream): void {
+export function handleSyncConnection(db: Database.Database, workspaceName: string, socket: NodeJS.ReadWriteStream): void {
   let localDbVersion = 0;
   try {
     const row = db
@@ -60,7 +60,7 @@ function handleSyncConnection(db: Database.Database, workspaceName: string, sock
       }
     } else if (buf.length >= 4) {
       const size = buf.readUInt32BE(0);
-      if (size === 0) return;
+      if (size === 0) { buf = buf.slice(4); return; }
       if (buf.length >= 4 + size) {
         try {
           const rows = decodeChangeset(buf.slice(4, 4 + size));
@@ -70,6 +70,7 @@ function handleSyncConnection(db: Database.Database, workspaceName: string, sock
         } catch {
           // ignore bad changeset
         }
+        buf = buf.slice(4 + size);
       }
     }
   });

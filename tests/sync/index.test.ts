@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { EventEmitter } from "node:events";
 import { createTestDb } from "../setup.js";
+
+class MockSocket extends EventEmitter {
+  readonly writes: Buffer[] = [];
+  readonly writable = true;
+  write(data: Buffer | string) {
+    this.writes.push(Buffer.isBuffer(data) ? data : Buffer.from(data as string));
+    return true;
+  }
+  destroy() {}
+}
 
 vi.mock("hyperswarm", () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -96,5 +107,73 @@ describe("startSync", () => {
     const db = createTestDb();
     const { startSync } = await import("../../src/sync/index.js");
     expect(() => startSync(db, "myws")).toThrow(/no team config/i);
+  });
+});
+
+function createSyncTestDb() {
+  const db = createTestDb();
+  db.exec(
+    "CREATE TABLE crsql_changes " +
+    "(tbl TEXT, pk TEXT, cid TEXT, val ANY, col_version INTEGER, db_version INTEGER, site_id TEXT)",
+  );
+  return db;
+}
+
+describe("handleSyncConnection — buf framing", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(HOST_SETTINGS));
+  });
+
+  it("size === 0 keep-alive: buf advances so next valid frame is processed", async () => {
+    const db = createSyncTestDb();
+    const { applyChanges, encodeChangeset } = await import("../../src/sync/changeset.js");
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    handleSyncConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream);
+
+    // Complete handshake
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+
+    // Send a zero-size keep-alive
+    const zeroHeader = Buffer.allocUnsafe(4);
+    zeroHeader.writeUInt32BE(0, 0);
+    socket.emit("data", zeroHeader);
+
+    // Send a valid frame right after
+    const encoded = encodeChangeset([]);
+    const header = Buffer.allocUnsafe(4);
+    header.writeUInt32BE(encoded.length, 0);
+    socket.emit("data", Buffer.concat([header, encoded]));
+
+    expect(vi.mocked(applyChanges)).toHaveBeenCalledTimes(1);
+  });
+
+  it("consumed changeset bytes do not get re-applied on next data event", async () => {
+    const db = createSyncTestDb();
+    const { applyChanges, encodeChangeset } = await import("../../src/sync/changeset.js");
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    handleSyncConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream);
+
+    // Complete handshake
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+
+    // Send a valid changeset frame
+    const encoded = encodeChangeset([]);
+    const header = Buffer.allocUnsafe(4);
+    header.writeUInt32BE(encoded.length, 0);
+    socket.emit("data", Buffer.concat([header, encoded]));
+
+    // Capture call count immediately after processing the frame
+    const countAfterFrame = vi.mocked(applyChanges).mock.calls.length;
+    expect(countAfterFrame).toBeGreaterThanOrEqual(1);
+
+    // Emit trailing byte — must not cause another applyChanges call
+    socket.emit("data", Buffer.from([0x01]));
+    expect(vi.mocked(applyChanges).mock.calls.length).toBe(countAfterFrame);
   });
 });
