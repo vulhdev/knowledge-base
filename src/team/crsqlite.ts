@@ -17,22 +17,22 @@ type PlatformEntry = {
 export const PLATFORM_ZIP_MAP: Record<string, PlatformEntry> = {
   "darwin-arm64": {
     zipName: "crsqlite-darwin-aarch64.zip",
-    binName: "crsqlite-darwin-aarch64.dylib",
+    binName: "crsqlite.dylib",
     sha256: "654e83fd86d975a0420174511df9f5b3d3786afb3b9fe510842ca4c34b42f746",
   },
   "darwin-x64": {
     zipName: "crsqlite-darwin-x86_64.zip",
-    binName: "crsqlite-darwin-x86_64.dylib",
+    binName: "crsqlite.dylib",
     sha256: "d482404950ab161f8d898b096d558017120e22684bf1678a0220ec3e77bf8624",
   },
   "linux-x64": {
     zipName: "crsqlite-linux-x86_64.zip",
-    binName: "crsqlite-linux-x86_64.so",
+    binName: "crsqlite.so",
     sha256: "8f6fd31a2be2ba8c3101aad067a504a2e63c8e9b51cc4ace786009c02e7ecbae",
   },
   "win32-x64": {
     zipName: "crsqlite-win-x86_64.zip",
-    binName: "crsqlite-win-x86_64.dll",
+    binName: "crsqlite.dll",
     sha256: "401f9950dc274a52c0aaf180f175c603bebc272c561734baafff4211437ea5da",
   },
 };
