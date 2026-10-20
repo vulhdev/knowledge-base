@@ -12,6 +12,14 @@ export type ChangesetRow = {
 
 export const MAX_CHANGESET_BYTES = 10 * 1024 * 1024; // 10 MB
 
+export const CRDT_TABLES = new Set([
+  "workspaces",
+  "features",
+  "contents",
+  "content_features",
+  "content_links",
+]);
+
 export function encodeChangeset(rows: ChangesetRow[]): Buffer {
   return Buffer.from(JSON.stringify(rows), "utf8");
 }
@@ -35,6 +43,11 @@ export function getChanges(db: Database.Database, sinceVersion: number): Changes
 }
 
 export function applyChanges(db: Database.Database, rows: ChangesetRow[]): void {
+  for (const row of rows) {
+    if (!CRDT_TABLES.has(row.tbl)) {
+      throw new Error(`Changeset targets non-CRDT table: ${row.tbl}`);
+    }
+  }
   const stmt = db.prepare(
     "INSERT INTO crsql_changes (tbl, pk, cid, val, col_version, db_version, site_id) " +
     "VALUES (?, ?, ?, ?, ?, ?, ?)",

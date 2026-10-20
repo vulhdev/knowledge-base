@@ -64,3 +64,44 @@ describe("encodeChangeset / decodeChangeset", () => {
     expect(() => decodeChangeset(Buffer.from("not json"))).toThrow();
   });
 });
+
+describe("applyChanges", () => {
+  it("SEC-2: throws when changeset targets a non-CRDT table", async () => {
+    const { applyChanges } = await import("../../src/sync/changeset.js");
+    const maliciousRows = [{
+      tbl: "team_peers",
+      pk: "0100000000000000",
+      cid: "is_active",
+      val: 1,
+      col_version: 1,
+      db_version: 1,
+      site_id: "aa",
+    }];
+    const mockDb = {} as unknown as Database.Database;
+    expect(() => applyChanges(mockDb, maliciousRows)).toThrow(/non-CRDT table/i);
+  });
+
+  it("SEC-2: throws for any unlisted table name", async () => {
+    const { applyChanges } = await import("../../src/sync/changeset.js");
+    const rows = [{
+      tbl: "error_logs",
+      pk: "01",
+      cid: "message",
+      val: "injected",
+      col_version: 1,
+      db_version: 1,
+      site_id: "aa",
+    }];
+    expect(() => applyChanges({} as unknown as Database.Database, rows)).toThrow(/non-CRDT table/i);
+  });
+
+  it("SEC-2: CRDT_TABLES export contains the five registered tables", async () => {
+    const { CRDT_TABLES } = await import("../../src/sync/changeset.js");
+    expect(CRDT_TABLES.has("workspaces")).toBe(true);
+    expect(CRDT_TABLES.has("features")).toBe(true);
+    expect(CRDT_TABLES.has("contents")).toBe(true);
+    expect(CRDT_TABLES.has("content_features")).toBe(true);
+    expect(CRDT_TABLES.has("content_links")).toBe(true);
+    expect(CRDT_TABLES.has("team_peers")).toBe(false);
+  });
+});
