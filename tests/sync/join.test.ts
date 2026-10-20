@@ -213,6 +213,44 @@ describe("handleJoinRequest (host side)", () => {
     });
     expect(result.accepted).toBe(true);
   });
+
+  it("TOCTOU: second concurrent join for same username is rejected", async () => {
+    // Use a stateful settings store so writeSettings propagates to subsequent loadSettings calls
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    let settingsStore = makeSettingsJson();
+    vi.mocked(readFileSync).mockImplementation(() => settingsStore);
+    vi.mocked(writeFileSync).mockImplementation((_p, data) => {
+      if (typeof data === "string" && data.includes('"workspaces"')) settingsStore = data;
+    });
+
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    const resolvers: Array<(v: string) => void> = [];
+    vi.mocked(getGitHubUsername).mockImplementation(() =>
+      new Promise<string>((res) => { resolvers.push(res); }),
+    );
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const db1 = createTestDb();
+    const db2 = createTestDb();
+    const p1 = handleJoinRequest(db1, "myws", { githubToken: "tok1", peerPublicKey: "e".repeat(64) });
+    const p2 = handleJoinRequest(db2, "myws", { githubToken: "tok2", peerPublicKey: "f".repeat(64) });
+
+    // Both are now awaiting their GitHub calls
+    await Promise.resolve();
+    expect(resolvers).toHaveLength(2);
+
+    // Resolve C1 first — it consumes the invite and writes updated settings
+    resolvers[0]("vulhdev");
+    await Promise.resolve(); // drain C1's microtask chain
+
+    // Resolve C2 — it should now read the updated settings (no invite) and be rejected
+    resolvers[1]("vulhdev");
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    const results = [r1, r2];
+    expect(results.filter((r) => r.accepted).length).toBe(1);
+    expect(results.filter((r) => !r.accepted).length).toBe(1);
+  });
 });
 
 describe("deriveJoinTopic", () => {
