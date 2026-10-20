@@ -6,7 +6,7 @@ import { inflateRawSync } from "node:zlib";
 import { loadSettings } from "../config.js";
 import type Database from "better-sqlite3";
 
-const CRSQLITE_VERSION = "0.16.1";
+const CRSQLITE_VERSION = "0.16.3";
 
 type PlatformEntry = {
   zipName: string;
@@ -18,22 +18,22 @@ export const PLATFORM_ZIP_MAP: Record<string, PlatformEntry> = {
   "darwin-arm64": {
     zipName: "crsqlite-darwin-aarch64.zip",
     binName: "crsqlite-darwin-aarch64.dylib",
-    sha256: "286def64d5361a72bc730b499f6d2ff5be2986c5c974cc43c90204b9c36c0fb7",
+    sha256: "654e83fd86d975a0420174511df9f5b3d3786afb3b9fe510842ca4c34b42f746",
   },
   "darwin-x64": {
     zipName: "crsqlite-darwin-x86_64.zip",
     binName: "crsqlite-darwin-x86_64.dylib",
-    sha256: "6195125c6761b789863ad77ba063c0b8e31ac1c41c803ebf7b1fc43955c11585",
+    sha256: "d482404950ab161f8d898b096d558017120e22684bf1678a0220ec3e77bf8624",
   },
   "linux-x64": {
     zipName: "crsqlite-linux-x86_64.zip",
     binName: "crsqlite-linux-x86_64.so",
-    sha256: "2778a12c910e5ecdb5b344bbf172e9080cbf6508186342fa1451a4d807fd73d0",
+    sha256: "8f6fd31a2be2ba8c3101aad067a504a2e63c8e9b51cc4ace786009c02e7ecbae",
   },
   "win32-x64": {
     zipName: "crsqlite-win-x86_64.zip",
     binName: "crsqlite-win-x86_64.dll",
-    sha256: "902785b0569d6bb0e095b80fa0243d04b85c2b0a73baf6a594828128c8a76b24",
+    sha256: "401f9950dc274a52c0aaf180f175c603bebc272c561734baafff4211437ea5da",
   },
 };
 

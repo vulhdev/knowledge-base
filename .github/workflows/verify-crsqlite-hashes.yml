@@ -1,0 +1,20 @@
+name: Verify cr-sqlite hashes
+
+on:
+  schedule:
+    # Every Monday at 09:00 UTC — catches upstream re-releases before the next user hits it
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify SHA-256 hashes match GitHub release
+        run: node scripts/verify-crsqlite-hashes.mjs
