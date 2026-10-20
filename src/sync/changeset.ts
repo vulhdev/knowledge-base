@@ -29,7 +29,7 @@ export function getChanges(db: Database.Database, sinceVersion: number): Changes
   return db
     .prepare(
       "SELECT tbl, pk, cid, val, col_version, db_version, site_id " +
-      "FROM crsql_changes WHERE site_id != crsql_site_id() AND db_version > ?",
+      "FROM crsql_changes WHERE db_version > ?",
     )
     .all(sinceVersion) as ChangesetRow[];
 }

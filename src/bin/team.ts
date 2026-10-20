@@ -156,7 +156,12 @@ async function attemptJoin(
   return new Promise((resolve, reject) => {
     swarm.join(joinTopic);
 
-    swarm.on("connection", (socket: NodeJS.ReadWriteStream) => {
+    swarm.on("connection", (socket: NodeJS.ReadWriteStream, info) => {
+      if (info.publicKey.toString("hex") !== hostPublicKey) {
+        (socket as import("node:stream").Duplex).destroy();
+        return;
+      }
+
       const msg = JSON.stringify({
         type: "join_request",
         githubToken,

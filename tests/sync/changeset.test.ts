@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type Database from "better-sqlite3";
 
 const SAMPLE_ROWS = [
   {
@@ -11,6 +12,21 @@ const SAMPLE_ROWS = [
     site_id: "aabbccdd11223344aabbccdd11223344",
   },
 ];
+
+describe("getChanges", () => {
+  it("queries all changes since sinceVersion without site_id filter", async () => {
+    const { getChanges } = await import("../../src/sync/changeset.js");
+    let capturedSql = "";
+    const mockDb = {
+      prepare: (sql: string) => { capturedSql = sql; return { all: () => [] }; },
+    } as unknown as Database.Database;
+
+    getChanges(mockDb, 42);
+
+    expect(capturedSql).toContain("db_version > ?");
+    expect(capturedSql).not.toContain("site_id !=");
+  });
+});
 
 describe("encodeChangeset / decodeChangeset", () => {
   it("round-trips a changeset through encode then decode", async () => {
