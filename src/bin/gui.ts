@@ -33,6 +33,6 @@ if (port !== preferredPort) {
   console.log(`Port ${preferredPort} in use, using ${port} instead.`);
 }
 
-createApp(db).listen(port, () => {
+createApp(db, port).listen(port, () => {
   console.log(`knowledge-base gui listening on http://localhost:${port}`);
 });

@@ -31,7 +31,7 @@ import { listErrorLogs } from "../db/error-log.js";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-export function createApp(db: Database.Database) {
+export function createApp(db: Database.Database, port?: number) {
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
@@ -73,9 +73,20 @@ export function createApp(db: Database.Database) {
 
   app.post("/ws/:workspace/team/kick", (req, res) => {
     const origin = req.headers.origin ?? "";
-    let originHost = "";
-    try { originHost = new URL(origin).hostname; } catch { /* no-op */ }
-    if (originHost !== "localhost" && originHost !== "127.0.0.1") {
+    let originOk = false;
+    try {
+      const u = new URL(origin);
+      const isLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+      if (isLocal) {
+        if (port !== undefined) {
+          const originPort = u.port ? Number(u.port) : (u.protocol === "https:" ? 443 : 80);
+          originOk = originPort === port;
+        } else {
+          originOk = true;
+        }
+      }
+    } catch { /* bad origin */ }
+    if (!originOk) {
       res.status(403).send("<p>Forbidden</p>");
       return;
     }

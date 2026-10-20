@@ -229,6 +229,43 @@ describe("POST /ws/:workspace/team/kick", () => {
   });
 });
 
+describe("POST /ws/:workspace/team/kick — CSRF port check", () => {
+  const TEST_PORT = 57891;
+  let db: Database.Database;
+  let app: ReturnType<typeof createApp>;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    db.prepare("INSERT INTO team_peers (public_key, display_name, github_username) VALUES (?, ?, ?)").run("pk1", "@alice", "alice");
+    await mockSettings(HOST_SETTINGS);
+    app = createApp(db, TEST_PORT);
+  });
+
+  it("CSRF-14: allows kick when Origin port matches the server port", async () => {
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", `http://localhost:${TEST_PORT}`)
+      .send({ github_username: "alice" });
+    expect(res.status).toBe(302);
+  });
+
+  it("CSRF-14: rejects kick when Origin port is wrong (different port = different app)", async () => {
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "http://localhost:8080")
+      .send({ github_username: "alice" });
+    expect(res.status).toBe(403);
+  });
+
+  it("CSRF-14: rejects kick when Origin has no port (defaults to 80, not the server port)", async () => {
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "http://localhost")
+      .send({ github_username: "alice" });
+    expect(res.status).toBe(403);
+  });
+});
+
 // --- Task 3: Team link in workspace page ---
 
 describe("GET /ws/:workspace — Team link", () => {
