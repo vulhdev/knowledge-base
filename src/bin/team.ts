@@ -107,10 +107,14 @@ async function runJoin(args: string[]): Promise<void> {
   const spinner = p.spinner();
   spinner.start(`Connecting to host…`);
 
+  const swarm = new Hyperswarm();
   const result = await Promise.race([
-    attemptJoin(hostPublicKey, workspaceName, kp.publicKey, githubToken, githubUsername),
+    attemptJoin(swarm, hostPublicKey, workspaceName, kp.publicKey, githubToken, githubUsername),
     new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Host is not online, try again when host is running")), 30_000),
+      setTimeout(() => {
+        swarm.destroy().catch(() => undefined);
+        reject(new Error("Host is not online, try again when host is running"));
+      }, 30_000),
     ),
   ]).catch((err: Error) => {
     spinner.stop("Connection failed");
@@ -144,14 +148,14 @@ async function runJoin(args: string[]): Promise<void> {
   p.outro(`Joined workspace "${workspaceName}" as @${githubUsername}`);
 }
 
-async function attemptJoin(
+export async function attemptJoin(
+  swarm: InstanceType<typeof Hyperswarm>,
   hostPublicKey: string,
   workspaceName: string,
   peerPublicKey: string,
   githubToken: string,
   githubUsername: string,
 ): Promise<{ accepted: true; secret: string } | { accepted: false; reason: string }> {
-  const swarm = new Hyperswarm();
   const joinTopic = deriveJoinTopic(workspaceName, hostPublicKey);
 
   return new Promise((resolve, reject) => {
