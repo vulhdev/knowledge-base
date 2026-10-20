@@ -126,6 +126,16 @@ describe("POST /ws/:workspace/team/kick", () => {
     expect(row.is_active).toBe(0);
   });
 
+  it("SEC-6: kicks member via urlencoded form body", async () => {
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .type("form")
+      .send("github_username=alice");
+    expect(res.status).toBe(302);
+    const row = db.prepare("SELECT is_active FROM team_peers WHERE github_username = 'alice'").get() as { is_active: number };
+    expect(row.is_active).toBe(0);
+  });
+
   it("returns 400 for unknown username", async () => {
     const res = await request(app).post("/ws/proj-a/team/kick").send({ github_username: "ghost" });
     expect(res.status).toBe(400);

@@ -105,6 +105,13 @@ describe("GUI server routes", () => {
       const res = await request(app).get("/ws/nonexistent");
       expect(res.status).toBe(404);
     });
+
+    it("SEC-1: escapes XSS in workspace name on 404", async () => {
+      const res = await request(app).get("/ws/%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E");
+      expect(res.status).toBe(404);
+      expect(res.text).not.toContain("<img");
+      expect(res.text).toContain("&lt;img");
+    });
   });
 
   describe("GET /ws/:workspace/:feature", () => {
@@ -117,6 +124,13 @@ describe("GUI server routes", () => {
     it("returns 404 for unknown feature", async () => {
       const res = await request(app).get("/ws/proj-a/nonexistent");
       expect(res.status).toBe(404);
+    });
+
+    it("SEC-1: escapes XSS in feature name on 404", async () => {
+      const res = await request(app).get("/ws/proj-a/%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E");
+      expect(res.status).toBe(404);
+      expect(res.text).not.toContain("<img");
+      expect(res.text).toContain("&lt;img");
     });
   });
 

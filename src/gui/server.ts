@@ -23,6 +23,7 @@ import {
   renderTeamPage,
   slugifyTitle,
   buildExportBody,
+  esc,
 } from "./render.js";
 import { listPeers, findPeerByUsername, kickPeer } from "../team/kick.js";
 import { addComment, commitReview } from "../db/reviews.js";
@@ -33,6 +34,7 @@ const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function createApp(db: Database.Database) {
   const app = express();
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
 
   app.use("/assets", express.static(join(PACKAGE_ROOT, "assets")));
 
@@ -49,7 +51,7 @@ export function createApp(db: Database.Database) {
       const workspaces = listWorkspaces(db);
       const exists = workspaces.some((w) => w.name === workspace);
       if (!exists) {
-        res.status(404).send(`<p>Workspace not found: ${workspace}</p>`);
+        res.status(404).send(`<p>Workspace not found: ${esc(workspace)}</p>`);
         return;
       }
     }
@@ -99,7 +101,7 @@ export function createApp(db: Database.Database) {
     const features = listFeatures(db, workspace);
     const featureExists = features.some((f) => f.name === feature);
     if (!featureExists) {
-      res.status(404).send(`<p>Feature not found: ${workspace}/${feature}</p>`);
+      res.status(404).send(`<p>Feature not found: ${esc(workspace)}/${esc(feature)}</p>`);
       return;
     }
     const { results: contents } = listContents(db, workspace, feature);
