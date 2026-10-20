@@ -6,11 +6,14 @@ export type Identity = { name: string; email: string; github_username?: string }
 
 export type NoiseKeypair = { publicKey: string; secretKey: string };
 
+export type PendingInvite = { username: string; invited_at: string };
+
 export type WorkspaceTeamConfig = {
   role: "host" | "peer";
   secret: string;
   noise_keypair: NoiseKeypair;
   pending_github_usernames?: string[];
+  pending_invites?: PendingInvite[];
   host_public_key?: string;
   last_synced_at?: string;
 };

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createTestDb } from "../setup.js";
 import type Database from "better-sqlite3";
 
@@ -17,11 +17,16 @@ vi.mock("../../src/team/github.js", () => ({
   getGitHubUsername: vi.fn(),
 }));
 
+const NOW_ISO = "2026-10-20T12:00:00.000Z";
+const RECENT_ISO = "2026-10-20T11:00:00.000Z"; // 1h ago — within TTL
+const EXPIRED_ISO = "2026-10-18T12:00:00.000Z"; // 48h ago — expired
+
 const HOST_CONFIG = {
   role: "host" as const,
   secret: "a".repeat(64),
   noise_keypair: { publicKey: "b".repeat(64), secretKey: "c".repeat(64) },
   pending_github_usernames: ["vulhdev"],
+  pending_invites: [{ username: "vulhdev", invited_at: RECENT_ISO }],
 };
 
 function makeSettingsJson(overrides: Record<string, unknown> = {}) {
@@ -37,9 +42,15 @@ describe("handleJoinRequest (host side)", () => {
 
   beforeEach(async () => {
     db = createTestDb();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW_ISO));
     vi.resetModules();
     const { readFileSync } = await import("node:fs");
     vi.mocked(readFileSync).mockReturnValue(makeSettingsJson());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("returns accepted=true when GitHub token resolves to an invited username", async () => {
@@ -83,7 +94,7 @@ describe("handleJoinRequest (host side)", () => {
     expect(row?.display_name).toBe("@vulhdev");
   });
 
-  it("removes username from pending_github_usernames after acceptance", async () => {
+  it("removes username from pending_invites after acceptance", async () => {
     const { getGitHubUsername } = await import("../../src/team/github.js");
     vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
     const { writeFileSync } = await import("node:fs");
@@ -95,7 +106,8 @@ describe("handleJoinRequest (host side)", () => {
     });
 
     const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
-    expect(written.workspaces.myws.team.pending_github_usernames).not.toContain("vulhdev");
+    const remaining = (written.workspaces.myws.team.pending_invites ?? []) as Array<{ username: string }>;
+    expect(remaining.some((i) => i.username === "vulhdev")).toBe(false);
   });
 
   it("returns accepted=false when GitHub username is not in pending list", async () => {
@@ -126,7 +138,9 @@ describe("handleJoinRequest (host side)", () => {
 
   it("returns accepted=false when no pending invites exist", async () => {
     const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(makeSettingsJson({ pending_github_usernames: [] }));
+    vi.mocked(readFileSync).mockReturnValue(
+      makeSettingsJson({ pending_github_usernames: [], pending_invites: [] }),
+    );
     const { handleJoinRequest } = await import("../../src/sync/join.js");
 
     const result = await handleJoinRequest(db, "myws", {
@@ -134,6 +148,43 @@ describe("handleJoinRequest (host side)", () => {
       peerPublicKey: "e".repeat(64),
     });
     expect(result.accepted).toBe(false);
+  });
+
+  it("SUGG-2: rejects invite older than 24 hours", async () => {
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(
+      makeSettingsJson({
+        pending_invites: [{ username: "vulhdev", invited_at: EXPIRED_ISO }],
+      }),
+    );
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "e".repeat(64),
+    });
+    expect(result.accepted).toBe(false);
+    expect((result as { accepted: false; reason: string }).reason).toMatch(/expired/i);
+  });
+
+  it("SUGG-2: accepts invite within 24 hours", async () => {
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(
+      makeSettingsJson({
+        pending_invites: [{ username: "vulhdev", invited_at: RECENT_ISO }],
+      }),
+    );
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "e".repeat(64),
+    });
+    expect(result.accepted).toBe(true);
   });
 });
 

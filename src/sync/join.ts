@@ -16,6 +16,8 @@ export function deriveJoinTopic(workspaceName: string, hostPublicKey: string): B
   return createHash("sha256").update(`${hostPublicKey}:${workspaceName}:join`).digest();
 }
 
+const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
+
 export async function handleJoinRequest(
   db: Database.Database,
   workspaceName: string,
@@ -25,8 +27,12 @@ export async function handleJoinRequest(
   const team = settings.workspaces?.[workspaceName]?.team;
   if (!team) return { accepted: false, reason: "workspace not found" };
 
-  const pending = team.pending_github_usernames ?? [];
-  if (pending.length === 0) return { accepted: false, reason: "no pending invites" };
+  const pendingInvites = team.pending_invites;
+  const pendingUsernames = team.pending_github_usernames ?? [];
+
+  if ((pendingInvites?.length ?? 0) === 0 && pendingUsernames.length === 0) {
+    return { accepted: false, reason: "no pending invites" };
+  }
 
   let username: string;
   try {
@@ -35,7 +41,13 @@ export async function handleJoinRequest(
     return { accepted: false, reason: "GitHub token verification failed" };
   }
 
-  if (!pending.includes(username)) {
+  if (pendingInvites !== undefined) {
+    const invite = pendingInvites.find((i) => i.username === username);
+    if (!invite) return { accepted: false, reason: `@${username} is not invited` };
+    if (Date.now() - new Date(invite.invited_at).getTime() > INVITE_TTL_MS) {
+      return { accepted: false, reason: `invite for @${username} has expired` };
+    }
+  } else if (!pendingUsernames.includes(username)) {
     return { accepted: false, reason: `@${username} is not invited` };
   }
 
@@ -45,9 +57,11 @@ export async function handleJoinRequest(
 
   const updated = loadSettings();
   if (updated.workspaces?.[workspaceName]?.team) {
-    const remaining = (updated.workspaces[workspaceName].team!.pending_github_usernames ?? [])
-      .filter((u) => u !== username);
-    updated.workspaces[workspaceName].team!.pending_github_usernames = remaining;
+    const t = updated.workspaces[workspaceName].team!;
+    t.pending_github_usernames = (t.pending_github_usernames ?? []).filter((u) => u !== username);
+    if (t.pending_invites) {
+      t.pending_invites = t.pending_invites.filter((i) => i.username !== username);
+    }
     writeSettings(updated);
   }
 
