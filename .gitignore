@@ -1,7 +1,11 @@
 # Claude Code
-CLAUDE.md
 docs/
 .claude/claude/
+.claude/skills/*
+!.claude/skills/release/
+!.claude/skills/release/**
+!.claude/skills/release-beta/
+!.claude/skills/release-beta/**
 
 # Dependencies
 node_modules/
@@ -23,4 +27,7 @@ dist/
 .cursor/
 .vscode/
 .specify/
+.mcp.json
 
+#Gitnexus
+AGENTS.md
