@@ -12,8 +12,8 @@ export type JoinResult =
   | { accepted: true; secret: string }
   | { accepted: false; reason: string };
 
-export function deriveJoinTopic(workspaceName: string): Buffer {
-  return createHash("sha256").update(`${workspaceName}:join`).digest();
+export function deriveJoinTopic(workspaceName: string, hostPublicKey: string): Buffer {
+  return createHash("sha256").update(`${hostPublicKey}:${workspaceName}:join`).digest();
 }
 
 export async function handleJoinRequest(

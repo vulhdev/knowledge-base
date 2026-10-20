@@ -151,7 +151,7 @@ async function attemptJoin(
   githubToken: string,
 ): Promise<{ accepted: true; secret: string } | { accepted: false; reason: string }> {
   const swarm = new Hyperswarm();
-  const joinTopic = deriveJoinTopic(workspaceName);
+  const joinTopic = deriveJoinTopic(workspaceName, hostPublicKey);
 
   return new Promise((resolve, reject) => {
     swarm.join(joinTopic);

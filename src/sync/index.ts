@@ -120,8 +120,12 @@ export function startSync(db: Database.Database, workspaceName: string): SyncHan
 
   let joinSwarm: InstanceType<typeof Hyperswarm> | null = null;
   if (team.role === "host") {
-    joinSwarm = new Hyperswarm();
-    joinSwarm.join(deriveJoinTopic(workspaceName));
+    const keyPair = {
+      publicKey: Buffer.from(team.noise_keypair.publicKey, "hex"),
+      secretKey: Buffer.from(team.noise_keypair.secretKey, "hex"),
+    };
+    joinSwarm = new Hyperswarm({ keyPair });
+    joinSwarm.join(deriveJoinTopic(workspaceName, team.noise_keypair.publicKey));
     joinSwarm.on("connection", (socket: NodeJS.ReadWriteStream) => {
       handleJoinConnection(db, workspaceName, socket);
     });

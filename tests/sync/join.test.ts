@@ -138,10 +138,12 @@ describe("handleJoinRequest (host side)", () => {
 });
 
 describe("deriveJoinTopic", () => {
+  const HOST_PK = "b".repeat(64);
+
   it("returns a 32-byte Buffer distinct from the sync topic", async () => {
     const { deriveJoinTopic } = await import("../../src/sync/join.js");
     const { deriveTopicBuffer } = await import("../../src/sync/peer.js");
-    const joinTopic = deriveJoinTopic("myws");
+    const joinTopic = deriveJoinTopic("myws", HOST_PK);
     const syncTopic = deriveTopicBuffer("myws", "a".repeat(64));
     expect(joinTopic.length).toBe(32);
     expect(joinTopic.toString("hex")).not.toBe(syncTopic.toString("hex"));
@@ -149,6 +151,22 @@ describe("deriveJoinTopic", () => {
 
   it("is deterministic", async () => {
     const { deriveJoinTopic } = await import("../../src/sync/join.js");
-    expect(deriveJoinTopic("ws").toString("hex")).toBe(deriveJoinTopic("ws").toString("hex"));
+    expect(deriveJoinTopic("ws", HOST_PK).toString("hex")).toBe(
+      deriveJoinTopic("ws", HOST_PK).toString("hex"),
+    );
+  });
+
+  it("SEC-5: topic differs when hostPublicKey differs", async () => {
+    const { deriveJoinTopic } = await import("../../src/sync/join.js");
+    const t1 = deriveJoinTopic("ws", "a".repeat(64));
+    const t2 = deriveJoinTopic("ws", "c".repeat(64));
+    expect(t1.toString("hex")).not.toBe(t2.toString("hex"));
+  });
+
+  it("SEC-5: topic differs when workspace name differs", async () => {
+    const { deriveJoinTopic } = await import("../../src/sync/join.js");
+    const t1 = deriveJoinTopic("ws-a", HOST_PK);
+    const t2 = deriveJoinTopic("ws-b", HOST_PK);
+    expect(t1.toString("hex")).not.toBe(t2.toString("hex"));
   });
 });
