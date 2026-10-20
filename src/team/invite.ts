@@ -36,9 +36,12 @@ export function generateInvite(workspaceName: string, githubUsername: string): s
   const existingInvites = updated.workspaces[workspaceName].team?.pending_invites ?? [];
   updated.workspaces[workspaceName].team = {
     ...team,
-    pending_github_usernames: [...existingUsernames, githubUsername],
+    pending_github_usernames: [
+      ...existingUsernames.filter((u) => u !== githubUsername),
+      githubUsername,
+    ],
     pending_invites: [
-      ...existingInvites,
+      ...existingInvites.filter((i) => i.username !== githubUsername),
       { username: githubUsername, invited_at: new Date().toISOString() },
     ],
   };

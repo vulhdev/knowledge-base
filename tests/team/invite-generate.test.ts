@@ -66,6 +66,41 @@ describe("generateInvite", () => {
     expect(() => generateInvite("myws", "vulhdev")).toThrow(/no team config/i);
   });
 
+  it("re-inviting same user replaces the existing entry (no duplicate)", async () => {
+    const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
+    vi.mocked(existsSync).mockReturnValue(true);
+    const FIRST_INVITE_ISO = "2026-10-18T00:00:00.000Z";
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({
+        db_path: "/db",
+        model_cache_dir: "/m",
+        workspaces: {
+          myws: {
+            team: {
+              ...MOCK_HOST_CONFIG,
+              pending_github_usernames: ["vulhdev"],
+              pending_invites: [{ username: "vulhdev", invited_at: FIRST_INVITE_ISO }],
+            },
+          },
+        },
+      }),
+    );
+    const { generateInvite } = await import("../../src/team/invite.js");
+    generateInvite("myws", "vulhdev");
+
+    const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
+    const invites = written.workspaces.myws.team.pending_invites as Array<{ username: string; invited_at: string }>;
+    const usernames = written.workspaces.myws.team.pending_github_usernames as string[];
+
+    // Exactly one entry for vulhdev (no duplicate)
+    expect(invites.filter((i) => i.username === "vulhdev")).toHaveLength(1);
+    expect(usernames.filter((u) => u === "vulhdev")).toHaveLength(1);
+
+    // The surviving entry should be the NEW one (not the old FIRST_INVITE_ISO)
+    const entry = invites.find((i) => i.username === "vulhdev")!;
+    expect(entry.invited_at).not.toBe(FIRST_INVITE_ISO);
+  });
+
   it("throws when caller is not the host", async () => {
     const { existsSync, readFileSync } = await import("node:fs");
     vi.mocked(existsSync).mockReturnValue(true);
