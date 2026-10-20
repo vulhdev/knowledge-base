@@ -138,7 +138,10 @@ describe("POST /ws/:workspace/team/kick", () => {
   });
 
   it("kicks active member and redirects 302", async () => {
-    const res = await request(app).post("/ws/proj-a/team/kick").send({ github_username: "alice" });
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "http://localhost")
+      .send({ github_username: "alice" });
     expect(res.status).toBe(302);
     const row = db.prepare("SELECT is_active FROM team_peers WHERE github_username = 'alice'").get() as { is_active: number };
     expect(row.is_active).toBe(0);
@@ -147,6 +150,7 @@ describe("POST /ws/:workspace/team/kick", () => {
   it("SEC-6: kicks member via urlencoded form body", async () => {
     const res = await request(app)
       .post("/ws/proj-a/team/kick")
+      .set("Origin", "http://localhost")
       .type("form")
       .send("github_username=alice");
     expect(res.status).toBe(302);
@@ -155,20 +159,53 @@ describe("POST /ws/:workspace/team/kick", () => {
   });
 
   it("returns 400 for unknown username", async () => {
-    const res = await request(app).post("/ws/proj-a/team/kick").send({ github_username: "ghost" });
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "http://localhost")
+      .send({ github_username: "ghost" });
     expect(res.status).toBe(400);
   });
 
   it("returns 400 for already-kicked member", async () => {
     db.prepare("UPDATE team_peers SET is_active = 0 WHERE github_username = 'alice'").run();
-    const res = await request(app).post("/ws/proj-a/team/kick").send({ github_username: "alice" });
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "http://localhost")
+      .send({ github_username: "alice" });
     expect(res.status).toBe(400);
   });
 
   it("returns 403 for non-host", async () => {
     await mockSettings(PEER_SETTINGS);
-    const res = await request(app).post("/ws/proj-a/team/kick").send({ github_username: "alice" });
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "http://localhost")
+      .send({ github_username: "alice" });
     expect(res.status).toBe(403);
+  });
+
+  it("CORS-1: returns 403 when Origin header is missing", async () => {
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "")
+      .send({ github_username: "alice" });
+    expect(res.status).toBe(403);
+  });
+
+  it("CORS-1: returns 403 when Origin is a cross-origin domain", async () => {
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "https://evil.example.com")
+      .send({ github_username: "alice" });
+    expect(res.status).toBe(403);
+  });
+
+  it("CORS-1: allows kick when Origin is localhost", async () => {
+    const res = await request(app)
+      .post("/ws/proj-a/team/kick")
+      .set("Origin", "http://localhost")
+      .send({ github_username: "alice" });
+    expect(res.status).toBe(302);
   });
 });
 

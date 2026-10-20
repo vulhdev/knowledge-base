@@ -72,6 +72,14 @@ export function createApp(db: Database.Database) {
   });
 
   app.post("/ws/:workspace/team/kick", (req, res) => {
+    const origin = req.headers.origin ?? "";
+    let originHost = "";
+    try { originHost = new URL(origin).hostname; } catch { /* no-op */ }
+    if (originHost !== "localhost" && originHost !== "127.0.0.1") {
+      res.status(403).send("<p>Forbidden</p>");
+      return;
+    }
+
     const { workspace } = req.params;
     const team = loadSettings().workspaces?.[workspace]?.team;
     if (!team || team.role !== "host") {
