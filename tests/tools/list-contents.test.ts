@@ -143,9 +143,13 @@ describe("listContents batched feature lookup", () => {
     const wsA = Number(insertWorkspace.run("bulk-a").lastInsertRowid);
     const wsB = Number(insertWorkspace.run("bulk-b").lastInsertRowid);
     const insertFeature = db.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)");
-    const fMain = Number(insertFeature.run(wsA, "main").lastInsertRowid);
-    const fExtra = Number(insertFeature.run(wsA, "extra").lastInsertRowid);
-    const fForeign = Number(insertFeature.run(wsB, "foreign").lastInsertRowid);
+    const getFeatureId = db.prepare("SELECT id FROM features WHERE workspace_id = ? AND name = ?");
+    insertFeature.run(wsA, "main");
+    const fMain = (getFeatureId.get(wsA, "main") as { id: string }).id;
+    insertFeature.run(wsA, "extra");
+    const fExtra = (getFeatureId.get(wsA, "extra") as { id: string }).id;
+    insertFeature.run(wsB, "foreign");
+    const fForeign = (getFeatureId.get(wsB, "foreign") as { id: string }).id;
 
     const insertContent = db.prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)");
     const getUuid = db.prepare("SELECT id FROM contents WHERE rowid = ?");
@@ -213,12 +217,13 @@ describe("listContents batched feature lookup", () => {
 
 describe("listContents ordering and query plan", () => {
   let db: Database.Database;
-  let featureId: number;
+  let featureId: string;
 
   beforeEach(() => {
     db = createTestDb();
     const wsId = Number(db.prepare("INSERT INTO workspaces (name) VALUES (?)").run("order-ws").lastInsertRowid);
-    featureId = Number(db.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "ft").lastInsertRowid);
+    db.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "ft");
+    featureId = (db.prepare("SELECT id FROM features WHERE name = ?").get("ft") as { id: string }).id;
   });
 
   function seed(rows: { type: string; created_at: string }[]): { id: string; created_at: string }[] {

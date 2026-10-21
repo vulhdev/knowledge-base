@@ -657,6 +657,65 @@ function runMigrations(db: Database.Database): void {
   if (contentsIdType.toUpperCase() !== "TEXT") {
     migrateContentsToUuid(db);
   }
+
+  // Migration 20: convert features.id from INTEGER to TEXT UUID
+  const { type: featuresIdType } = db.prepare(
+    "SELECT type FROM pragma_table_info('features') WHERE name = 'id'"
+  ).get() as { type: string };
+  if (featuresIdType.toUpperCase() !== "TEXT") {
+    migrateFeaturesIdToUuid(db);
+  }
+}
+
+// Migration 20: convert features.id from INTEGER to TEXT UUID so bootstrap payloads
+// carry globally-unique feature IDs that never collide across peers.
+function migrateFeaturesIdToUuid(db: Database.Database): void {
+  const isCrsqlLoaded = (() => {
+    try { db.prepare("SELECT crsql_site_id()").get(); return true; } catch { return false; }
+  })();
+
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec(`
+    BEGIN;
+
+    DROP TABLE IF EXISTS _feature_uuid_map;
+    CREATE TABLE _feature_uuid_map (old_id INTEGER PRIMARY KEY, new_id TEXT NOT NULL);
+    INSERT INTO _feature_uuid_map (old_id, new_id)
+      SELECT id, lower(hex(randomblob(16))) FROM features;
+
+    CREATE TABLE features_new (
+      id           TEXT    NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      workspace_id INTEGER NOT NULL,
+      name         TEXT    NOT NULL,
+      UNIQUE(workspace_id, name)
+    );
+    INSERT INTO features_new (id, workspace_id, name)
+      SELECT m.new_id, f.workspace_id, f.name
+      FROM features f JOIN _feature_uuid_map m ON m.old_id = f.id;
+    DROP TABLE features;
+    ALTER TABLE features_new RENAME TO features;
+
+    CREATE TABLE content_features_new (
+      content_id TEXT NOT NULL,
+      feature_id TEXT NOT NULL,
+      PRIMARY KEY (content_id, feature_id)
+    );
+    INSERT INTO content_features_new (content_id, feature_id)
+      SELECT cf.content_id, m.new_id
+      FROM content_features cf JOIN _feature_uuid_map m ON m.old_id = cf.feature_id;
+    DROP TABLE content_features;
+    ALTER TABLE content_features_new RENAME TO content_features;
+    CREATE INDEX IF NOT EXISTS idx_content_features_feature ON content_features(feature_id);
+
+    DROP TABLE IF EXISTS _feature_uuid_map;
+    COMMIT;
+  `);
+
+  if (isCrsqlLoaded) {
+    db.exec("SELECT crsql_as_crr('content_features')");
+  }
+
+  db.exec("PRAGMA foreign_keys = ON");
 }
 
 function removeFeatureIdColumn(db: Database.Database): void {

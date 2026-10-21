@@ -415,3 +415,60 @@ describe("migration 18: workspace_team and workspace_invites tables", () => {
     expect(() => applySchema(db)).not.toThrow();
   });
 });
+
+describe("migration 20: features.id → TEXT UUID", () => {
+  it("features.id is TEXT on a fresh DB", () => {
+    const db = createTestDb();
+    const { type } = db.prepare(
+      "SELECT type FROM pragma_table_info('features') WHERE name = 'id'"
+    ).get() as { type: string };
+    expect(type.toUpperCase()).toBe("TEXT");
+  });
+
+  it("content_features.feature_id is TEXT on a fresh DB", () => {
+    const db = createTestDb();
+    const { type } = db.prepare(
+      "SELECT type FROM pragma_table_info('content_features') WHERE name = 'feature_id'"
+    ).get() as { type: string };
+    expect(type.toUpperCase()).toBe("TEXT");
+  });
+
+  it("features data is preserved after migrating from old INTEGER schema", () => {
+    const db = createOldSchemaDb();
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'feat-alpha')`);
+    const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'feat-alpha'").get() as { id: number };
+    db.exec(`INSERT INTO contents (feature_id, type, body) VALUES (${ftId}, 'idea', 'alpha body')`);
+
+    applySchema(db);
+
+    const features = db.prepare("SELECT id, name FROM features WHERE name = 'feat-alpha'").all() as { id: string; name: string }[];
+    expect(features).toHaveLength(1);
+    expect(typeof features[0].id).toBe("string");
+    expect(features[0].id).toMatch(/^[0-9a-f]{32}$/);
+    expect(features[0].name).toBe("feat-alpha");
+  });
+
+  it("content_features.feature_id matches new TEXT feature IDs after migration", () => {
+    const db = createOldSchemaDb();
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'feat-beta')`);
+    const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'feat-beta'").get() as { id: number };
+    db.exec(`INSERT INTO contents (feature_id, type, body) VALUES (${ftId}, 'idea', 'beta body')`);
+
+    applySchema(db);
+
+    const { id: newFtId } = db.prepare("SELECT id FROM features WHERE name = 'feat-beta'").get() as { id: string };
+    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'beta body'").get() as { id: string };
+    const cf = db.prepare("SELECT feature_id FROM content_features WHERE content_id = ?").get(contentId) as { feature_id: string } | undefined;
+    expect(cf).toBeDefined();
+    expect(cf!.feature_id).toBe(newFtId);
+  });
+
+  it("migration 20 is idempotent", () => {
+    const db = createTestDb();
+    expect(() => applySchema(db)).not.toThrow();
+  });
+});

@@ -68,13 +68,19 @@ describe("Migration 9: content_features junction table", () => {
     ).cnt > 0;
     expect(hasFeatureId).toBe(false);
 
-    // After UUID migration, content_ids are UUIDs — check count and feature assignments
+    // After UUID migrations, feature_ids are UUIDs — check feature names via JOIN
     const rows = db
-      .prepare("SELECT cf.feature_id, c.type FROM content_features cf JOIN contents c ON c.id = cf.content_id ORDER BY c.type")
-      .all() as { feature_id: number; type: string }[];
+      .prepare(`
+        SELECT f.name AS feature_name, c.type
+        FROM content_features cf
+        JOIN contents c ON c.id = cf.content_id
+        JOIN features f ON f.id = cf.feature_id
+        ORDER BY c.type
+      `)
+      .all() as { feature_name: string; type: string }[];
     expect(rows).toEqual([
-      { feature_id: 1, type: "idea" },
-      { feature_id: 2, type: "spec" },
+      { feature_name: "feat-a", type: "idea" },
+      { feature_name: "feat-b", type: "spec" },
     ]);
   });
 
@@ -204,9 +210,13 @@ describe("fetchFeaturesBatch helper", () => {
     const wsA = (db.prepare("SELECT id FROM workspaces WHERE name = ?").get("ws-a") as { id: number }).id;
     const wsB = (db.prepare("SELECT id FROM workspaces WHERE name = ?").get("ws-b") as { id: number }).id;
     const insertFeature = db.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)");
-    const zeta = Number(insertFeature.run(wsA, "zeta").lastInsertRowid);
-    const alpha = Number(insertFeature.run(wsB, "alpha").lastInsertRowid);
-    const solo = Number(insertFeature.run(wsA, "solo").lastInsertRowid);
+    const getFeatureId = db.prepare("SELECT id FROM features WHERE workspace_id = ? AND name = ?");
+    insertFeature.run(wsA, "zeta");
+    const zeta = (getFeatureId.get(wsA, "zeta") as { id: string }).id;
+    insertFeature.run(wsB, "alpha");
+    const alpha = (getFeatureId.get(wsB, "alpha") as { id: string }).id;
+    insertFeature.run(wsA, "solo");
+    const solo = (getFeatureId.get(wsA, "solo") as { id: string }).id;
 
     const insertContent = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)");
     const getUuid = db.prepare("SELECT id FROM contents WHERE rowid = ?");

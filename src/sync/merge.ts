@@ -19,7 +19,7 @@ export function mergeWorkspace(
   return db.transaction((): MergeResult => {
     const srcFeatures = db
       .prepare("SELECT id, name FROM features WHERE workspace_id = ?")
-      .all(src.id) as { id: number; name: string }[];
+      .all(src.id) as { id: string; name: string }[];
 
     if (srcFeatures.length === 0) {
       return { featuresRenamed: [], featuresMoved: 0 };
