@@ -26,6 +26,16 @@ describe("generate module", () => {
     expect(kp.publicKey).not.toBe(kp.secretKey);
   });
 
+  it("isStaleKeypair returns true for 64-char hex secretKey (old X25519)", async () => {
+    const { isStaleKeypair } = await import("../../src/team/generate.js");
+    expect(isStaleKeypair({ publicKey: "a".repeat(64), secretKey: "b".repeat(64) })).toBe(true);
+  });
+
+  it("isStaleKeypair returns false for 128-char hex secretKey (Ed25519)", async () => {
+    const { isStaleKeypair } = await import("../../src/team/generate.js");
+    expect(isStaleKeypair({ publicKey: "a".repeat(64), secretKey: "b".repeat(128) })).toBe(false);
+  });
+
   it("generateTeamConfig produces a valid host config", async () => {
     const { generateTeamConfig } = await import("../../src/team/generate.js");
     const cfg = generateTeamConfig();

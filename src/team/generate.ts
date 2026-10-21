@@ -19,6 +19,10 @@ export function generateNoiseKeypair(): NoiseKeypair {
   };
 }
 
+export function isStaleKeypair(kp: NoiseKeypair): boolean {
+  return kp.secretKey.length === 64;
+}
+
 export function generateTeamConfig(): WorkspaceTeamConfig {
   return {
     role: "host",
