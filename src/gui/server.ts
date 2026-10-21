@@ -296,8 +296,8 @@ export function createApp(db: Database.Database, port?: number) {
       const latest = allVersions.versions.find((v) => v.is_latest) ?? allVersions.versions[allVersions.versions.length - 1];
       const secondLatest = allVersions.versions[allVersions.versions.indexOf(latest) - 1] ?? allVersions.versions[0];
 
-      const fromId = req.query.from ? String(req.query.from) : secondLatest.id;
-      const toId = req.query.to ? String(req.query.to) : latest.id;
+      const fromId = typeof req.query.from === "string" ? req.query.from : secondLatest.id;
+      const toId = typeof req.query.to === "string" ? req.query.to : latest.id;
 
       if (fromId === toId) {
         res.redirect(contentUrl);

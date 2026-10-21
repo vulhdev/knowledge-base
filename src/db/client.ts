@@ -71,7 +71,8 @@ export function migrateSettingsToDb(db: Database.Database): void {
     migrated = true;
   }
   if (migrated) {
-    const { workspaces: _, ...cleaned } = settings;
+    const cleaned = { ...settings };
+    delete cleaned.workspaces;
     writeSettings(cleaned);
   }
 }

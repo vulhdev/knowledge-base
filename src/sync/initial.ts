@@ -32,7 +32,7 @@ export async function performInitialSync(
 
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
-      swarm.destroy().catch(() => undefined).then(() => resolve({ ok: false, reason: "timeout" }));
+      void swarm.destroy().catch(() => undefined).then(() => resolve({ ok: false, reason: "timeout" }));
     }, timeoutMs);
 
     (swarm as NodeJS.EventEmitter).on("connection", (socket: NodeJS.ReadWriteStream) => {
@@ -42,7 +42,7 @@ export async function performInitialSync(
       const settle = (result: InitialSyncResult) => {
         if (settled) return;
         settled = true;
-        swarm.destroy().catch(() => undefined).then(() => resolve(result));
+        void swarm.destroy().catch(() => undefined).then(() => resolve(result));
       };
       handleSyncConnection(db, workspaceName, socket, {
         onChangesReceived: (rows) => { rowsReceived += rows.length; },

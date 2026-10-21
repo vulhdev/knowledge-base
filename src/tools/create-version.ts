@@ -104,5 +104,5 @@ export function createVersion(db: Database.Database, id: string): CreateVersionR
     has_code_refs: newRow.has_code_refs === 1,
   };
 
-  return { content, previous_version_id: id as string };
+  return { content, previous_version_id: id };
 }

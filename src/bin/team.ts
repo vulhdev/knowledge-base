@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import type Database from "better-sqlite3";
 import * as p from "@clack/prompts";
 import Hyperswarm from "hyperswarm";
 import { loadSettings, writeSettings } from "../config.js";
@@ -179,7 +180,7 @@ async function runJoin(args: string[]): Promise<void> {
 }
 
 export async function promptMerge(
-  db: import("better-sqlite3").Database,
+  db: Database.Database,
   teamWorkspaceName: string,
 ): Promise<void> {
   const allWorkspaces = listWorkspaces(db);
@@ -191,7 +192,7 @@ export async function promptMerge(
     message: "Merge an existing local workspace into the team workspace? (optional)",
     options: [
       { label: "Skip", value: null },
-      ...candidates.map((w) => ({ label: w.name, value: w.name as string | null })),
+      ...candidates.map((w) => ({ label: w.name, value: w.name })),
     ],
   });
   if (p.isCancel(choice) || choice === null) return;
