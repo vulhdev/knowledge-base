@@ -146,7 +146,7 @@ async function runGitHubAuth(): Promise<string> {
   }
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   p.intro("knowledge-base init");
 
   const db = openDb();
@@ -373,7 +373,9 @@ async function main(): Promise<void> {
   p.outro("Done. Restart Claude Code to pick up the new skills and agents.");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
