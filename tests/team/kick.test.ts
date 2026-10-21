@@ -87,6 +87,31 @@ describe("findPeerByUsername", () => {
   });
 });
 
+describe("deletePeer", () => {
+  let db: Database.Database;
+  beforeEach(() => { db = createTestDb(); });
+
+  it("deletes a kicked peer from the DB", async () => {
+    const { deletePeer } = await import("../../src/team/kick.js");
+    seedPeer(db, "pk1", "Alice");
+    db.prepare("UPDATE team_peers SET is_active = 0 WHERE public_key = 'pk1'").run();
+    deletePeer(db, "pk1");
+    const row = db.prepare("SELECT * FROM team_peers WHERE public_key = 'pk1'").get();
+    expect(row).toBeUndefined();
+  });
+
+  it("throws when peer is still active", async () => {
+    const { deletePeer } = await import("../../src/team/kick.js");
+    seedPeer(db, "pk1", "Alice");
+    expect(() => deletePeer(db, "pk1")).toThrow("Kick the member first before deleting.");
+  });
+
+  it("throws when public_key not found", async () => {
+    const { deletePeer } = await import("../../src/team/kick.js");
+    expect(() => deletePeer(db, "nonexistent")).toThrow("Member not found.");
+  });
+});
+
 describe("getTeamManifest", () => {
   let db: Database.Database;
   beforeEach(() => { db = createTestDb(); });
