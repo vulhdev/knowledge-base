@@ -329,10 +329,20 @@ async function runServer(args: string[]): Promise<void> {
   for (const name of workspaceNames) {
     const team = allWorkspaces[name].team!;
     const topic = deriveTopicBuffer(name, team.secret).toString("hex");
+    const handle = startSync(db, name, logger);
+    if (!handle) {
+      console.log(`  ${name.padEnd(20)} ⚠ Sync already running for this workspace — skipping`);
+      continue;
+    }
     console.log(`  ${name.padEnd(20)} topic: ${topic.slice(0, 6)}…   role: ${team.role}`);
-    handles.push(startSync(db, name, logger));
+    handles.push(handle);
   }
   console.log("");
+
+  if (handles.length === 0) {
+    console.log("All workspaces already have a running sync daemon. Exiting.");
+    process.exit(0);
+  }
 
   const shutdown = async () => {
     console.log("\nShutting down…");

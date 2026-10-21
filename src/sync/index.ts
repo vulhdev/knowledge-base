@@ -7,6 +7,7 @@ import type { ChangesetRow } from "./changeset.js";
 import type { ActivityLogger } from "./activity.js";
 import { rebuildFts } from "./rebuild.js";
 import { loadSettings, writeSettings } from "../config.js";
+import { acquireSyncLock } from "./lock.js";
 
 const MAX_HANDSHAKE_BYTES = 4 * 1024;   // generous for {"v":1,"dbVersion":9999999}
 const MAX_JOIN_REQUEST_BYTES = 8 * 1024; // generous for a join_request JSON
@@ -193,10 +194,16 @@ export function startSync(
   db: Database.Database,
   workspaceName: string,
   logger?: ActivityLogger,
-): SyncHandle {
+): SyncHandle | null {
+  const release = acquireSyncLock(workspaceName);
+  if (!release) return null;
+
   const settings = loadSettings();
   const team = settings.workspaces?.[workspaceName]?.team;
-  if (!team) throw new Error(`No team config for workspace "${workspaceName}"`);
+  if (!team) {
+    release();
+    throw new Error(`No team config for workspace "${workspaceName}"`);
+  }
 
   const { swarm, destroy: destroySwarm } = createSwarm(db, workspaceName);
   swarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
@@ -232,6 +239,7 @@ export function startSync(
     destroy: async () => {
       if (joinSwarm) await joinSwarm.destroy();
       await destroySwarm();
+      release();
     },
   };
 }
