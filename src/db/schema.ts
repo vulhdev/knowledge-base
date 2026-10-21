@@ -407,6 +407,27 @@ function runMigrations(db: Database.Database): void {
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_contents_source_key ON contents(source_key) WHERE source_key IS NOT NULL");
 
+  // Migration 18: workspace team config moved from settings.json to SQLite
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workspace_team (
+      workspace_id     INTEGER PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+      role             TEXT NOT NULL CHECK(role IN ('host', 'peer')),
+      secret           TEXT NOT NULL,
+      noise_public_key TEXT NOT NULL,
+      noise_secret_key TEXT NOT NULL,
+      host_public_key  TEXT,
+      last_synced_at   TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_invites (
+      id               INTEGER PRIMARY KEY,
+      workspace_id     INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      github_username  TEXT NOT NULL,
+      invited_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(workspace_id, github_username)
+    );
+  `);
+
   // Migration 17: register CRDT-replicated tables with cr-sqlite (idempotent)
   // Only runs when the cr-sqlite extension is loaded in this DB instance.
   //

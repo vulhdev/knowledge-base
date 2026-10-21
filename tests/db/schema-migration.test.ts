@@ -327,3 +327,90 @@ describe("migration 10: contents indexes", () => {
     }
   });
 });
+
+describe("migration 18: workspace_team and workspace_invites tables", () => {
+  it("creates workspace_team table with correct columns", () => {
+    const db = createTestDb();
+    const cols = db
+      .prepare("SELECT name FROM pragma_table_info('workspace_team')")
+      .all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).toContain("workspace_id");
+    expect(names).toContain("role");
+    expect(names).toContain("secret");
+    expect(names).toContain("noise_public_key");
+    expect(names).toContain("noise_secret_key");
+    expect(names).toContain("host_public_key");
+    expect(names).toContain("last_synced_at");
+  });
+
+  it("creates workspace_invites table with correct columns", () => {
+    const db = createTestDb();
+    const cols = db
+      .prepare("SELECT name FROM pragma_table_info('workspace_invites')")
+      .all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).toContain("id");
+    expect(names).toContain("workspace_id");
+    expect(names).toContain("github_username");
+    expect(names).toContain("invited_at");
+  });
+
+  it("role CHECK constraint rejects invalid values", () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO workspaces (name) VALUES ('ws')").run();
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    expect(() =>
+      db.prepare(
+        "INSERT INTO workspace_team (workspace_id, role, secret, noise_public_key, noise_secret_key) VALUES (?, ?, ?, ?, ?)"
+      ).run(wsId, "admin", "s", "pk", "sk")
+    ).toThrow();
+  });
+
+  it("role CHECK constraint accepts host and peer", () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO workspaces (name) VALUES ('ws1')").run();
+    db.prepare("INSERT INTO workspaces (name) VALUES ('ws2')").run();
+    const { id: ws1 } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws1'").get() as { id: number };
+    const { id: ws2 } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws2'").get() as { id: number };
+    expect(() =>
+      db.prepare(
+        "INSERT INTO workspace_team (workspace_id, role, secret, noise_public_key, noise_secret_key) VALUES (?, 'host', 's', 'pk', 'sk')"
+      ).run(ws1)
+    ).not.toThrow();
+    expect(() =>
+      db.prepare(
+        "INSERT INTO workspace_team (workspace_id, role, secret, noise_public_key, noise_secret_key) VALUES (?, 'peer', 's', 'pk', 'sk')"
+      ).run(ws2)
+    ).not.toThrow();
+  });
+
+  it("workspace_invites UNIQUE(workspace_id, github_username) prevents duplicates", () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO workspaces (name) VALUES ('ws')").run();
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.prepare("INSERT INTO workspace_invites (workspace_id, github_username) VALUES (?, ?)").run(wsId, "alice");
+    expect(() =>
+      db.prepare("INSERT INTO workspace_invites (workspace_id, github_username) VALUES (?, ?)").run(wsId, "alice")
+    ).toThrow();
+  });
+
+  it("CASCADE delete: removing a workspace removes its team config and invites", () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO workspaces (name) VALUES ('ws')").run();
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.prepare(
+      "INSERT INTO workspace_team (workspace_id, role, secret, noise_public_key, noise_secret_key) VALUES (?, 'host', 's', 'pk', 'sk')"
+    ).run(wsId);
+    db.prepare("INSERT INTO workspace_invites (workspace_id, github_username) VALUES (?, ?)").run(wsId, "bob");
+
+    db.prepare("DELETE FROM workspaces WHERE id = ?").run(wsId);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM workspace_team").get() as { n: number }).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM workspace_invites").get() as { n: number }).toEqual({ n: 0 });
+  });
+
+  it("migration 18 is idempotent", () => {
+    const db = createTestDb();
+    expect(() => applySchema(db)).not.toThrow();
+  });
+});
