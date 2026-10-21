@@ -9,6 +9,11 @@ vi.mock("../../src/team/github.js", () => ({
   getGitHubUsername: vi.fn(),
 }));
 
+vi.mock("../../src/sync/version.js", () => ({
+  HOST_VERSION: "1.17.0",
+  parseMajorMinor: (v: string) => v.split(".").slice(0, 2).join("."),
+}));
+
 const NOW_ISO = "2026-10-20T12:00:00.000Z";
 const RECENT_ISO = "2026-10-20T11:00:00.000Z"; // 1h ago — within TTL
 const EXPIRED_ISO = "2026-10-18T12:00:00.000Z"; // 48h ago — expired
@@ -58,6 +63,7 @@ describe("handleJoinRequest (host side)", () => {
     const result = await handleJoinRequest(db, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(true);
   });
@@ -70,6 +76,7 @@ describe("handleJoinRequest (host side)", () => {
     const result = await handleJoinRequest(db, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
     expect((result as { accepted: true; secret: string }).secret).toBe("a".repeat(64));
   });
@@ -82,6 +89,7 @@ describe("handleJoinRequest (host side)", () => {
     await handleJoinRequest(db, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
 
     const row = db
@@ -99,6 +107,7 @@ describe("handleJoinRequest (host side)", () => {
     await handleJoinRequest(db, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
 
     const remaining = db
@@ -115,6 +124,7 @@ describe("handleJoinRequest (host side)", () => {
     const result = await handleJoinRequest(db, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toMatch(/@stranger/);
@@ -128,6 +138,7 @@ describe("handleJoinRequest (host side)", () => {
     const result = await handleJoinRequest(db, "myws", {
       githubToken: "bad_token",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toMatch(/verification failed/i);
@@ -149,6 +160,7 @@ describe("handleJoinRequest (host side)", () => {
     const result = await handleJoinRequest(emptyDb, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toBe("no pending invites");
@@ -164,6 +176,7 @@ describe("handleJoinRequest (host side)", () => {
     const result = await handleJoinRequest(expiredDb, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toMatch(/expired/i);
@@ -179,6 +192,7 @@ describe("handleJoinRequest (host side)", () => {
     const result = await handleJoinRequest(recentDb, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(true);
   });
@@ -192,6 +206,7 @@ describe("handleJoinRequest (host side)", () => {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
       githubUsername: "hacker",
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toMatch(/username mismatch/i);
@@ -206,6 +221,7 @@ describe("handleJoinRequest (host side)", () => {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
       githubUsername: "vulhdev",
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(true);
   });
@@ -215,6 +231,7 @@ describe("handleJoinRequest (host side)", () => {
     const result = await handleJoinRequest(db, "myws", {
       githubToken: "x".repeat(256),
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toMatch(/invalid github token/i);
@@ -232,6 +249,7 @@ describe("handleJoinRequest (host side)", () => {
     const result = await handleJoinRequest(db, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toMatch(/removed/i);
@@ -245,8 +263,8 @@ describe("handleJoinRequest (host side)", () => {
     const sharedDb = createTestDb();
     seedJoinSetup(sharedDb);
 
-    const r1 = await handleJoinRequest(sharedDb, "myws", { githubToken: "tok1", peerPublicKey: "e".repeat(64) });
-    const r2 = await handleJoinRequest(sharedDb, "myws", { githubToken: "tok2", peerPublicKey: "f".repeat(64) });
+    const r1 = await handleJoinRequest(sharedDb, "myws", { githubToken: "tok1", peerPublicKey: "e".repeat(64), appVersion: "1.17.0" });
+    const r2 = await handleJoinRequest(sharedDb, "myws", { githubToken: "tok2", peerPublicKey: "f".repeat(64), appVersion: "1.17.0" });
 
     expect(r1.accepted).toBe(true);
     expect(r2.accepted).toBe(false);
@@ -257,9 +275,47 @@ describe("handleJoinRequest (host side)", () => {
     const result = await handleJoinRequest(db, "nonexistent", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.0",
     });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toBe("workspace not found");
+  });
+
+  // Version gating tests
+  it("rejects when appVersion is missing", async () => {
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "e".repeat(64),
+    });
+    expect(result.accepted).toBe(false);
+    expect((result as { accepted: false; reason: string }).reason).toMatch(/appVersion required/i);
+  });
+
+  it("rejects when peer minor version does not match host", async () => {
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "e".repeat(64),
+      appVersion: "1.16.0",
+    });
+    expect(result.accepted).toBe(false);
+    const reason = (result as { accepted: false; reason: string }).reason;
+    expect(reason).toMatch(/version mismatch/i);
+    expect(reason).toContain("1.16.x");
+    expect(reason).toContain("1.17.x");
+  });
+
+  it("passes version check when patch differs but minor matches", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "e".repeat(64),
+      appVersion: "1.17.99",
+    });
+    expect(result.accepted).toBe(true);
   });
 });
 
@@ -319,7 +375,7 @@ describe("handleJoinRequest — re-invite after delete", () => {
     const { handleJoinRequest } = await import("../../src/sync/join.js");
     db.prepare("INSERT INTO team_peers (public_key, display_name, github_username, is_active) VALUES (?, ?, ?, 0)")
       .run("old-pk", "@vulhdev", "vulhdev");
-    const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: "new-pk" });
+    const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: "new-pk", appVersion: "1.17.0" });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toMatch(/has been removed/);
   });
@@ -332,7 +388,7 @@ describe("handleJoinRequest — re-invite after delete", () => {
       .run("old-pk", "@vulhdev", "vulhdev");
     deletePeer(db, "old-pk");
 
-    const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: "new-pk" });
+    const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: "new-pk", appVersion: "1.17.0" });
     expect(result.accepted).toBe(true);
     expect((result as { accepted: true; secret: string }).secret).toBe("a".repeat(64));
 

@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 import { getTeamByName, listInvites, removeInvite } from "../db/team.js";
 import { createWorkspace } from "../db/workspaces.js";
 import { getGitHubUsername } from "../team/github.js";
+import { HOST_VERSION, parseMajorMinor } from "./version.js";
 import type Database from "better-sqlite3";
 
 export type JoinRequest = {
   githubToken: string;
   peerPublicKey: string;
   githubUsername?: string;
+  appVersion?: string;
 };
 
 export type JoinResult =
@@ -27,6 +29,16 @@ export async function handleJoinRequest(
   workspaceName: string,
   req: JoinRequest,
 ): Promise<JoinResult> {
+  if (!req.appVersion) {
+    return { accepted: false, reason: "appVersion required — upgrade to latest knowledge-base" };
+  }
+  if (parseMajorMinor(req.appVersion) !== parseMajorMinor(HOST_VERSION)) {
+    return {
+      accepted: false,
+      reason: `version mismatch: peer is ${parseMajorMinor(req.appVersion)}.x, host requires ${parseMajorMinor(HOST_VERSION)}.x`,
+    };
+  }
+
   const team = getTeamByName(db, workspaceName);
   if (!team) return { accepted: false, reason: "workspace not found" };
 
