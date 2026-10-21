@@ -33,7 +33,7 @@ vi.mock("@clack/prompts", () => ({
 vi.mock("../../src/db/client.js", () => ({ openDb: vi.fn().mockReturnValue({}) }));
 vi.mock("../../src/db/workspaces.js", () => ({
   listWorkspaces: vi.fn().mockReturnValue([{ name: "test-ws" }]),
-  createWorkspace: vi.fn(),
+  createWorkspace: vi.fn().mockReturnValue({ id: 1, name: "test-ws" }),
 }));
 vi.mock("../../src/embedding/model.js", () => ({
   isModelReady: vi.fn().mockReturnValue(true),
@@ -63,25 +63,39 @@ vi.mock("../../src/config.js", () => ({
   writeSettings: (s: unknown) => mockWriteSettings(s),
 }));
 
+const mockGetTeamByName = vi.fn();
+const mockInsertTeam = vi.fn();
+const mockUpdateTeamKeypair = vi.fn();
+
+vi.mock("../../src/db/team.js", () => ({
+  getTeamByName: (...args: unknown[]) => mockGetTeamByName(...args),
+  insertTeam: (...args: unknown[]) => mockInsertTeam(...args),
+  updateTeamKeypair: (...args: unknown[]) => mockUpdateTeamKeypair(...args),
+}));
+
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const SKIP = "__skip__";
 
-const STALE_TEAM = {
+// noise_secret_key length 64 = stale (seed-only, 32 bytes hex); 128 = valid (seed+pub, 64 bytes hex)
+const STALE_TEAM_ROW = {
+  workspace_id: 1,
   role: "host" as const,
   secret: "s".repeat(64),
-  noise_keypair: { publicKey: "p".repeat(64), secretKey: "k".repeat(64) },
-};
-const VALID_TEAM = {
-  role: "host" as const,
-  secret: "s".repeat(64),
-  noise_keypair: { publicKey: "p".repeat(64), secretKey: "k".repeat(128) },
+  noise_public_key: "p".repeat(64),
+  noise_secret_key: "k".repeat(64),
+  host_public_key: null,
+  last_synced_at: null,
 };
 
-function makeSettings(team: typeof STALE_TEAM | typeof VALID_TEAM) {
+const VALID_TEAM_ROW = {
+  ...STALE_TEAM_ROW,
+  noise_secret_key: "k".repeat(128),
+};
+
+function makeSettings() {
   return {
     identity: { name: "Alice", email: "alice@example.com", github_username: "alice" },
-    workspaces: { "test-ws": { team } },
   };
 }
 
@@ -101,26 +115,20 @@ describe("init team mode re-configuration", () => {
     vi.clearAllMocks();
     mockIsCancel.mockReturnValue(false);
     vi.spyOn(process, "exit").mockImplementation((() => {}) as () => never);
+    mockLoadSettings.mockReturnValue(makeSettings());
   });
 
   it("stale keypair: auto-migrates to Ed25519 without showing Keep/Reconfigure prompt", async () => {
-    mockLoadSettings.mockReturnValue(makeSettings(STALE_TEAM));
+    mockGetTeamByName.mockReturnValue(STALE_TEAM_ROW);
     setupSelects(); // no team select — stale path skips the prompt
     const { main } = await import("../../src/bin/init.js");
     await main();
 
-    expect(mockWriteSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspaces: expect.objectContaining({
-          "test-ws": expect.objectContaining({
-            team: expect.objectContaining({
-              noise_keypair: expect.objectContaining({
-                secretKey: expect.stringMatching(/^[0-9a-f]{128}$/),
-              }),
-            }),
-          }),
-        }),
-      }),
+    expect(mockUpdateTeamKeypair).toHaveBeenCalledWith(
+      expect.anything(), // db
+      1, // workspace_id
+      expect.stringMatching(/^[0-9a-f]{64}$/), // publicKey
+      expect.stringMatching(/^[0-9a-f]{128}$/), // secretKey
     );
 
     for (const [opts] of mockSelect.mock.calls) {
@@ -132,7 +140,7 @@ describe("init team mode re-configuration", () => {
   });
 
   it("stale keypair: logs restart reminder after migration", async () => {
-    mockLoadSettings.mockReturnValue(makeSettings(STALE_TEAM));
+    mockGetTeamByName.mockReturnValue(STALE_TEAM_ROW);
     setupSelects();
     const { main } = await import("../../src/bin/init.js");
     await main();
@@ -142,7 +150,7 @@ describe("init team mode re-configuration", () => {
   });
 
   it("valid keypair: shows Keep/Reconfigure select prompt", async () => {
-    mockLoadSettings.mockReturnValue(makeSettings(VALID_TEAM));
+    mockGetTeamByName.mockReturnValue(VALID_TEAM_ROW);
     setupSelects("keep");
     const { main } = await import("../../src/bin/init.js");
     await main();
@@ -156,49 +164,42 @@ describe("init team mode re-configuration", () => {
     expect(teamSelectCall).toBeDefined();
   });
 
-  it("valid keypair + Keep: writeSettings is not called", async () => {
-    mockLoadSettings.mockReturnValue(makeSettings(VALID_TEAM));
+  it("valid keypair + Keep: updateTeamKeypair is not called", async () => {
+    mockGetTeamByName.mockReturnValue(VALID_TEAM_ROW);
     setupSelects("keep");
     const { main } = await import("../../src/bin/init.js");
     await main();
 
-    expect(mockWriteSettings).not.toHaveBeenCalled();
+    expect(mockUpdateTeamKeypair).not.toHaveBeenCalled();
   });
 
-  it("valid keypair + Reconfigure + cancel confirm: writeSettings is not called", async () => {
-    mockLoadSettings.mockReturnValue(makeSettings(VALID_TEAM));
+  it("valid keypair + Reconfigure + cancel confirm: updateTeamKeypair is not called", async () => {
+    mockGetTeamByName.mockReturnValue(VALID_TEAM_ROW);
     setupSelects("reconfigure");
     mockConfirm.mockResolvedValueOnce(false);
     const { main } = await import("../../src/bin/init.js");
     await main();
 
-    expect(mockWriteSettings).not.toHaveBeenCalled();
+    expect(mockUpdateTeamKeypair).not.toHaveBeenCalled();
   });
 
-  it("valid keypair + Reconfigure + confirm: writeSettings called with new Ed25519 keypair", async () => {
-    mockLoadSettings.mockReturnValue(makeSettings(VALID_TEAM));
+  it("valid keypair + Reconfigure + confirm: updateTeamKeypair called with new Ed25519 keypair", async () => {
+    mockGetTeamByName.mockReturnValue(VALID_TEAM_ROW);
     setupSelects("reconfigure");
     mockConfirm.mockResolvedValueOnce(true);
     const { main } = await import("../../src/bin/init.js");
     await main();
 
-    expect(mockWriteSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspaces: expect.objectContaining({
-          "test-ws": expect.objectContaining({
-            team: expect.objectContaining({
-              noise_keypair: expect.objectContaining({
-                secretKey: expect.stringMatching(/^[0-9a-f]{128}$/),
-              }),
-            }),
-          }),
-        }),
-      }),
+    expect(mockUpdateTeamKeypair).toHaveBeenCalledWith(
+      expect.anything(), // db
+      1, // workspace_id
+      expect.stringMatching(/^[0-9a-f]{64}$/), // publicKey
+      expect.stringMatching(/^[0-9a-f]{128}$/), // secretKey
     );
   });
 
-  it("reconfigure path: logs restart reminder after writeSettings", async () => {
-    mockLoadSettings.mockReturnValue(makeSettings(VALID_TEAM));
+  it("reconfigure path: logs restart reminder after updateTeamKeypair", async () => {
+    mockGetTeamByName.mockReturnValue(VALID_TEAM_ROW);
     setupSelects("reconfigure");
     mockConfirm.mockResolvedValueOnce(true);
     const { main } = await import("../../src/bin/init.js");

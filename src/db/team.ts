@@ -65,6 +65,17 @@ export function insertTeam(
   );
 }
 
+export function updateTeamKeypair(
+  db: Database.Database,
+  workspaceId: number,
+  publicKey: string,
+  secretKey: string,
+): void {
+  db.prepare(
+    "UPDATE workspace_team SET noise_public_key = ?, noise_secret_key = ? WHERE workspace_id = ?",
+  ).run(publicKey, secretKey, workspaceId);
+}
+
 export function updateLastSynced(
   db: Database.Database,
   workspaceId: number,

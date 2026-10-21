@@ -6,9 +6,10 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, cpSync, existsSync
 import * as p from "@clack/prompts";
 import { openDb } from "../db/client.js";
 import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
+import { getTeamByName, insertTeam, updateTeamKeypair } from "../db/team.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { isCrsqliteReady, downloadCrsqlite } from "../team/crsqlite.js";
-import { generateTeamConfig, generateNoiseKeypair, isStaleKeypair } from "../team/generate.js";
+import { generateSecret, generateNoiseKeypair } from "../team/generate.js";
 import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
 import { loadSettings, writeSettings } from "../config.js";
 import { writeWorkspaceToClaude } from "../sync/claude-md.js";
@@ -143,7 +144,8 @@ export async function main(): Promise<void> {
   }
 
   // Team mode setup for this workspace
-  const hasTeam = settings.workspaces?.[workspaceName]?.team;
+  const ws = createWorkspace(db, workspaceName);
+  const hasTeam = getTeamByName(db, workspaceName);
   if (!hasTeam) {
     const teamMode = await p.select<string>({
       message: `Enable team mode for workspace "${workspaceName}"?`,
@@ -157,26 +159,26 @@ export async function main(): Promise<void> {
     if ((teamMode as string) === "create") {
       const githubUsername = await runGitHubAuth();
 
-      const cfg = generateTeamConfig();
+      const kp = generateNoiseKeypair();
+      insertTeam(db, ws.id, {
+        role: "host",
+        secret: generateSecret(),
+        noise_public_key: kp.publicKey,
+        noise_secret_key: kp.secretKey,
+        host_public_key: null,
+        last_synced_at: null,
+      });
       const fresh = loadSettings();
-      fresh.workspaces ??= {};
-      fresh.workspaces[workspaceName] ??= {};
-      fresh.workspaces[workspaceName].team = cfg;
       fresh.identity = { ...(fresh.identity ?? { name: "", email: "" }), github_username: githubUsername };
       writeSettings(fresh);
       p.log.success(`Team created. Invite peers with:`);
       p.log.info(`  knowledge-base team invite --workspace ${workspaceName} @<github-username>`);
     }
-  } else if (isStaleKeypair(hasTeam.noise_keypair)) {
+  } else if (hasTeam.noise_secret_key.length === 64) {
+    // stale Ed25519 keypair (seed-only, 32 bytes) — auto-migrate
     p.log.warn(`Outdated keypair detected for "${workspaceName}" — auto-migrating to Ed25519.`);
-    const fresh = loadSettings();
-    fresh.workspaces ??= {};
-    fresh.workspaces[workspaceName] ??= {};
-    fresh.workspaces[workspaceName].team = {
-      ...hasTeam,
-      noise_keypair: generateNoiseKeypair(),
-    };
-    writeSettings(fresh);
+    const kp = generateNoiseKeypair();
+    updateTeamKeypair(db, hasTeam.workspace_id, kp.publicKey, kp.secretKey);
     p.log.success("Keypair migrated.");
     p.log.warn(`Restart team server to apply the new keypair: knowledge-base team server --workspace ${workspaceName}`);
   } else {
@@ -199,13 +201,9 @@ export async function main(): Promise<void> {
         p.log.info("Reconfiguration cancelled. Existing configuration kept.");
       } else {
         const githubUsername = await runGitHubAuth();
+        const kp = generateNoiseKeypair();
+        updateTeamKeypair(db, hasTeam.workspace_id, kp.publicKey, kp.secretKey);
         const fresh = loadSettings();
-        fresh.workspaces ??= {};
-        fresh.workspaces[workspaceName] ??= {};
-        fresh.workspaces[workspaceName].team = {
-          ...hasTeam,
-          noise_keypair: generateNoiseKeypair(),
-        };
         fresh.identity = { ...(fresh.identity ?? { name: "", email: "" }), github_username: githubUsername };
         writeSettings(fresh);
         p.log.success("Keypair reconfigured.");
