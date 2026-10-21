@@ -1,39 +1,27 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
-vi.mock("node:os", () => ({ homedir: vi.fn().mockReturnValue("/test/home") }));
-vi.mock("node:fs", () => ({
-  existsSync: vi.fn().mockReturnValue(true),
-  mkdirSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  chmodSync: vi.fn(),
-  renameSync: vi.fn(),
-  copyFileSync: vi.fn(),
-  unlinkSync: vi.fn(),
-}));
+import { describe, it, expect, beforeEach } from "vitest";
+import { createTestDb } from "../setup.js";
+import type Database from "better-sqlite3";
+import { insertTeam, listInvites } from "../../src/db/team.js";
+import { createWorkspace } from "../../src/db/workspaces.js";
+import { generateInvite } from "../../src/team/invite.js";
 
 const HOST_PK = "a".repeat(64);
 
-function makeSettings(overrides: Record<string, unknown> = {}) {
-  return JSON.stringify({
-    db_path: "/db",
-    model_cache_dir: "/m",
-    workspaces: {
-      "my-ws": {
-        team: {
-          role: "host",
-          secret: "s".repeat(64),
-          noise_keypair: { publicKey: HOST_PK, secretKey: "k".repeat(64) },
-          ...overrides,
-        },
-      },
-    },
-  });
-}
+let db: Database.Database;
+let wsId: number;
 
 beforeEach(() => {
-  vi.resetModules();
-  vi.clearAllMocks();
+  db = createTestDb();
+  const ws = createWorkspace(db, "my-ws");
+  wsId = ws.id;
+  insertTeam(db, wsId, {
+    role: "host",
+    secret: "s".repeat(64),
+    noise_public_key: HOST_PK,
+    noise_secret_key: "k".repeat(64),
+    host_public_key: null,
+    last_synced_at: null,
+  });
 });
 
 describe("buildInviteCode", () => {
@@ -86,44 +74,41 @@ describe("normalizeGithubUsername", () => {
 });
 
 describe("generateInvite", () => {
-  it("appends username to pending_github_usernames and returns invite code", async () => {
-    const { readFileSync, writeFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(makeSettings());
-    const { generateInvite } = await import("../../src/team/invite.js");
-
-    const code = generateInvite("my-ws", "vulhdev");
+  it("returns invite code in <hostPublicKey>:<workspaceName> format and inserts invite row", () => {
+    const code = generateInvite(db, "my-ws", "vulhdev");
 
     expect(code).toBe(`${HOST_PK}:my-ws`);
-    const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
-    expect(written.workspaces["my-ws"].team.pending_github_usernames).toContain("vulhdev");
+    expect(listInvites(db, wsId).map((i) => i.github_username)).toContain("vulhdev");
   });
 
-  it("appends without overwriting existing pending usernames", async () => {
-    const { readFileSync, writeFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(
-      makeSettings({ pending_github_usernames: ["alice"] }),
-    );
-    const { generateInvite } = await import("../../src/team/invite.js");
+  it("inviting multiple users inserts separate rows", () => {
+    generateInvite(db, "my-ws", "alice");
+    generateInvite(db, "my-ws", "bob");
 
-    generateInvite("my-ws", "bob");
-
-    const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
-    expect(written.workspaces["my-ws"].team.pending_github_usernames).toEqual(["alice", "bob"]);
+    const usernames = listInvites(db, wsId).map((i) => i.github_username);
+    expect(usernames).toContain("alice");
+    expect(usernames).toContain("bob");
   });
 
-  it("throws when no team config exists", async () => {
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ db_path: "/db", model_cache_dir: "/m" }));
-    const { generateInvite } = await import("../../src/team/invite.js");
+  it("throws when no team config exists", () => {
+    const freshDb = createTestDb();
+    createWorkspace(freshDb, "missing-ws");
 
-    expect(() => generateInvite("missing-ws", "vulhdev")).toThrow(/no team config/i);
+    expect(() => generateInvite(freshDb, "missing-ws", "vulhdev")).toThrow(/no team config/i);
   });
 
-  it("throws when role is peer", async () => {
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(makeSettings({ role: "peer" }));
-    const { generateInvite } = await import("../../src/team/invite.js");
+  it("throws when role is peer", () => {
+    const peerDb = createTestDb();
+    const peerWs = createWorkspace(peerDb, "my-ws");
+    insertTeam(peerDb, peerWs.id, {
+      role: "peer",
+      secret: "s".repeat(64),
+      noise_public_key: HOST_PK,
+      noise_secret_key: "k".repeat(64),
+      host_public_key: "h".repeat(64),
+      last_synced_at: null,
+    });
 
-    expect(() => generateInvite("my-ws", "vulhdev")).toThrow(/only the host/i);
+    expect(() => generateInvite(peerDb, "my-ws", "vulhdev")).toThrow(/only the host/i);
   });
 });

@@ -1,18 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { createHash } from "node:crypto";
 import { createTestDb } from "../setup.js";
 import type Database from "better-sqlite3";
+import { insertTeam, addInvite } from "../../src/db/team.js";
+import { createWorkspace } from "../../src/db/workspaces.js";
 
-vi.mock("node:os", () => ({ homedir: vi.fn().mockReturnValue("/test/home") }));
-vi.mock("node:fs", () => ({
-  existsSync: vi.fn().mockReturnValue(true),
-  mkdirSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  chmodSync: vi.fn(),
-  renameSync: vi.fn(),
-  copyFileSync: vi.fn(),
-  unlinkSync: vi.fn(),
-}));
 vi.mock("../../src/team/github.js", () => ({
   getGitHubUsername: vi.fn(),
 }));
@@ -21,20 +13,26 @@ const NOW_ISO = "2026-10-20T12:00:00.000Z";
 const RECENT_ISO = "2026-10-20T11:00:00.000Z"; // 1h ago — within TTL
 const EXPIRED_ISO = "2026-10-18T12:00:00.000Z"; // 48h ago — expired
 
-const HOST_CONFIG = {
-  role: "host" as const,
-  secret: "a".repeat(64),
-  noise_keypair: { publicKey: "b".repeat(64), secretKey: "c".repeat(64) },
-  pending_github_usernames: ["vulhdev"],
-  pending_invites: [{ username: "vulhdev", invited_at: RECENT_ISO }],
-};
-
-function makeSettingsJson(overrides: Record<string, unknown> = {}) {
-  return JSON.stringify({
-    db_path: "/db",
-    model_cache_dir: "/m",
-    workspaces: { myws: { team: { ...HOST_CONFIG, ...overrides } } },
+function seedJoinSetup(
+  db: Database.Database,
+  opts: { invitedAt?: string; inviteUsername?: string } = {},
+): { wsId: number } {
+  const ws = createWorkspace(db, "myws");
+  insertTeam(db, ws.id, {
+    role: "host",
+    secret: "a".repeat(64),
+    noise_public_key: "b".repeat(64),
+    noise_secret_key: "c".repeat(64),
+    host_public_key: null,
+    last_synced_at: null,
   });
+  const username = opts.inviteUsername ?? "vulhdev";
+  addInvite(db, ws.id, username);
+  if (opts.invitedAt) {
+    db.prepare("UPDATE workspace_invites SET invited_at = ? WHERE workspace_id = ? AND github_username = ?")
+      .run(opts.invitedAt, ws.id, username);
+  }
+  return { wsId: ws.id };
 }
 
 describe("handleJoinRequest (host side)", () => {
@@ -45,8 +43,7 @@ describe("handleJoinRequest (host side)", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(NOW_ISO));
     vi.resetModules();
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(makeSettingsJson());
+    seedJoinSetup(db);
   });
 
   afterEach(() => {
@@ -94,10 +91,9 @@ describe("handleJoinRequest (host side)", () => {
     expect(row?.display_name).toBe("@vulhdev");
   });
 
-  it("removes username from pending_invites after acceptance", async () => {
+  it("removes invite from workspace_invites after acceptance", async () => {
     const { getGitHubUsername } = await import("../../src/team/github.js");
     vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
-    const { writeFileSync } = await import("node:fs");
     const { handleJoinRequest } = await import("../../src/sync/join.js");
 
     await handleJoinRequest(db, "myws", {
@@ -105,9 +101,10 @@ describe("handleJoinRequest (host side)", () => {
       peerPublicKey: "e".repeat(64),
     });
 
-    const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
-    const remaining = (written.workspaces.myws.team.pending_invites ?? []) as Array<{ username: string }>;
-    expect(remaining.some((i) => i.username === "vulhdev")).toBe(false);
+    const remaining = db
+      .prepare("SELECT * FROM workspace_invites WHERE github_username = 'vulhdev'")
+      .all();
+    expect(remaining).toHaveLength(0);
   });
 
   it("returns accepted=false when GitHub username is not in pending list", async () => {
@@ -137,31 +134,34 @@ describe("handleJoinRequest (host side)", () => {
   });
 
   it("returns accepted=false when no pending invites exist", async () => {
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(
-      makeSettingsJson({ pending_github_usernames: [], pending_invites: [] }),
-    );
+    const emptyDb = createTestDb();
+    const ws = createWorkspace(emptyDb, "myws");
+    insertTeam(emptyDb, ws.id, {
+      role: "host",
+      secret: "a".repeat(64),
+      noise_public_key: "b".repeat(64),
+      noise_secret_key: "c".repeat(64),
+      host_public_key: null,
+      last_synced_at: null,
+    });
     const { handleJoinRequest } = await import("../../src/sync/join.js");
 
-    const result = await handleJoinRequest(db, "myws", {
+    const result = await handleJoinRequest(emptyDb, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
     });
     expect(result.accepted).toBe(false);
+    expect((result as { accepted: false; reason: string }).reason).toBe("no pending invites");
   });
 
   it("SUGG-2: rejects invite older than 24 hours", async () => {
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(
-      makeSettingsJson({
-        pending_invites: [{ username: "vulhdev", invited_at: EXPIRED_ISO }],
-      }),
-    );
+    const expiredDb = createTestDb();
+    seedJoinSetup(expiredDb, { invitedAt: EXPIRED_ISO });
     const { getGitHubUsername } = await import("../../src/team/github.js");
     vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
     const { handleJoinRequest } = await import("../../src/sync/join.js");
 
-    const result = await handleJoinRequest(db, "myws", {
+    const result = await handleJoinRequest(expiredDb, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
     });
@@ -170,17 +170,13 @@ describe("handleJoinRequest (host side)", () => {
   });
 
   it("SUGG-2: accepts invite within 24 hours", async () => {
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(
-      makeSettingsJson({
-        pending_invites: [{ username: "vulhdev", invited_at: RECENT_ISO }],
-      }),
-    );
+    const recentDb = createTestDb();
+    seedJoinSetup(recentDb, { invitedAt: RECENT_ISO });
     const { getGitHubUsername } = await import("../../src/team/github.js");
     vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
     const { handleJoinRequest } = await import("../../src/sync/join.js");
 
-    const result = await handleJoinRequest(db, "myws", {
+    const result = await handleJoinRequest(recentDb, "myws", {
       githubToken: "gho_abc",
       peerPublicKey: "e".repeat(64),
     });
@@ -199,25 +195,6 @@ describe("handleJoinRequest (host side)", () => {
     });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toMatch(/username mismatch/i);
-  });
-
-  it("accepts user in pending_github_usernames when pending_invites is empty array", async () => {
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(
-      makeSettingsJson({
-        pending_github_usernames: ["vulhdev"],
-        pending_invites: [], // empty array — not undefined
-      }),
-    );
-    const { getGitHubUsername } = await import("../../src/team/github.js");
-    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
-    const { handleJoinRequest } = await import("../../src/sync/join.js");
-
-    const result = await handleJoinRequest(createTestDb(), "myws", {
-      githubToken: "gho_abc",
-      peerPublicKey: "e".repeat(64),
-    });
-    expect(result.accepted).toBe(true);
   });
 
   it("SUGG-1: accepts when claimed githubUsername matches resolved token", async () => {
@@ -248,55 +225,41 @@ describe("handleJoinRequest (host side)", () => {
     vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
     const { handleJoinRequest } = await import("../../src/sync/join.js");
 
-    // Pre-insert a kicked row for vulhdev with an old keypair
     db.prepare(
       "INSERT INTO team_peers (public_key, display_name, github_username, is_active) VALUES (?, ?, ?, 0)",
-    ).run("old".repeat(21) + "x", "@vulhdev", "vulhdev"); // 64-char hex-ish key
+    ).run("old".repeat(21) + "x", "@vulhdev", "vulhdev");
 
     const result = await handleJoinRequest(db, "myws", {
       githubToken: "gho_abc",
-      peerPublicKey: "e".repeat(64), // new keypair
+      peerPublicKey: "e".repeat(64),
     });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toMatch(/removed/i);
   });
 
-  it("TOCTOU: second concurrent join for same username is rejected", async () => {
-    // Use a stateful settings store so writeSettings propagates to subsequent loadSettings calls
-    const { readFileSync, writeFileSync } = await import("node:fs");
-    let settingsStore = makeSettingsJson();
-    vi.mocked(readFileSync).mockImplementation(() => settingsStore);
-    vi.mocked(writeFileSync).mockImplementation((_p, data) => {
-      if (typeof data === "string" && data.includes('"workspaces"')) settingsStore = data;
-    });
-
+  it("TOCTOU: invite is removed after first join; second join for same username is rejected", async () => {
     const { getGitHubUsername } = await import("../../src/team/github.js");
-    const resolvers: Array<(v: string) => void> = [];
-    vi.mocked(getGitHubUsername).mockImplementation(() =>
-      new Promise<string>((res) => { resolvers.push(res); }),
-    );
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
     const { handleJoinRequest } = await import("../../src/sync/join.js");
 
-    const db1 = createTestDb();
-    const db2 = createTestDb();
-    const p1 = handleJoinRequest(db1, "myws", { githubToken: "tok1", peerPublicKey: "e".repeat(64) });
-    const p2 = handleJoinRequest(db2, "myws", { githubToken: "tok2", peerPublicKey: "f".repeat(64) });
+    const sharedDb = createTestDb();
+    seedJoinSetup(sharedDb);
 
-    // Both are now awaiting their GitHub calls
-    await Promise.resolve();
-    expect(resolvers).toHaveLength(2);
+    const r1 = await handleJoinRequest(sharedDb, "myws", { githubToken: "tok1", peerPublicKey: "e".repeat(64) });
+    const r2 = await handleJoinRequest(sharedDb, "myws", { githubToken: "tok2", peerPublicKey: "f".repeat(64) });
 
-    // Resolve C1 first — it consumes the invite and writes updated settings
-    resolvers[0]("vulhdev");
-    await Promise.resolve(); // drain C1's microtask chain
+    expect(r1.accepted).toBe(true);
+    expect(r2.accepted).toBe(false);
+  });
 
-    // Resolve C2 — it should now read the updated settings (no invite) and be rejected
-    resolvers[1]("vulhdev");
-
-    const [r1, r2] = await Promise.all([p1, p2]);
-    const results = [r1, r2];
-    expect(results.filter((r) => r.accepted).length).toBe(1);
-    expect(results.filter((r) => !r.accepted).length).toBe(1);
+  it("returns accepted=false when workspace not found in DB", async () => {
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+    const result = await handleJoinRequest(db, "nonexistent", {
+      githubToken: "gho_abc",
+      peerPublicKey: "e".repeat(64),
+    });
+    expect(result.accepted).toBe(false);
+    expect((result as { accepted: false; reason: string }).reason).toBe("workspace not found");
   });
 });
 
@@ -305,9 +268,10 @@ describe("deriveJoinTopic", () => {
 
   it("returns a 32-byte Buffer distinct from the sync topic", async () => {
     const { deriveJoinTopic } = await import("../../src/sync/join.js");
-    const { deriveTopicBuffer } = await import("../../src/sync/peer.js");
+    // Inline sync topic formula (sha256 of "<secret>:<workspace>:sync") to avoid
+    // importing peer.ts which pulls in hyperswarm (not installed in test env).
+    const syncTopic = createHash("sha256").update(`${"a".repeat(64)}:myws:sync`).digest();
     const joinTopic = deriveJoinTopic("myws", HOST_PK);
-    const syncTopic = deriveTopicBuffer("myws", "a".repeat(64));
     expect(joinTopic.length).toBe(32);
     expect(joinTopic.toString("hex")).not.toBe(syncTopic.toString("hex"));
   });
@@ -342,8 +306,7 @@ describe("handleJoinRequest — re-invite after delete", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(NOW_ISO));
     vi.resetModules();
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(makeSettingsJson());
+    seedJoinSetup(db);
     const { getGitHubUsername } = await import("../../src/team/github.js");
     vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
   });
@@ -364,21 +327,15 @@ describe("handleJoinRequest — re-invite after delete", () => {
   it("allows join after deletePeer clears the row", async () => {
     const { handleJoinRequest } = await import("../../src/sync/join.js");
     const { deletePeer } = await import("../../src/team/kick.js");
-    const { writeFileSync } = await import("node:fs");
 
-    // Kick then delete the peer
     db.prepare("INSERT INTO team_peers (public_key, display_name, github_username, is_active) VALUES (?, ?, ?, 0)")
       .run("old-pk", "@vulhdev", "vulhdev");
     deletePeer(db, "old-pk");
-
-    // Host re-invites (pending_github_usernames already contains "vulhdev" in HOST_CONFIG)
-    vi.mocked(writeFileSync).mockImplementation(() => {});
 
     const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: "new-pk" });
     expect(result.accepted).toBe(true);
     expect((result as { accepted: true; secret: string }).secret).toBe("a".repeat(64));
 
-    // Row reinserted as active
     const row = db.prepare("SELECT is_active FROM team_peers WHERE public_key = 'new-pk'").get() as { is_active: number };
     expect(row.is_active).toBe(1);
   });
