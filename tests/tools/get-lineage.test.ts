@@ -285,7 +285,7 @@ describe("getLineage — characterization of current behaviour", () => {
     expect(() => getLineage(db, id)).toThrow(`Content not found: id=${id}`);
   });
 
-  // Lowest feature id sits in "zeta" but carries the alphabetically last name.
+  // "a-feat" is alphabetically first so workspace comes from "alpha" (its workspace).
   function multiWorkspaceNode(target: Database.Database): string {
     const fC = seed(target, "zeta", "c-feat");
     const fA = seed(target, "alpha", "a-feat");
@@ -296,7 +296,7 @@ describe("getLineage — characterization of current behaviour", () => {
     return id;
   }
 
-  it("multi-workspace: workspace comes from the lowest feature id, features sorted by name", () => {
+  it("multi-workspace: workspace comes from the alphabetically first feature name, features sorted by name", () => {
     const multi = multiWorkspaceNode(db);
     const ftId = seed(db);
     const parent = insert(db, ftId, "idea", "parent");
@@ -310,7 +310,7 @@ describe("getLineage — characterization of current behaviour", () => {
       getLineage(db, child).ancestors[0],
     ]) {
       expect(node.id).toBe(multi);
-      expect(node.workspace).toBe("zeta");
+      expect(node.workspace).toBe("alpha"); // "a-feat" is alphabetically first, belongs to "alpha"
       expect(node.features).toEqual(["a-feat", "b-feat", "c-feat"]);
     }
   });

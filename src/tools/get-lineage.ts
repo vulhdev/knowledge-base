@@ -65,7 +65,6 @@ function buildGraph(rows: LineageRow[]): LineageGraph {
   const parentOf = new Map<string, string>();
   const childrenOf = new Map<string, string[]>();
   const nodes = new Map<string, LinkedContent>();
-  const minFeatureId = new Map<string, number>();
 
   for (const row of rows) {
     if (row.kind === 0) {
@@ -78,6 +77,8 @@ function buildGraph(rows: LineageRow[]): LineageGraph {
     } else {
       const node = nodes.get(row.a);
       if (!node) {
+        // Features arrive sorted by name (ORDER BY kind, a, k where k=f.name for kind=2).
+        // The first feature seen carries the workspace for this node.
         nodes.set(row.a, {
           id: row.a,
           workspace: row.workspace as string,
@@ -85,14 +86,8 @@ function buildGraph(rows: LineageRow[]): LineageGraph {
           title: row.title,
           features: [row.k as string],
         });
-        minFeatureId.set(row.a, row.b as number);
       } else {
         node.features.push(row.k as string);
-        // Workspace of the lowest feature id, matching the old un-ordered `LIMIT 1`.
-        if ((row.b as number) < minFeatureId.get(row.a)!) {
-          node.workspace = row.workspace as string;
-          minFeatureId.set(row.a, row.b as number);
-        }
       }
     }
   }

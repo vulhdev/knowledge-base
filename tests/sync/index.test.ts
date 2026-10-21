@@ -332,3 +332,130 @@ describe("handleSyncConnection — buf framing", () => {
     expect(vi.mocked(applyChanges).mock.calls.length).toBe(countAfterFrame);
   });
 });
+
+// Bootstrap tests use real DB operations (not mocked changeset) so need their own DB setup.
+// vi.mock at file scope mocks changeset for all tests, so bootstrap apply/send tests are
+// placed in a separate describe that reads socket writes directly.
+describe("handleSyncConnection — bootstrap protocol", () => {
+  function createBootstrapTestDb() {
+    const db = createTestDb();
+    // Fake crsql_changes table so handleSyncConnection can query MAX(db_version)
+    db.exec(
+      "CREATE TABLE IF NOT EXISTS crsql_changes " +
+      "(tbl TEXT, pk TEXT, cid TEXT, val ANY, col_version INTEGER, db_version INTEGER, site_id TEXT, cl INTEGER, seq INTEGER)",
+    );
+    return db;
+  }
+
+  function parseFirstFrameAfterHandshake(allWritten: Buffer): unknown {
+    const newline = allWritten.indexOf(0x0a);
+    const rest = allWritten.slice(newline + 1);
+    const size = rest.readUInt32BE(0);
+    return JSON.parse(rest.slice(4, 4 + size).toString("utf8"));
+  }
+
+  function makeFramedPayload(obj: unknown): Buffer {
+    const encoded = Buffer.from(JSON.stringify(obj), "utf8");
+    const header = Buffer.allocUnsafe(4);
+    header.writeUInt32BE(encoded.length, 0);
+    return Buffer.concat([header, encoded]);
+  }
+
+  it("sends bootstrap frame before changeset when peer dbVersion is 0", async () => {
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+    const db = createBootstrapTestDb();
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'auth')`);
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'api')`);
+
+    const socket = new MockSocket();
+    handleSyncConnection(db, "ws", socket as unknown as NodeJS.ReadWriteStream);
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+
+    const first = parseFirstFrameAfterHandshake(Buffer.concat(socket.writes)) as { type?: string; features?: { name: string }[] };
+    expect(first.type).toBe("bootstrap");
+    expect(first.features?.map((f) => f.name).sort()).toEqual(["api", "auth"]);
+  });
+
+  it("does NOT send bootstrap frame when peer dbVersion > 0", async () => {
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+    const db = createBootstrapTestDb();
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'auth')`);
+
+    const socket = new MockSocket();
+    handleSyncConnection(db, "ws", socket as unknown as NodeJS.ReadWriteStream);
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 5 }) + "\n"));
+
+    const first = parseFirstFrameAfterHandshake(Buffer.concat(socket.writes)) as { type?: string };
+    expect(first.type).toBeUndefined(); // changeset is an array, not a bootstrap object
+    expect(Array.isArray(first)).toBe(true);
+  });
+
+  it("bootstrap frame contains only features for the given workspace", async () => {
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+    const db = createBootstrapTestDb();
+    db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+    db.exec("INSERT INTO workspaces (name) VALUES ('other')");
+    const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
+    const { id: otherId } = db.prepare("SELECT id FROM workspaces WHERE name = 'other'").get() as { id: number };
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'mine')`);
+    db.exec(`INSERT INTO features (workspace_id, name) VALUES (${otherId}, 'theirs')`);
+
+    const socket = new MockSocket();
+    handleSyncConnection(db, "ws", socket as unknown as NodeJS.ReadWriteStream);
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+
+    const first = parseFirstFrameAfterHandshake(Buffer.concat(socket.writes)) as { type?: string; features?: { name: string }[] };
+    expect(first.type).toBe("bootstrap");
+    expect(first.features?.map((f) => f.name)).toEqual(["mine"]);
+  });
+
+  it("peer with localDbVersion=0 applies bootstrap features on receipt", async () => {
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+    const peerDb = createBootstrapTestDb();
+    peerDb.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+
+    const socket = new MockSocket();
+    handleSyncConnection(peerDb, "ws", socket as unknown as NodeJS.ReadWriteStream);
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+
+    const bootstrapFrame = makeFramedPayload({
+      type: "bootstrap",
+      features: [
+        { id: "a".repeat(32), name: "auth" },
+        { id: "b".repeat(32), name: "api" },
+      ],
+    });
+    socket.emit("data", bootstrapFrame);
+
+    const features = peerDb.prepare("SELECT id, name FROM features ORDER BY name").all() as { id: string; name: string }[];
+    expect(features).toHaveLength(2);
+    expect(features[0].name).toBe("api");
+    expect(features[0].id).toBe("b".repeat(32));
+    expect(features[1].name).toBe("auth");
+    expect(features[1].id).toBe("a".repeat(32));
+  });
+
+  it("bootstrap apply is idempotent — duplicate features are ignored", async () => {
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+    const peerDb = createBootstrapTestDb();
+    peerDb.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+
+    const socket = new MockSocket();
+    handleSyncConnection(peerDb, "ws", socket as unknown as NodeJS.ReadWriteStream);
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+
+    const frame = makeFramedPayload({
+      type: "bootstrap",
+      features: [{ id: "a".repeat(32), name: "auth" }],
+    });
+    socket.emit("data", frame);
+    socket.emit("data", frame); // second time — should be ignored
+
+    const count = (peerDb.prepare("SELECT COUNT(*) AS n FROM features").get() as { n: number }).n;
+    expect(count).toBe(1);
+  });
+});
