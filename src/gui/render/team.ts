@@ -21,11 +21,18 @@ function renderPeerRow(workspace: string, peer: PeerRow): string {
     </tr>`;
   }
 
+  const confirmMsg = `Permanently delete ${peer.github_username ?? peer.display_name}? They can be re-invited after.`;
   return `<tr class="peer-kicked">
     <td class="peer-status">○</td>
     <td class="peer-name">${username} <span class="kicked-label">(kicked)</span></td>
     <td class="peer-joined">${esc(joined)}</td>
-    <td></td>
+    <td>
+      <form method="post" action="/ws/${encodeURIComponent(workspace)}/team/delete"
+            onsubmit="return confirm('${esc(confirmMsg)}')">
+        <input type="hidden" name="github_username" value="${esc(peer.github_username ?? peer.display_name)}" />
+        <button type="submit" class="btn-delete">Delete</button>
+      </form>
+    </td>
   </tr>`;
 }
 
