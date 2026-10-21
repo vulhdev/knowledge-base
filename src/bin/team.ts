@@ -11,6 +11,7 @@ import { generateInvite, normalizeGithubUsername, parseInviteCode } from "../tea
 import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
 import { kickPeer, listPeers, findPeerByUsername, deletePeer } from "../team/kick.js";
 import { deriveJoinTopic } from "../sync/join.js";
+import { HOST_VERSION } from "../sync/version.js";
 import { startSync, type SyncHandle } from "../sync/index.js";
 import { makeConsoleLogger } from "../sync/activity.js";
 import { deriveTopicBuffer } from "../sync/peer.js";
@@ -230,6 +231,7 @@ export async function attemptJoin(
         githubToken,
         peerPublicKey,
         githubUsername,
+        appVersion: HOST_VERSION,
       });
       (socket as NodeJS.WritableStream).write(msg + "\n");
 
