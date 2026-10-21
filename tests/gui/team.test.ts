@@ -62,7 +62,8 @@ describe("renderTeamPage", () => {
     const html = renderTeamPage("my-ws", peers);
     expect(html).toContain("○");
     expect(html).toContain("kicked");
-    expect(html).not.toContain(`method="post"`);
+    expect(html).not.toContain(`/team/kick`);
+    expect(html).toContain(`/team/delete`);
   });
 
   it("escapes XSS in github_username", async () => {

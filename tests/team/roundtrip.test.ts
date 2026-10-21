@@ -1,4 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("hyperswarm", () => ({
+  default: vi.fn().mockImplementation(() => ({
+    join: vi.fn(),
+    destroy: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
+  })),
+}));
 
 describe("invite code roundtrip", () => {
   it("buildInviteCode output can be parsed by parseInviteCode", async () => {
