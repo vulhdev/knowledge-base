@@ -36,6 +36,15 @@ export function findPeerByUsername(
     .get(githubUsername) as { public_key: string; is_active: number } | undefined;
 }
 
+export function deletePeer(db: Database.Database, publicKey: string): void {
+  const row = db
+    .prepare("SELECT is_active FROM team_peers WHERE public_key = ?")
+    .get(publicKey) as { is_active: number } | undefined;
+  if (!row) throw new Error("Member not found.");
+  if (row.is_active === 1) throw new Error("Kick the member first before deleting.");
+  db.prepare("DELETE FROM team_peers WHERE public_key = ?").run(publicKey);
+}
+
 export function getTeamManifest(db: Database.Database): TeamManifest {
   const rows = db
     .prepare("SELECT public_key, display_name FROM team_peers WHERE is_active = 1")
