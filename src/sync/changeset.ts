@@ -8,6 +8,8 @@ export type ChangesetRow = {
   col_version: number;
   db_version: number;
   site_id: string;
+  cl: number;
+  seq: number;
 };
 
 export const MAX_CHANGESET_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -37,7 +39,7 @@ export function decodeChangeset(data: Buffer): ChangesetRow[] {
 export function getChanges(db: Database.Database, sinceVersion: number): ChangesetRow[] {
   return db
     .prepare(
-      'SELECT "table" AS tbl, pk, cid, val, col_version, db_version, site_id ' +
+      'SELECT "table" AS tbl, pk, cid, val, col_version, db_version, site_id, cl, seq ' +
       "FROM crsql_changes WHERE db_version > ?",
     )
     .all(sinceVersion) as ChangesetRow[];
@@ -53,12 +55,12 @@ export function applyChanges(db: Database.Database, rows: ChangesetRow[]): void 
     }
   }
   const stmt = db.prepare(
-    'INSERT INTO crsql_changes ("table", pk, cid, val, col_version, db_version, site_id) ' +
-    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+    'INSERT INTO crsql_changes ("table", pk, cid, val, col_version, db_version, site_id, cl, seq) ' +
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   db.transaction(() => {
     for (const row of rows) {
-      stmt.run(row.tbl, row.pk, row.cid, row.val, row.col_version, row.db_version, row.site_id);
+      stmt.run(row.tbl, row.pk, row.cid, row.val, row.col_version, row.db_version, row.site_id, row.cl, row.seq);
     }
   })();
 }
