@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { homedir } from "node:os";
 
 const BLOCK_START = "<!-- knowledge-base:start -->";
 const BLOCK_END = "<!-- knowledge-base:end -->";
@@ -55,7 +56,12 @@ ${BLOCK_END}`;
 }
 
 export function writeWorkspaceToClaude(name: string): void {
-  const claudeMdPath = join(process.cwd(), "CLAUDE.md");
+  const claudeMdPath = resolve(process.cwd(), "CLAUDE.md");
+  // Guard: refuse to write outside the user's home directory to prevent
+  // an attacker-influenced cwd from writing to arbitrary filesystem paths.
+  if (!claudeMdPath.startsWith(homedir())) {
+    throw new Error(`Refusing to write CLAUDE.md outside home directory: ${claudeMdPath}`);
+  }
   const block = buildBlock(name);
   const blockPattern = /<!--\s*knowledge-base:start\s*-->[\s\S]*?<!--\s*knowledge-base:end\s*-->/;
 

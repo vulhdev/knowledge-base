@@ -46,7 +46,18 @@ function getBootstrapFeatures(db: Database.Database, workspaceName: string): { i
   }
 }
 
+const BOOTSTRAP_MAX_FEATURES = 5_000;
+const BOOTSTRAP_MAX_NAME_LEN = 500;
+const BOOTSTRAP_MAX_ID_LEN = 128;
+
 function applyBootstrapFeatures(db: Database.Database, workspaceName: string, features: { id: string; name: string }[]): void {
+  // Validate input to prevent a malicious host from flooding rows or injecting long strings.
+  if (features.length > BOOTSTRAP_MAX_FEATURES) return;
+  for (const f of features) {
+    if (typeof f.id !== "string" || f.id.length === 0 || f.id.length > BOOTSTRAP_MAX_ID_LEN) return;
+    if (typeof f.name !== "string" || f.name.length === 0 || f.name.length > BOOTSTRAP_MAX_NAME_LEN) return;
+  }
+
   const ws = db.prepare("SELECT id FROM workspaces WHERE name = ?").get(workspaceName) as { id: number } | undefined;
   if (!ws) return;
   const insert = db.prepare("INSERT OR IGNORE INTO features (id, workspace_id, name) VALUES (?, ?, ?)");
@@ -181,6 +192,7 @@ export function handleJoinConnection(
         githubToken: string;
         peerPublicKey: string;
         githubUsername?: string;
+        appVersion?: string;
       };
       if (req.type !== "join_request") {
         (socket as NodeJS.WritableStream).write(
@@ -204,6 +216,7 @@ export function handleJoinConnection(
         githubToken: req.githubToken,
         peerPublicKey: req.peerPublicKey,
         githubUsername: req.githubUsername,
+        appVersion: req.appVersion,
       }).then((result) => {
         callbacks?.onJoinResult?.(claimedUsername, result.accepted, result.accepted ? undefined : (result as { reason: string }).reason);
         if ((socket as unknown as MockableSocket).writable !== false) {

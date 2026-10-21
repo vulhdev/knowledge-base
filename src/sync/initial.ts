@@ -32,17 +32,27 @@ export async function performInitialSync(
 
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
-      swarm.destroy().then(() => resolve({ ok: false, reason: "timeout" }));
+      swarm.destroy().catch(() => undefined).then(() => resolve({ ok: false, reason: "timeout" }));
     }, timeoutMs);
 
     (swarm as NodeJS.EventEmitter).on("connection", (socket: NodeJS.ReadWriteStream) => {
       clearTimeout(timer);
       let rowsReceived = 0;
+      let settled = false;
+      const settle = (result: InitialSyncResult) => {
+        if (settled) return;
+        settled = true;
+        swarm.destroy().catch(() => undefined).then(() => resolve(result));
+      };
       handleSyncConnection(db, workspaceName, socket, {
         onChangesReceived: (rows) => { rowsReceived += rows.length; },
       });
+      // Attach error handler before "close" so an ECONNRESET does not leak the promise.
+      (socket as NodeJS.EventEmitter).on("error", () => {
+        settle({ ok: false, reason: "timeout" });
+      });
       (socket as NodeJS.EventEmitter).once("close", () => {
-        swarm.destroy().then(() => resolve({ ok: true, rowsReceived }));
+        settle({ ok: true, rowsReceived });
       });
     });
   });

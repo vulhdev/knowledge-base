@@ -4,6 +4,9 @@ import { createWorkspace } from "../db/workspaces.js";
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const GITHUB_USERNAME = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/;
+// Allowlist: only alphanumeric, hyphen, underscore, 1–64 chars.
+// Prevents LLM prompt injection via a malicious workspaceName written to CLAUDE.md.
+const WORKSPACE_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 
 export function buildInviteCode(hostPublicKey: string, workspaceName: string): string {
   return `${hostPublicKey}:${workspaceName}`;
@@ -16,6 +19,7 @@ export function parseInviteCode(code: string): { hostPublicKey: string; workspac
   const workspaceName = code.slice(sep + 1);
   if (!HEX64.test(hostPublicKey)) throw new Error("Invalid invite code: hostPublicKey must be 64 hex chars");
   if (!workspaceName) throw new Error("Invalid invite code: workspaceName is empty");
+  if (!WORKSPACE_NAME.test(workspaceName)) throw new Error("Invalid invite code: workspaceName contains invalid characters");
   return { hostPublicKey, workspaceName };
 }
 

@@ -53,6 +53,27 @@ describe("parseInviteCode", () => {
     const { parseInviteCode } = await import("../../src/team/invite.js");
     expect(() => parseInviteCode(`${HOST_PK}:`)).toThrow(/workspaceName is empty/i);
   });
+
+  it("[HIGH-SEC] throws when workspaceName contains disallowed characters (prompt injection guard)", async () => {
+    const { parseInviteCode } = await import("../../src/team/invite.js");
+    // workspaceName must match ^[a-zA-Z0-9_-]{1,64}$
+    expect(() => parseInviteCode(`${HOST_PK}:ws with spaces`)).toThrow(/invalid.*workspace/i);
+    expect(() => parseInviteCode(`${HOST_PK}:ws<script>alert(1)</script>`)).toThrow(/invalid.*workspace/i);
+    expect(() => parseInviteCode(`${HOST_PK}:ws\nINJECTED_INSTRUCTION`)).toThrow(/invalid.*workspace/i);
+  });
+
+  it("[HIGH-SEC] accepts valid workspace names matching allowlist", async () => {
+    const { parseInviteCode } = await import("../../src/team/invite.js");
+    expect(parseInviteCode(`${HOST_PK}:my-workspace`).workspaceName).toBe("my-workspace");
+    expect(parseInviteCode(`${HOST_PK}:knowledge_base`).workspaceName).toBe("knowledge_base");
+    expect(parseInviteCode(`${HOST_PK}:MyProject123`).workspaceName).toBe("MyProject123");
+  });
+
+  it("[HIGH-SEC] throws when workspaceName exceeds 64 characters", async () => {
+    const { parseInviteCode } = await import("../../src/team/invite.js");
+    const longName = "a".repeat(65);
+    expect(() => parseInviteCode(`${HOST_PK}:${longName}`)).toThrow(/invalid.*workspace/i);
+  });
 });
 
 describe("normalizeGithubUsername", () => {

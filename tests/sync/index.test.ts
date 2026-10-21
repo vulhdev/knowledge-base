@@ -216,6 +216,33 @@ describe("handleJoinConnection — security guards", () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(socket.writes).toHaveLength(1);
   });
+
+  it("[CRITICAL-CR] forwards appVersion from join_request body to handleJoinRequest", async () => {
+    const noiseKeyHex = "a".repeat(64);
+    const noiseKey = Buffer.from(noiseKeyHex, "hex");
+    const db = createTestDb();
+    const { handleJoinConnection } = await import("../../src/sync/index.js");
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const socket = new MockSocket();
+    handleJoinConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream, noiseKey);
+
+    const msg = JSON.stringify({
+      type: "join_request",
+      githubToken: "gho_abc",
+      peerPublicKey: noiseKeyHex,
+      githubUsername: "vulhdev",
+      appVersion: "1.17.0",
+    }) + "\n";
+    socket.emit("data", Buffer.from(msg));
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(vi.mocked(handleJoinRequest)).toHaveBeenCalledWith(
+      db,
+      "myws",
+      expect.objectContaining({ appVersion: "1.17.0" }),
+    );
+  });
 });
 
 describe("handleSyncConnection — buf framing", () => {
@@ -457,5 +484,45 @@ describe("handleSyncConnection — bootstrap protocol", () => {
 
     const count = (peerDb.prepare("SELECT COUNT(*) AS n FROM features").get() as { n: number }).n;
     expect(count).toBe(1);
+  });
+
+  it("[CRITICAL-SEC] bootstrap frame with name longer than 500 chars is rejected — no rows inserted", async () => {
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+    const peerDb = createBootstrapTestDb();
+    peerDb.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+
+    const socket = new MockSocket();
+    handleSyncConnection(peerDb, "ws", socket as unknown as NodeJS.ReadWriteStream);
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+
+    const oversizedName = "x".repeat(501);
+    const frame = makeFramedPayload({
+      type: "bootstrap",
+      features: [{ id: "a".repeat(32), name: oversizedName }],
+    });
+    socket.emit("data", frame);
+
+    const count = (peerDb.prepare("SELECT COUNT(*) AS n FROM features").get() as { n: number }).n;
+    expect(count).toBe(0);
+  });
+
+  it("[CRITICAL-SEC] bootstrap frame with more than 5000 entries is rejected entirely", async () => {
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+    const peerDb = createBootstrapTestDb();
+    peerDb.exec("INSERT INTO workspaces (name) VALUES ('ws')");
+
+    const socket = new MockSocket();
+    handleSyncConnection(peerDb, "ws", socket as unknown as NodeJS.ReadWriteStream);
+    socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+
+    const oversizedFeatures = Array.from({ length: 5001 }, (_, i) => ({
+      id: i.toString(16).padStart(32, "0"),
+      name: `feature-${i}`,
+    }));
+    const frame = makeFramedPayload({ type: "bootstrap", features: oversizedFeatures });
+    socket.emit("data", frame);
+
+    const count = (peerDb.prepare("SELECT COUNT(*) AS n FROM features").get() as { n: number }).n;
+    expect(count).toBe(0);
   });
 });

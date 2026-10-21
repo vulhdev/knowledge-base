@@ -308,6 +308,10 @@ function migrateContentsToUuid(db: Database.Database): void {
     COMMIT;
   `);
 
+  // Restore FK enforcement before the transaction so it is re-enabled even if
+  // the FTS rebuild below throws (PRAGMA foreign_keys = OFF was set above).
+  db.exec("PRAGMA foreign_keys = ON");
+
   db.transaction(() => {
     db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
     repopulateContentsFts(db);
@@ -760,12 +764,14 @@ function removeFeatureIdColumn(db: Database.Database): void {
     COMMIT;
   `);
 
+  // Restore FK enforcement before the transaction to guarantee it is re-enabled
+  // even if the FTS rebuild throws.
+  db.exec("PRAGMA foreign_keys = ON");
+
   db.transaction(() => {
     db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
     repopulateContentsFts(db);
   })();
-
-  db.exec("PRAGMA foreign_keys = ON");
 }
 
 function removeCheckConstraint(db: Database.Database): void {

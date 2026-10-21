@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { createTestDb } from "../setup.js";
 import { insertTeam } from "../../src/db/team.js";
@@ -21,6 +21,30 @@ function tmp(): string {
 afterEach(() => {
   vi.clearAllMocks();
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+
+describe("writeWorkspaceToClaude", () => {
+  it("[MEDIUM-SEC] throws when process.cwd() is outside home directory", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp/attacker");
+    try {
+      const { writeWorkspaceToClaude } = await import("../../src/sync/claude-md.js");
+      expect(() => writeWorkspaceToClaude("my-ws")).toThrow(/refusing.*outside home/i);
+    } finally {
+      cwdSpy.mockRestore();
+    }
+  });
+
+  it("[MEDIUM-SEC] succeeds when process.cwd() is inside home directory", async () => {
+    const dir = mkdtempSync(join(homedir(), "kb-test-"));
+    dirs.push(dir);
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(dir);
+    try {
+      const { writeWorkspaceToClaude } = await import("../../src/sync/claude-md.js");
+      expect(() => writeWorkspaceToClaude("my-ws")).not.toThrow();
+    } finally {
+      cwdSpy.mockRestore();
+    }
+  });
 });
 
 describe("readWorkspaceFromClaudeMd", () => {

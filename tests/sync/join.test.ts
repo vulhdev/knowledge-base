@@ -226,6 +226,29 @@ describe("handleJoinRequest (host side)", () => {
     expect(result.accepted).toBe(true);
   });
 
+  it("[MEDIUM-SEC] rejects peerPublicKey that is not 64 lowercase hex characters", async () => {
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    // Too short
+    const r1 = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "abc123", // invalid: not 64 hex chars
+      appVersion: "1.17.0",
+    });
+    expect(r1.accepted).toBe(false);
+    expect((r1 as { reason: string }).reason).toMatch(/invalid.*public.?key/i);
+
+    // Correct length but uppercase (not lowercase hex)
+    const r2 = await handleJoinRequest(db, "myws", {
+      githubToken: "gho_abc",
+      peerPublicKey: "A".repeat(64),
+      appVersion: "1.17.0",
+    });
+    expect(r2.accepted).toBe(false);
+  });
+
   it("rejects github token longer than 255 characters", async () => {
     const { handleJoinRequest } = await import("../../src/sync/join.js");
     const result = await handleJoinRequest(db, "myws", {
@@ -319,6 +342,43 @@ describe("handleJoinRequest (host side)", () => {
   });
 });
 
+describe("handleJoinRequest — inFlight composite key (same module instance)", () => {
+  it("[MEDIUM-SEC] allows same username to join two different workspaces concurrently when inFlight uses composite key", async () => {
+    // This test purposely does NOT call vi.resetModules() so both calls share the same
+    // module-level inFlight Set, reproducing the real production behaviour.
+    // If inFlight is keyed by username only, the second concurrent request returns
+    // "join already in progress" instead of succeeding.
+    const db1 = createTestDb();
+    const db2 = createTestDb();
+    seedJoinSetup(db1);
+    seedJoinSetup(db2);
+
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+
+    // Hold both GitHub calls simultaneously so both are truly in-flight together.
+    let resolveGH1!: (v: string) => void;
+    let resolveGH2!: (v: string) => void;
+    vi.mocked(getGitHubUsername)
+      .mockImplementationOnce(() => new Promise((r) => { resolveGH1 = r; }))
+      .mockImplementationOnce(() => new Promise((r) => { resolveGH2 = r; }));
+
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const p1 = handleJoinRequest(db1, "myws", { githubToken: "tok1", peerPublicKey: "e".repeat(64), appVersion: "1.17.0" });
+    const p2 = handleJoinRequest(db2, "myws", { githubToken: "tok2", peerPublicKey: "f".repeat(64), appVersion: "1.17.0" });
+
+    // Let both GitHub calls resolve with the same username
+    resolveGH1("vulhdev");
+    resolveGH2("vulhdev");
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+
+    // Both must accept — they are in different workspaces
+    expect(r1.accepted).toBe(true);
+    expect(r2.accepted).toBe(true);
+  });
+});
+
 describe("deriveJoinTopic", () => {
   const HOST_PK = "b".repeat(64);
 
@@ -373,9 +433,11 @@ describe("handleJoinRequest — re-invite after delete", () => {
 
   it("rejects kicked peer (baseline)", async () => {
     const { handleJoinRequest } = await import("../../src/sync/join.js");
+    const OLD_PK = "1".repeat(64);
+    const NEW_PK = "2".repeat(64);
     db.prepare("INSERT INTO team_peers (public_key, display_name, github_username, is_active) VALUES (?, ?, ?, 0)")
-      .run("old-pk", "@vulhdev", "vulhdev");
-    const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: "new-pk", appVersion: "1.17.0" });
+      .run(OLD_PK, "@vulhdev", "vulhdev");
+    const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: NEW_PK, appVersion: "1.17.0" });
     expect(result.accepted).toBe(false);
     expect((result as { accepted: false; reason: string }).reason).toMatch(/has been removed/);
   });
@@ -384,15 +446,17 @@ describe("handleJoinRequest — re-invite after delete", () => {
     const { handleJoinRequest } = await import("../../src/sync/join.js");
     const { deletePeer } = await import("../../src/team/kick.js");
 
+    const OLD_PK = "1".repeat(64);
+    const NEW_PK = "2".repeat(64);
     db.prepare("INSERT INTO team_peers (public_key, display_name, github_username, is_active) VALUES (?, ?, ?, 0)")
-      .run("old-pk", "@vulhdev", "vulhdev");
-    deletePeer(db, "old-pk");
+      .run(OLD_PK, "@vulhdev", "vulhdev");
+    deletePeer(db, OLD_PK);
 
-    const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: "new-pk", appVersion: "1.17.0" });
+    const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: NEW_PK, appVersion: "1.17.0" });
     expect(result.accepted).toBe(true);
     expect((result as { accepted: true; secret: string }).secret).toBe("a".repeat(64));
 
-    const row = db.prepare("SELECT is_active FROM team_peers WHERE public_key = 'new-pk'").get() as { is_active: number };
+    const row = db.prepare(`SELECT is_active FROM team_peers WHERE public_key = '${NEW_PK}'`).get() as { is_active: number };
     expect(row.is_active).toBe(1);
   });
 });

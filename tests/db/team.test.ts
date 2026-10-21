@@ -108,10 +108,11 @@ describe("insertTeam", () => {
     expect(row!.host_public_key).toBe("hostpk");
   });
 
-  it("throws on duplicate workspace_id", () => {
+  it("[IMPORTANT-CR] does not throw on duplicate workspace_id (ON CONFLICT DO NOTHING)", () => {
     const wsId = seedWorkspace(db, "ws");
     insertTeam(db, wsId, BASE_TEAM);
-    expect(() => insertTeam(db, wsId, BASE_TEAM)).toThrow();
+    // Second call must be silent (e.g. re-running 'team join')
+    expect(() => insertTeam(db, wsId, BASE_TEAM)).not.toThrow();
   });
 });
 

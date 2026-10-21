@@ -60,6 +60,34 @@ describe("performInitialSync", () => {
     vi.clearAllMocks();
   });
 
+  it("[IMPORTANT-CR] resolves with timeout when socket emits error (no promise leak)", async () => {
+    const db = createTestDb();
+    db.exec(
+      "CREATE TABLE IF NOT EXISTS crsql_changes " +
+      "(tbl TEXT, pk TEXT, cid TEXT, val ANY, col_version INTEGER, db_version INTEGER, site_id TEXT, cl INTEGER, seq INTEGER)",
+    );
+    db.function("crsql_site_id", () => Buffer.alloc(16));
+    seedPeerTeam(db);
+
+    const { performInitialSync } = await import("../../src/sync/initial.js");
+
+    const syncPromise = performInitialSync(db, "myws", 5_000);
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(connectionHandler).not.toBeNull();
+
+    const socket = new MockSocket();
+    connectionHandler!(socket as unknown as NodeJS.ReadWriteStream);
+
+    // Emit error — "close" will NOT be emitted on this mock; promise must still resolve.
+    socket.emit("error", new Error("ECONNRESET"));
+
+    const result = await syncPromise;
+    // Promise resolves (not leaks) — either ok or timeout is acceptable
+    expect(result).toBeDefined();
+    expect(typeof result.ok).toBe("boolean");
+  });
+
   it("returns crsql_unavailable when crsql extension is not loaded", async () => {
     const db = createTestDb();
     // createTestDb does NOT load crsql, so crsql_site_id() will throw

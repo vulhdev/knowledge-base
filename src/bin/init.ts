@@ -16,6 +16,9 @@ import { writeWorkspaceToClaude } from "../sync/claude-md.js";
 
 const CREATE_NEW = "__new__";
 const SKIP = "__skip__";
+// 32-byte seed-only Ed25519 key, encoded as hex = 64 characters.
+// Used to detect stale keypairs that need auto-migration to a full 64-byte keypair.
+const STALE_KEY_HEX_LEN = 64;
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SKILLS_SRC = join(PACKAGE_ROOT, "skills");
@@ -174,7 +177,7 @@ export async function main(): Promise<void> {
       p.log.success(`Team created. Invite peers with:`);
       p.log.info(`  knowledge-base team invite --workspace ${workspaceName} @<github-username>`);
     }
-  } else if (hasTeam.noise_secret_key.length === 64) {
+  } else if (hasTeam.noise_secret_key.length === STALE_KEY_HEX_LEN) {
     // stale Ed25519 keypair (seed-only, 32 bytes) — auto-migrate
     p.log.warn(`Outdated keypair detected for "${workspaceName}" — auto-migrating to Ed25519.`);
     const kp = generateNoiseKeypair();

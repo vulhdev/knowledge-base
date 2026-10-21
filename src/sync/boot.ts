@@ -3,14 +3,16 @@ import { listTeamWorkspaces, getTeamByName } from "../db/team.js";
 import { startSync, type SyncHandle } from "./index.js";
 import { readWorkspaceFromClaudeMd } from "./claude-md.js";
 
-export function startSyncIfConfigured(db: Database.Database): SyncHandle | null {
+export function startSyncIfConfigured(db: Database.Database): SyncHandle[] | null {
   const teamWorkspaces = listTeamWorkspaces(db);
   if (teamWorkspaces.length === 0) return null;
 
+  const handles: SyncHandle[] = [];
   for (const ws of teamWorkspaces) {
-    return startSync(db, ws.name);
+    const handle = startSync(db, ws.name);
+    if (handle) handles.push(handle);
   }
-  return null;
+  return handles.length > 0 ? handles : null;
 }
 
 export function startSyncFromClaudeMd(db: Database.Database, cwd?: string): void {

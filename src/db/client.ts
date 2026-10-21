@@ -3,7 +3,7 @@ import { load as loadSqliteVec } from "sqlite-vec";
 import { loadCrsqlite } from "../team/crsqlite.js";
 import { homedir } from "node:os";
 import { join, dirname, basename, resolve } from "node:path";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, chmodSync } from "node:fs";
 import { applySchema } from "./schema.js";
 import { startBackfill } from "../embedding/backfill.js";
 import { loadSettings, writeSettings } from "../config.js";
@@ -19,6 +19,12 @@ export function openDb(): Database.Database {
 
   try {
     instance = new Database(dbPath);
+    // Restrict DB file to owner-only (0600) so noise_secret_key stored inside
+    // is not world-readable. This is a best-effort guard; OS keychain integration
+    // is tracked as a follow-up improvement.
+    if (dbPath !== ":memory:") {
+      try { chmodSync(dbPath, 0o600); } catch { /* non-fatal — e.g. read-only filesystem */ }
+    }
     loadSqliteVec(instance);
     try { loadCrsqlite(instance); } catch { /* extension not downloaded — team sync disabled */ }
   } catch (err) {

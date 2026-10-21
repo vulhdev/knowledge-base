@@ -51,7 +51,7 @@ export function insertTeam(
   config: Omit<WorkspaceTeamRow, "workspace_id">,
 ): void {
   db.prepare(
-    `INSERT INTO workspace_team
+    `INSERT OR IGNORE INTO workspace_team
        (workspace_id, role, secret, noise_public_key, noise_secret_key, host_public_key, last_synced_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(
