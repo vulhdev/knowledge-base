@@ -59,6 +59,7 @@ async function suggestParents(
   try {
     // Same tokenization as contents_fts: CJK runs become bigram phrases instead of being stripped
     const words = buildFtsQuery(body.trim().split(/\s+/).slice(0, 8).join(" "))
+      // eslint-disable-next-line no-control-regex
       .tokens.filter((w) => w.startsWith('"') && (/[^\x00-\x7F]/.test(w) || w.length - 2 > 2));
 
     if (words.length === 0) return [];

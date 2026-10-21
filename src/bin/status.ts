@@ -56,7 +56,7 @@ async function resolveWorkspace(db: Database.Database): Promise<string | null> {
     return null;
   }
 
-  return selected as string;
+  return selected;
 }
 
 async function main(): Promise<void> {

@@ -81,7 +81,7 @@ export function handleSyncConnection(
   socket: NodeJS.ReadWriteStream,
   callbacks?: SyncCallbacks,
 ): void {
-  let localDbVersion = 0;
+  let localDbVersion: number;
   try {
     const row = db
       .prepare("SELECT MAX(db_version) AS v FROM crsql_changes")

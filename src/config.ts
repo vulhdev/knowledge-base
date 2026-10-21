@@ -52,7 +52,7 @@ export function writeSettings(settings: Settings): void {
 
 function readOrMigrate(): Settings {
   if (existsSync(SETTINGS_PATH)) {
-    return JSON.parse(readFileSync(SETTINGS_PATH, "utf8") as string) as Settings;
+    return JSON.parse(readFileSync(SETTINGS_PATH, "utf8")) as Settings;
   }
 
   mkdirSync(SETTINGS_DIR, { recursive: true });

@@ -12,6 +12,7 @@ import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github
 import { kickPeer, listPeers, findPeerByUsername, deletePeer } from "../team/kick.js";
 import { deriveJoinTopic } from "../sync/join.js";
 import { HOST_VERSION } from "../sync/version.js";
+import type { Duplex } from "node:stream";
 import { startSync, type SyncHandle } from "../sync/index.js";
 import { makeConsoleLogger } from "../sync/activity.js";
 import { deriveTopicBuffer } from "../sync/peer.js";
@@ -222,7 +223,7 @@ export async function attemptJoin(
 
     swarm.on("connection", (socket: NodeJS.ReadWriteStream, info) => {
       if (info.publicKey.toString("hex") !== hostPublicKey) {
-        (socket as import("node:stream").Duplex).destroy();
+        (socket as Duplex).destroy();
         return;
       }
 
@@ -256,11 +257,11 @@ export async function attemptJoin(
 
       (socket as NodeJS.EventEmitter).on("error", (err: unknown) => {
         swarm.destroy().catch(() => undefined);
-        reject(err);
+        reject(err instanceof Error ? err : new Error(String(err)));
       });
     });
 
-    swarm.on("error", (...args: unknown[]) => reject(args[0]));
+    swarm.on("error", (...args: unknown[]) => reject(args[0] instanceof Error ? args[0] : new Error(String(args[0]))));
   });
 }
 

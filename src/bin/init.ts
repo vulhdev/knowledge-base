@@ -99,7 +99,7 @@ export async function main(): Promise<void> {
 
   let workspaceName: string;
 
-  if ((selected as string) === CREATE_NEW) {
+  if ((selected) === CREATE_NEW) {
     const name = await p.text({
       message: "Workspace name:",
       placeholder: "my-project",
@@ -111,10 +111,10 @@ export async function main(): Promise<void> {
       process.exit(0);
     }
 
-    createWorkspace(db, name as string);
-    workspaceName = name as string;
+    createWorkspace(db, name);
+    workspaceName = name;
   } else {
-    workspaceName = selected as string;
+    workspaceName = selected;
   }
 
   writeWorkspaceToClaude(workspaceName);
@@ -139,7 +139,7 @@ export async function main(): Promise<void> {
     if (p.isCancel(identityEmail)) { p.cancel("Cancelled."); process.exit(0); }
 
     const updated = loadSettings();
-    updated.identity = { name: identityName as string, email: identityEmail as string };
+    updated.identity = { name: identityName, email: identityEmail };
     writeSettings(updated);
     p.log.success(`Identity saved: ${identityName} <${identityEmail}>`);
   } else {
@@ -159,7 +159,7 @@ export async function main(): Promise<void> {
     });
     if (p.isCancel(teamMode)) { p.cancel("Cancelled."); process.exit(0); }
 
-    if ((teamMode as string) === "create") {
+    if ((teamMode) === "create") {
       const githubUsername = await runGitHubAuth();
 
       const kp = generateNoiseKeypair();
@@ -194,7 +194,7 @@ export async function main(): Promise<void> {
     });
     if (p.isCancel(reconfigureChoice)) { p.cancel("Cancelled."); process.exit(0); }
 
-    if ((reconfigureChoice as string) === "reconfigure") {
+    if ((reconfigureChoice) === "reconfigure") {
       p.log.warn("All peers connected to this team will lose their connection. They will need to re-join.");
       const confirmReconfig = await p.confirm({
         message: "Continue with reconfiguration?",
@@ -260,10 +260,10 @@ export async function main(): Promise<void> {
     ],
   });
 
-  if (!p.isCancel(skillsDest) && (skillsDest as string) !== SKIP) {
-    const copied = copySkills(skillsDest as string);
+  if (!p.isCancel(skillsDest) && (skillsDest) !== SKIP) {
+    const copied = copySkills(skillsDest);
     if (copied.length > 0) {
-      writeFileSync(join(skillsDest as string, VERSION_MARKER), VERSION, "utf8");
+      writeFileSync(join(skillsDest, VERSION_MARKER), VERSION, "utf8");
       p.log.success(`Installed ${copied.length} skills to ${skillsDest}`);
       for (const skill of copied) p.log.info(`  /${skill}`);
     } else {
@@ -288,10 +288,10 @@ export async function main(): Promise<void> {
     ],
   });
 
-  if (!p.isCancel(agentsDest) && (agentsDest as string) !== SKIP) {
-    const copied = copyAgents(agentsDest as string);
+  if (!p.isCancel(agentsDest) && (agentsDest) !== SKIP) {
+    const copied = copyAgents(agentsDest);
     if (copied.length > 0) {
-      writeFileSync(join(agentsDest as string, VERSION_MARKER), VERSION, "utf8");
+      writeFileSync(join(agentsDest, VERSION_MARKER), VERSION, "utf8");
       p.log.success(`Installed ${copied.length} agents to ${agentsDest}`);
       for (const agent of copied) p.log.info(`  ${agent}`);
     } else {
