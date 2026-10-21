@@ -43,8 +43,10 @@ export function loadSettings(): Settings {
 
 export function writeSettings(settings: Settings): void {
   mkdirSync(SETTINGS_DIR, { recursive: true });
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
-  chmodSync(SETTINGS_PATH, 0o600);
+  const tmp = SETTINGS_PATH + ".tmp";
+  writeFileSync(tmp, JSON.stringify(settings, null, 2));
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, SETTINGS_PATH);
   cached = null;
 }
 
