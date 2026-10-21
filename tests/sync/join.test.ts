@@ -333,3 +333,53 @@ describe("deriveJoinTopic", () => {
     expect(t1.toString("hex")).not.toBe(t2.toString("hex"));
   });
 });
+
+describe("handleJoinRequest — re-invite after delete", () => {
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW_ISO));
+    vi.resetModules();
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(makeSettingsJson());
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockResolvedValue("vulhdev");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("rejects kicked peer (baseline)", async () => {
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+    db.prepare("INSERT INTO team_peers (public_key, display_name, github_username, is_active) VALUES (?, ?, ?, 0)")
+      .run("old-pk", "@vulhdev", "vulhdev");
+    const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: "new-pk" });
+    expect(result.accepted).toBe(false);
+    expect((result as { accepted: false; reason: string }).reason).toMatch(/has been removed/);
+  });
+
+  it("allows join after deletePeer clears the row", async () => {
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+    const { deletePeer } = await import("../../src/team/kick.js");
+    const { writeFileSync } = await import("node:fs");
+
+    // Kick then delete the peer
+    db.prepare("INSERT INTO team_peers (public_key, display_name, github_username, is_active) VALUES (?, ?, ?, 0)")
+      .run("old-pk", "@vulhdev", "vulhdev");
+    deletePeer(db, "old-pk");
+
+    // Host re-invites (pending_github_usernames already contains "vulhdev" in HOST_CONFIG)
+    vi.mocked(writeFileSync).mockImplementation(() => {});
+
+    const result = await handleJoinRequest(db, "myws", { githubToken: "tok", peerPublicKey: "new-pk" });
+    expect(result.accepted).toBe(true);
+    expect((result as { accepted: true; secret: string }).secret).toBe("a".repeat(64));
+
+    // Row reinserted as active
+    const row = db.prepare("SELECT is_active FROM team_peers WHERE public_key = 'new-pk'").get() as { is_active: number };
+    expect(row.is_active).toBe(1);
+  });
+});
