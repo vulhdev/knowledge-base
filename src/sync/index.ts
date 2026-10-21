@@ -29,7 +29,7 @@ type JoinCallbacks = {
 export function recordSyncTimestamp(workspaceName: string): void {
   const s = loadSettings();
   if (s.workspaces?.[workspaceName]?.team) {
-    s.workspaces[workspaceName].team!.last_synced_at = new Date().toISOString();
+    s.workspaces[workspaceName].team.last_synced_at = new Date().toISOString();
     writeSettings(s);
   }
 }
@@ -44,7 +44,7 @@ export function handleSyncConnection(
   socket: NodeJS.ReadWriteStream,
   callbacks?: SyncCallbacks,
 ): void {
-  let localDbVersion = 0;
+  let localDbVersion: number;
   try {
     const row = db
       .prepare("SELECT MAX(db_version) AS v FROM crsql_changes")

@@ -11,7 +11,7 @@ function git(dir: string, args: string[], opts: { allowFail?: boolean } = {}): s
   } catch (err) {
     if (opts.allowFail) return null;
     const e = err as { stderr?: string; message: string };
-    throw new Error(`git ${args.join(" ")} failed in ${dir}: ${(e.stderr ?? e.message).toString().trim()}`);
+    throw new Error(`git ${args.join(" ")} failed in ${dir}: ${(e.stderr ?? e.message).toString().trim()}`, { cause: err });
   }
 }
 

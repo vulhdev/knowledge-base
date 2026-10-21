@@ -92,6 +92,7 @@ function recreateContentsFts(db: Database.Database): void {
 export function applySchema(db: Database.Database): void {
   // Must be registered before any statement that can fire the contents_fts triggers.
   db.function("kb_cjk_bigram", { deterministic: true }, (text: unknown) =>
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string
     text === null || text === undefined ? null : bigramIndexText(String(text)),
   );
   db.exec("PRAGMA journal_mode = WAL");

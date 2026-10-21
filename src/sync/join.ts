@@ -94,7 +94,7 @@ export async function handleJoinRequest(
 
     const updated = loadSettings();
     if (updated.workspaces?.[workspaceName]?.team) {
-      const t = updated.workspaces[workspaceName].team!;
+      const t = updated.workspaces[workspaceName].team;
       t.pending_github_usernames = (t.pending_github_usernames ?? []).filter((u) => u !== username);
       if (t.pending_invites) {
         t.pending_invites = t.pending_invites.filter((i) => i.username !== username);

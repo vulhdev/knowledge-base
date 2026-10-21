@@ -26,6 +26,7 @@ export function openDb(): Database.Database {
       `  Linux:   sudo apt-get install build-essential\n` +
       `  Windows: npm install -g windows-build-tools\n\n` +
       `Then run: npm rebuild better-sqlite3\n\nOriginal error: ${err}`,
+      { cause: err },
     );
   }
 

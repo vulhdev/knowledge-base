@@ -73,7 +73,7 @@ function osc8(id: number, label: string): string {
 
 function formatSingle(item: object): string {
   const { id, type } = item as { id: number; type: string };
-  const withUrl = { ...(item as object), gui_url: contentUrl(id) };
+  const withUrl = { ...(item), gui_url: contentUrl(id) };
   const json = JSON.stringify(withUrl, null, 2);
   return `${json}\n\n${osc8(id, `${type}#${id}`)}`;
 }

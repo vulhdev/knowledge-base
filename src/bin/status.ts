@@ -58,7 +58,7 @@ async function resolveWorkspace(): Promise<string | null> {
     return null;
   }
 
-  return selected as string;
+  return selected;
 }
 
 async function main(): Promise<void> {
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   }
 
   const settings = loadSettings();
-  const team = settings.workspaces![workspaceName]!.team!;
+  const team = settings.workspaces![workspaceName].team!;
 
   console.log(`\nWorkspace : ${workspaceName}  (role: ${team.role})`);
 
