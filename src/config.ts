@@ -4,18 +4,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, renameSy
 
 export type Identity = { name: string; email: string; github_username?: string };
 
-export type NoiseKeypair = { publicKey: string; secretKey: string };
-
-export type PendingInvite = { username: string; invited_at: string };
-
-export type WorkspaceTeamConfig = {
+// Legacy workspace team config — read-only, used only for one-time migration in openDb().
+type LegacyTeamConfig = {
   role: "host" | "peer";
   secret: string;
-  // noise_keypair.secretKey is stored unencrypted in settings.json (mode 0600).
-  // Future: encrypt at rest with a passphrase or OS keychain.
-  noise_keypair: NoiseKeypair;
+  noise_keypair: { publicKey: string; secretKey: string };
   pending_github_usernames?: string[];
-  pending_invites?: PendingInvite[];
+  pending_invites?: { username: string; invited_at: string }[];
   host_public_key?: string;
   last_synced_at?: string;
 };
@@ -24,7 +19,8 @@ export type Settings = {
   db_path: string;
   model_cache_dir: string;
   identity?: Identity;
-  workspaces?: Record<string, { team?: WorkspaceTeamConfig }>;
+  /** @deprecated Migrated to workspace_team + workspace_invites tables on first openDb() call. */
+  workspaces?: Record<string, { team?: LegacyTeamConfig }>;
 };
 
 const SETTINGS_DIR  = join(homedir(), ".claude", "knowledge-base");

@@ -7,6 +7,8 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { applySchema } from "./schema.js";
 import { startBackfill } from "../embedding/backfill.js";
 import { loadSettings } from "../config.js";
+import { insertTeam, getTeamByName, addInvite } from "./team.js";
+import { createWorkspace } from "./workspaces.js";
 
 let instance: Database.Database | null = null;
 
@@ -30,8 +32,35 @@ export function openDb(): Database.Database {
   }
 
   applySchema(instance);
+  migrateSettingsToDb(instance);
   startBackfill(instance);
   return instance;
+}
+
+function migrateSettingsToDb(db: Database.Database): void {
+  const settings = loadSettings();
+  if (!settings.workspaces) return;
+  for (const [name, ws] of Object.entries(settings.workspaces)) {
+    const team = ws.team;
+    if (!team) continue;
+    if (getTeamByName(db, name)) continue; // already migrated
+    const row = createWorkspace(db, name);
+    insertTeam(db, row.id, {
+      role: team.role,
+      secret: team.secret,
+      noise_public_key: team.noise_keypair.publicKey,
+      noise_secret_key: team.noise_keypair.secretKey,
+      host_public_key: team.host_public_key ?? null,
+      last_synced_at: team.last_synced_at ?? null,
+    });
+    const usernames: string[] = [
+      ...(team.pending_github_usernames ?? []),
+      ...(team.pending_invites ?? []).map((i) => i.username),
+    ];
+    for (const username of [...new Set(usernames)]) {
+      addInvite(db, row.id, username);
+    }
+  }
 }
 
 /** Resolve symlinks of a path that may not exist yet (resolves the nearest existing parent). */

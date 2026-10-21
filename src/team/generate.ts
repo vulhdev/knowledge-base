@@ -1,5 +1,6 @@
 import { randomBytes, generateKeyPairSync } from "node:crypto";
-import type { WorkspaceTeamConfig, NoiseKeypair } from "../config.js";
+
+export type NoiseKeypair = { publicKey: string; secretKey: string };
 
 export function generateSecret(): string {
   return randomBytes(32).toString("hex");
@@ -16,17 +17,5 @@ export function generateNoiseKeypair(): NoiseKeypair {
   return {
     publicKey: pubRaw.toString("hex"),
     secretKey: Buffer.concat([seedRaw, pubRaw]).toString("hex"),
-  };
-}
-
-export function isStaleKeypair(kp: NoiseKeypair): boolean {
-  return kp.secretKey.length === 64;
-}
-
-export function generateTeamConfig(): WorkspaceTeamConfig {
-  return {
-    role: "host",
-    secret: generateSecret(),
-    noise_keypair: generateNoiseKeypair(),
   };
 }

@@ -2,8 +2,8 @@ import express from "express";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
-import { loadSettings } from "../config.js";
 import { listWorkspaces } from "../db/workspaces.js";
+import { getTeamByName } from "../db/team.js";
 import { listFeatures, listWorkspaceSummaries, listRecentContents, listReviewComments } from "./db.js";
 import { listContents } from "../tools/list-contents.js";
 import { getContent } from "../tools/get-content.js";
@@ -55,14 +55,14 @@ export function createApp(db: Database.Database, port?: number) {
         return;
       }
     }
-    const team = loadSettings().workspaces?.[workspace]?.team;
+    const team = getTeamByName(db, workspace);
     const hasTeam = team?.role === "host";
     res.send(renderFeatureList(workspace, features, hasTeam));
   });
 
   app.get("/ws/:workspace/team", (req, res) => {
     const { workspace } = req.params;
-    const team = loadSettings().workspaces?.[workspace]?.team;
+    const team = getTeamByName(db, workspace);
     if (!team || team.role !== "host") {
       res.status(403).send("<p>Forbidden: only the host can view the team page.</p>");
       return;
@@ -92,7 +92,7 @@ export function createApp(db: Database.Database, port?: number) {
     }
 
     const { workspace } = req.params;
-    const team = loadSettings().workspaces?.[workspace]?.team;
+    const team = getTeamByName(db, workspace);
     if (!team || team.role !== "host") {
       res.status(403).send("<p>Forbidden</p>");
       return;
@@ -136,7 +136,7 @@ export function createApp(db: Database.Database, port?: number) {
     }
 
     const { workspace } = req.params;
-    const team = loadSettings().workspaces?.[workspace]?.team;
+    const team = getTeamByName(db, workspace);
     if (!team || team.role !== "host") {
       res.status(403).send("<p>Forbidden</p>");
       return;

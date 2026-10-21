@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import type Database from "better-sqlite3";
 import { createTestDb } from "../setup.js";
+import { createWorkspace } from "../../src/db/workspaces.js";
+import { insertTeam } from "../../src/db/team.js";
 import { createApp } from "../../src/gui/server.js";
 
 vi.mock("../../src/embedding/model.js", () => ({
@@ -9,25 +11,28 @@ vi.mock("../../src/embedding/model.js", () => ({
   getEmbedding: vi.fn().mockResolvedValue(new Float32Array(384).fill(0)),
 }));
 
-vi.mock("../../src/config.js", () => ({
-  loadSettings: vi.fn(),
-}));
+function seedHostTeam(db: Database.Database): void {
+  const ws = createWorkspace(db, "proj-a");
+  insertTeam(db, ws.id, {
+    role: "host",
+    secret: "s".repeat(64),
+    noise_public_key: "p".repeat(64),
+    noise_secret_key: "k".repeat(128),
+    host_public_key: null,
+    last_synced_at: null,
+  });
+}
 
-const HOST_SETTINGS = {
-  db_path: "/db",
-  model_cache_dir: "/m",
-  workspaces: { "proj-a": { team: { role: "host", secret: "s", noise_keypair: { publicKey: "pk", secretKey: "sk" } } } },
-};
-const PEER_SETTINGS = {
-  db_path: "/db",
-  model_cache_dir: "/m",
-  workspaces: { "proj-a": { team: { role: "peer", secret: "s", noise_keypair: { publicKey: "pk", secretKey: "sk" } } } },
-};
-const NO_TEAM_SETTINGS = { db_path: "/db", model_cache_dir: "/m" };
-
-async function mockSettings(settings: object) {
-  const { loadSettings } = await import("../../src/config.js");
-  vi.mocked(loadSettings).mockReturnValue(settings as ReturnType<typeof loadSettings>);
+function seedPeerTeam(db: Database.Database): void {
+  const ws = createWorkspace(db, "proj-a");
+  insertTeam(db, ws.id, {
+    role: "peer",
+    secret: "s".repeat(64),
+    noise_public_key: "p".repeat(64),
+    noise_secret_key: "k".repeat(128),
+    host_public_key: "h".repeat(64),
+    last_synced_at: null,
+  });
 }
 
 // --- renderTeamPage unit tests ---
@@ -102,9 +107,9 @@ describe("GET /ws/:workspace/team", () => {
   let db: Database.Database;
   let app: ReturnType<typeof createApp>;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     db = createTestDb();
-    await mockSettings(HOST_SETTINGS);
+    seedHostTeam(db);
     app = createApp(db);
   });
 
@@ -115,14 +120,17 @@ describe("GET /ws/:workspace/team", () => {
   });
 
   it("returns 403 for peer", async () => {
-    await mockSettings(PEER_SETTINGS);
-    const res = await request(app).get("/ws/proj-a/team");
+    const peerDb = createTestDb();
+    seedPeerTeam(peerDb);
+    const peerApp = createApp(peerDb);
+    const res = await request(peerApp).get("/ws/proj-a/team");
     expect(res.status).toBe(403);
   });
 
   it("returns 403 when no team config", async () => {
-    await mockSettings(NO_TEAM_SETTINGS);
-    const res = await request(app).get("/ws/proj-a/team");
+    const emptyDb = createTestDb();
+    const emptyApp = createApp(emptyDb);
+    const res = await request(emptyApp).get("/ws/proj-a/team");
     expect(res.status).toBe(403);
   });
 });
@@ -131,10 +139,10 @@ describe("POST /ws/:workspace/team/kick", () => {
   let db: Database.Database;
   let app: ReturnType<typeof createApp>;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     db = createTestDb();
+    seedHostTeam(db);
     db.prepare("INSERT INTO team_peers (public_key, display_name, github_username) VALUES (?, ?, ?)").run("pk1", "@alice", "alice");
-    await mockSettings(HOST_SETTINGS);
     app = createApp(db);
   });
 
@@ -197,8 +205,11 @@ describe("POST /ws/:workspace/team/kick", () => {
   });
 
   it("returns 403 for non-host", async () => {
-    await mockSettings(PEER_SETTINGS);
-    const res = await request(app)
+    const peerDb = createTestDb();
+    seedPeerTeam(peerDb);
+    peerDb.prepare("INSERT INTO team_peers (public_key, display_name, github_username) VALUES (?, ?, ?)").run("pk1", "@alice", "alice");
+    const peerApp = createApp(peerDb);
+    const res = await request(peerApp)
       .post("/ws/proj-a/team/kick")
       .set("Origin", "http://localhost")
       .send({ github_username: "alice" });
@@ -235,10 +246,10 @@ describe("POST /ws/:workspace/team/kick — CSRF port check", () => {
   let db: Database.Database;
   let app: ReturnType<typeof createApp>;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     db = createTestDb();
+    seedHostTeam(db);
     db.prepare("INSERT INTO team_peers (public_key, display_name, github_username) VALUES (?, ?, ?)").run("pk1", "@alice", "alice");
-    await mockSettings(HOST_SETTINGS);
     app = createApp(db, TEST_PORT);
   });
 
@@ -270,15 +281,9 @@ describe("POST /ws/:workspace/team/kick — CSRF port check", () => {
 // --- Task 3: Team link in workspace page ---
 
 describe("GET /ws/:workspace — Team link", () => {
-  let db: Database.Database;
-
-  beforeEach(() => {
-    db = createTestDb();
-    db.prepare("INSERT INTO workspaces (name) VALUES (?)").run("proj-a");
-  });
-
   it("shows Team link for host workspace", async () => {
-    await mockSettings(HOST_SETTINGS);
+    const db = createTestDb();
+    seedHostTeam(db);
     const app = createApp(db);
     const res = await request(app).get("/ws/proj-a");
     expect(res.status).toBe(200);
@@ -286,7 +291,8 @@ describe("GET /ws/:workspace — Team link", () => {
   });
 
   it("hides Team link when no team config", async () => {
-    await mockSettings(NO_TEAM_SETTINGS);
+    const db = createTestDb();
+    createWorkspace(db, "proj-a"); // workspace exists but no team row
     const app = createApp(db);
     const res = await request(app).get("/ws/proj-a");
     expect(res.status).toBe(200);
