@@ -8,8 +8,7 @@ import { openDb } from "../db/client.js";
 import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { isCrsqliteReady, downloadCrsqlite } from "../team/crsqlite.js";
-import { generateTeamConfig } from "../team/generate.js";
-import { generateNoiseKeypair } from "../team/generate.js";
+import { generateTeamConfig, generateNoiseKeypair, isStaleKeypair } from "../team/generate.js";
 import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
 import { loadSettings, writeSettings } from "../config.js";
 
@@ -129,6 +128,24 @@ function copyAgents(destBase: string): string[] {
   return copied;
 }
 
+async function runGitHubAuth(): Promise<string> {
+  p.log.info("Authenticate with GitHub to verify your identity as team host.");
+  const flow = await startDeviceFlow();
+  p.log.info(`Open ${flow.verificationUri} and enter code: ${flow.userCode}`);
+  const spinner = p.spinner();
+  spinner.start("Waiting for GitHub authorization…");
+  try {
+    const token = await pollForToken(flow.deviceCode, flow.interval, flow.expiresIn);
+    const username = await getGitHubUsername(token);
+    spinner.stop(`Authenticated as @${username}`);
+    return username;
+  } catch (err) {
+    spinner.stop("GitHub authentication failed");
+    p.log.error(String(err));
+    process.exit(1);
+  }
+}
+
 async function main(): Promise<void> {
   p.intro("knowledge-base init");
 
@@ -210,21 +227,7 @@ async function main(): Promise<void> {
     if (p.isCancel(teamMode)) { p.cancel("Cancelled."); process.exit(0); }
 
     if ((teamMode as string) === "create") {
-      p.log.info("Authenticate with GitHub to verify your identity as team host.");
-      const flow = await startDeviceFlow();
-      p.log.info(`Open ${flow.verificationUri} and enter code: ${flow.userCode}`);
-      const spinner = p.spinner();
-      spinner.start("Waiting for GitHub authorization…");
-      let githubUsername: string;
-      try {
-        const token = await pollForToken(flow.deviceCode, flow.interval, flow.expiresIn);
-        githubUsername = await getGitHubUsername(token);
-        spinner.stop(`Authenticated as @${githubUsername}`);
-      } catch (err) {
-        spinner.stop("GitHub authentication failed");
-        p.log.error(String(err));
-        process.exit(1);
-      }
+      const githubUsername = await runGitHubAuth();
 
       const cfg = generateTeamConfig();
       const fresh = loadSettings();
