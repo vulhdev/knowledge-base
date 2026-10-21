@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export function fetchFeatures(db: Database.Database, contentId: number): string[] {
+export function fetchFeatures(db: Database.Database, contentId: string): string[] {
   return (
     db
       .prepare(
@@ -17,9 +17,9 @@ export function fetchFeatures(db: Database.Database, contentId: number): string[
 // Feature names for many contents in one query. Ids without features get no key.
 export function fetchFeaturesBatch(
   db: Database.Database,
-  contentIds: readonly number[],
-): Map<number, string[]> {
-  const result = new Map<number, string[]>();
+  contentIds: readonly string[],
+): Map<string, string[]> {
+  const result = new Map<string, string[]>();
   if (contentIds.length === 0) return result;
 
   const placeholders = contentIds.map(() => "?").join(",");
@@ -31,7 +31,7 @@ export function fetchFeaturesBatch(
        WHERE cf.content_id IN (${placeholders})
        ORDER BY cf.content_id, f.name`,
     )
-    .all(...contentIds) as { content_id: number; name: string }[];
+    .all(...contentIds) as { content_id: string; name: string }[];
 
   for (const row of rows) {
     const names = result.get(row.content_id);

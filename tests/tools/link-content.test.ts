@@ -11,9 +11,9 @@ function seed(db: Database.Database, workspace: string, feature: string) {
   return ft.id;
 }
 
-function insertContent(db: Database.Database, featureId: number, type: string, body: string): number {
+function insertContent(db: Database.Database, featureId: number, type: string, body: string): string {
   const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run(type, body);
-  const id = Number(lastInsertRowid);
+  const { id } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
   db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(id, featureId);
   return id;
 }
@@ -65,14 +65,14 @@ describe("linkContent", () => {
     const ftId = seed(db, "ws", "ft");
     const childId = insertContent(db, ftId, "spec", "spec");
 
-    expect(() => linkContent(db, childId, 99999)).toThrow(/Content not found: id=99999/);
+    expect(() => linkContent(db, childId, "nonexistent-id")).toThrow(/Content not found/);
   });
 
   it("throws Content not found when child ID is missing", () => {
     const ftId = seed(db, "ws", "ft");
     const parentId = insertContent(db, ftId, "idea", "idea");
 
-    expect(() => linkContent(db, 99999, parentId)).toThrow(/Content not found: id=99999/);
+    expect(() => linkContent(db, "nonexistent-id", parentId)).toThrow(/Content not found/);
   });
 
   it("emits direction_warning when linking plan (parent) → idea (child) — reverse order", () => {

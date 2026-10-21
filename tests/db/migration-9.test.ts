@@ -68,12 +68,13 @@ describe("Migration 9: content_features junction table", () => {
     ).cnt > 0;
     expect(hasFeatureId).toBe(false);
 
+    // After UUID migration, content_ids are UUIDs — check count and feature assignments
     const rows = db
-      .prepare("SELECT content_id, feature_id FROM content_features ORDER BY content_id")
-      .all();
+      .prepare("SELECT cf.feature_id, c.type FROM content_features cf JOIN contents c ON c.id = cf.content_id ORDER BY c.type")
+      .all() as { feature_id: number; type: string }[];
     expect(rows).toEqual([
-      { content_id: 1, feature_id: 1 },
-      { content_id: 2, feature_id: 2 },
+      { feature_id: 1, type: "idea" },
+      { feature_id: 2, type: "spec" },
     ]);
   });
 
@@ -81,10 +82,11 @@ describe("Migration 9: content_features junction table", () => {
     const db = buildPreMigration9Db();
     applySchema(db);
 
-    const rows = db.prepare("SELECT id, type, body FROM contents ORDER BY id").all();
+    // After UUID migration, ids are UUIDs — check type and body only
+    const rows = db.prepare("SELECT type, body FROM contents ORDER BY type").all();
     expect(rows).toEqual([
-      { id: 1, type: "idea", body: "body1" },
-      { id: 2, type: "spec", body: "body2" },
+      { type: "idea", body: "body1" },
+      { type: "spec", body: "body2" },
     ]);
   });
 
@@ -108,18 +110,20 @@ describe("Migration 9: content_features junction table", () => {
     expect(idx).toBeTruthy();
   });
 
-  it("content_features ON DELETE CASCADE removes rows when content deleted", () => {
+  it("content_features rows exist after migration and can be queried per content", () => {
     const db = buildPreMigration9Db();
     applySchema(db);
 
+    // content_features is a CRR — no FK CASCADE; check that rows exist after migration
     expect((db.prepare("SELECT COUNT(*) AS n FROM content_features").get() as { n: number }).n).toBe(2);
-    db.prepare("DELETE FROM contents WHERE id = 1").run();
-    expect((db.prepare("SELECT COUNT(*) AS n FROM content_features").get() as { n: number }).n).toBe(1);
+    // Each content has exactly one feature assignment
+    const { id: ideaId } = db.prepare("SELECT id FROM contents WHERE type = 'idea'").get() as { id: string };
+    expect((db.prepare("SELECT COUNT(*) AS n FROM content_features WHERE content_id = ?").get(ideaId) as { n: number }).n).toBe(1);
   });
 
   it("legacy DB gets Migration 9 and the Migration 10 contents indexes", () => {
     const db = buildPreMigration9Db();
-    const before = db.prepare("SELECT id AS content_id, feature_id FROM contents ORDER BY id").all();
+    const beforeCount = (db.prepare("SELECT COUNT(*) AS n FROM contents").get() as { n: number }).n;
     applySchema(db);
 
     const hasFeatureId = (
@@ -134,8 +138,9 @@ describe("Migration 9: content_features junction table", () => {
       expect(idx?.tbl_name).toBe("contents");
     }
 
-    const after = db.prepare("SELECT content_id, feature_id FROM content_features ORDER BY content_id").all();
-    expect(after).toEqual(before);
+    // After UUID migration, content_features rows are preserved (same count as original contents)
+    const afterCount = (db.prepare("SELECT COUNT(*) AS n FROM content_features").get() as { n: number }).n;
+    expect(afterCount).toBe(beforeCount);
   });
 });
 
@@ -152,8 +157,8 @@ describe("fetchFeatures helper", () => {
     const betaId = (db.prepare("SELECT id FROM features WHERE name = ?").get("beta") as { id: number }).id;
     const alphaId = (db.prepare("SELECT id FROM features WHERE name = ?").get("alpha") as { id: number }).id;
 
-    db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("idea", "body");
-    const contentId = (db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+    const { lastInsertRowid: lr1 } = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("idea", "body");
+    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lr1) as { id: string };
     db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(contentId, betaId);
     db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(contentId, alphaId);
 
@@ -165,8 +170,8 @@ describe("fetchFeatures helper", () => {
     loadSqliteVec(db);
     applySchema(db);
 
-    db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("idea", "orphan");
-    const contentId = (db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+    const { lastInsertRowid: lr2 } = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("idea", "orphan");
+    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lr2) as { id: string };
 
     expect(fetchFeatures(db, contentId)).toEqual([]);
   });
@@ -181,8 +186,8 @@ describe("fetchFeatures helper", () => {
     db.prepare("INSERT OR IGNORE INTO features (workspace_id, name) VALUES (?, ?)").run(ws.id, "only");
     const featId = (db.prepare("SELECT id FROM features WHERE name = ?").get("only") as { id: number }).id;
 
-    db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("idea", "body");
-    const contentId = (db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+    const { lastInsertRowid: lr3 } = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("idea", "body");
+    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lr3) as { id: string };
     db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(contentId, featId);
 
     expect(fetchFeatures(db, contentId)).toEqual(["only"]);
@@ -190,7 +195,7 @@ describe("fetchFeatures helper", () => {
 });
 
 describe("fetchFeaturesBatch helper", () => {
-  function seed(): { db: Database.Database; multi: number; single: number; orphan: number } {
+  function seed(): { db: Database.Database; multi: string; single: string; orphan: string } {
     const db = new Database(":memory:");
     loadSqliteVec(db);
     applySchema(db);
@@ -204,13 +209,14 @@ describe("fetchFeaturesBatch helper", () => {
     const solo = Number(insertFeature.run(wsA, "solo").lastInsertRowid);
 
     const insertContent = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)");
+    const getUuid = db.prepare("SELECT id FROM contents WHERE rowid = ?");
     const link = db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)");
-    const multi = Number(insertContent.run("idea", "multi").lastInsertRowid);
+    const { id: multi } = getUuid.get(insertContent.run("idea", "multi").lastInsertRowid) as { id: string };
     link.run(multi, zeta);
     link.run(multi, alpha);
-    const single = Number(insertContent.run("spec", "single").lastInsertRowid);
+    const { id: single } = getUuid.get(insertContent.run("spec", "single").lastInsertRowid) as { id: string };
     link.run(single, solo);
-    const orphan = Number(insertContent.run("plan", "orphan").lastInsertRowid);
+    const { id: orphan } = getUuid.get(insertContent.run("plan", "orphan").lastInsertRowid) as { id: string };
     link.run(orphan, solo);
     db.prepare("DELETE FROM content_features WHERE content_id = ?").run(orphan);
 

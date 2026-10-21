@@ -173,8 +173,8 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/ws/:workspace/:feature/:id", (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
+    const id = req.params.id;
+    if (!id) {
       res.status(404).send("<p>Not found</p>");
       return;
     }
@@ -194,8 +194,8 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/content/:id", (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
+    const id = req.params.id;
+    if (!id) {
       res.status(404).send("<p>Not found</p>");
       return;
     }
@@ -208,9 +208,9 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/ws/:workspace/:feature/:id/review", (req, res) => {
-    const id = Number(req.params.id);
+    const id = req.params.id;
     const reviewId = Number(req.query.review_id);
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!id) {
       res.status(404).send("<p>Not found</p>");
       return;
     }
@@ -253,8 +253,8 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/ws/:workspace/:feature/:id/export", (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
+    const id = req.params.id;
+    if (!id) {
       res.status(404).send("<p>Not found</p>");
       return;
     }
@@ -271,8 +271,8 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/ws/:workspace/:feature/:id/diff", (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
+    const id = req.params.id;
+    if (!id) {
       res.status(404).send("<p>Not found</p>");
       return;
     }
@@ -296,8 +296,8 @@ export function createApp(db: Database.Database, port?: number) {
       const latest = allVersions.versions.find((v) => v.is_latest) ?? allVersions.versions[allVersions.versions.length - 1];
       const secondLatest = allVersions.versions[allVersions.versions.indexOf(latest) - 1] ?? allVersions.versions[0];
 
-      const fromId = req.query.from ? Number(req.query.from) : secondLatest.id;
-      const toId = req.query.to ? Number(req.query.to) : latest.id;
+      const fromId = req.query.from ? String(req.query.from) : secondLatest.id;
+      const toId = req.query.to ? String(req.query.to) : latest.id;
 
       if (fromId === toId) {
         res.redirect(contentUrl);

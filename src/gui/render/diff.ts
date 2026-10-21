@@ -21,7 +21,7 @@ export function renderDiff(
   </p>`;
 
   const diffBase = `/ws/${encodeURIComponent(workspace)}/${encodeURIComponent(primaryFeature)}/${rootId}/diff`;
-  const versionOptions = (selectedId: number) =>
+  const versionOptions = (selectedId: string) =>
     allVersions
       .map(
         (v) =>

@@ -1,10 +1,10 @@
 import type Database from "better-sqlite3";
 import type { ListVersionsResult, VersionSummary } from "../types.js";
 
-export function listVersions(db: Database.Database, id: number): ListVersionsResult {
+export function listVersions(db: Database.Database, id: string): ListVersionsResult {
   const row = db
     .prepare("SELECT id, root_id FROM contents WHERE id = ?")
-    .get(id) as { id: number; root_id: number | null } | undefined;
+    .get(id) as { id: string; root_id: string | null } | undefined;
 
   if (!row) {
     throw new Error(`Content not found: id=${id}`);

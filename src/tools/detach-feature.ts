@@ -1,11 +1,11 @@
 import type Database from "better-sqlite3";
 import { fetchFeatures } from "./_helpers.js";
 
-export type DetachFeatureResult = { content_id: number; features: string[] };
+export type DetachFeatureResult = { content_id: string; features: string[] };
 
 export function detachFeature(
   db: Database.Database,
-  contentId: number,
+  contentId: string,
   workspace: string,
   featureName: string,
 ): DetachFeatureResult {
@@ -18,7 +18,7 @@ export function detachFeature(
        WHERE c.id = ? AND w.name = ?
        LIMIT 1`,
     )
-    .get(contentId, workspace) as { id: number } | undefined;
+    .get(contentId, workspace) as { id: string } | undefined;
 
   if (!content) {
     throw new Error(`Content not found: id=${contentId} in workspace=${workspace}`);

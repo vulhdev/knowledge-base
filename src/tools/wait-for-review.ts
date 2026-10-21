@@ -5,7 +5,7 @@ const POLL_INTERVAL_MS = 500;
 
 export async function waitForReview(
   db: Database.Database,
-  contentId: number,
+  contentId: string,
   timeoutSeconds = 300,
 ): Promise<CommittedReview> {
   const deadline = Date.now() + timeoutSeconds * 1000;

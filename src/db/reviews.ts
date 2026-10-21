@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 
 export interface Review {
   id: number;
-  content_id: number;
+  content_id: string;
   status: string;
   created_at: string;
   committed_at: string | null;
@@ -22,14 +22,14 @@ export interface CommittedReview extends Review {
 }
 
 export interface ContentWithReview {
-  id: number;
+  id: string;
   title: string | null;
   workspace: string;
   feature: string;
   type: string;
 }
 
-export function createReview(db: Database.Database, contentId: number): Review {
+export function createReview(db: Database.Database, contentId: string): Review {
   const exists = db.prepare("SELECT id FROM contents WHERE id = ?").get(contentId);
   if (!exists) throw new Error(`Content not found: id=${contentId}`);
 
@@ -76,7 +76,7 @@ export function commitReview(db: Database.Database, reviewId: number): Committed
   return { ...review, comments };
 }
 
-export function getPendingReview(db: Database.Database, contentId: number): CommittedReview | null {
+export function getPendingReview(db: Database.Database, contentId: string): CommittedReview | null {
   const review = db
     .prepare(
       `SELECT id, content_id, status, created_at, committed_at FROM reviews

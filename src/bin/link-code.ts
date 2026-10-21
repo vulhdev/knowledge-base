@@ -41,7 +41,7 @@ function resolveContentId(
   db: ReturnType<typeof openDb>,
   workspace: string,
   feature: string,
-): number {
+): string {
   const row = db
     .prepare(
       `SELECT c.id FROM contents c
@@ -51,7 +51,7 @@ function resolveContentId(
        ORDER BY c.updated_at DESC
        LIMIT 1`,
     )
-    .get(workspace, feature) as { id: number } | undefined;
+    .get(workspace, feature) as { id: string } | undefined;
 
   if (!row) {
     console.error(`Error: no content found for workspace="${workspace}" feature="${feature}"`);
@@ -71,13 +71,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  let contentId: number;
+  let contentId: string;
   if (args["content-id"]) {
-    contentId = parseInt(args["content-id"], 10);
-    if (isNaN(contentId)) {
-      console.error("Error: --content-id must be a number");
-      process.exit(1);
-    }
+    contentId = args["content-id"];
   } else if (args["workspace"] && args["feature"]) {
     const db = openDb();
     contentId = resolveContentId(db, args["workspace"], args["feature"]);

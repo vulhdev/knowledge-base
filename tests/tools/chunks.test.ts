@@ -12,13 +12,14 @@ import { isModelReady, getEmbedding } from "../../src/embedding/model.js";
 
 const BODY = ["# 見積", "見積金額は原価に掛率を乗じて算出する。".repeat(4), "## 端数", "端数処理は切り捨てとする。".repeat(6), "## 回次", "回次は案件と取引先で通算する。".repeat(5)].join("\n");
 
-function seed(db: Database.Database, body = BODY, title: string | null = "見積の手引き"): number {
+function seed(db: Database.Database, body = BODY, title: string | null = "見積の手引き"): string {
   db.exec("INSERT OR IGNORE INTO workspaces (name) VALUES ('ws'); INSERT OR IGNORE INTO features (workspace_id, name) VALUES (1, 'ft');");
-  const id = Number(db.prepare("INSERT INTO contents (type, title, body) VALUES ('doc', ?, ?)").run(title, body).lastInsertRowid);
+  const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, title, body) VALUES ('doc', ?, ?)").run(title, body);
+  const { id } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
   db.prepare("INSERT INTO content_features VALUES (?, 1)").run(id);
   return id;
 }
-const rows = (db: Database.Database, id: number) =>
+const rows = (db: Database.Database, id: string) =>
   db.prepare("SELECT id, chunk_key, chunk_sha, heading_path, start_char, end_char, embedding IS NOT NULL AS has FROM content_chunks WHERE content_id = ? AND kind = 'doc' ORDER BY ord").all(id) as
     { id: number; chunk_key: string; chunk_sha: string; heading_path: string; start_char: number; end_char: number; has: number }[];
 

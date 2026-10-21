@@ -4,7 +4,7 @@ import { fetchFeatures } from "./_helpers.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs">;
 
-export function deleteContent(db: Database.Database, id: number, cascade = false): Content {
+export function deleteContent(db: Database.Database, id: string, cascade = false): Content {
   const row = db
     .prepare(
       `SELECT c.id, w.name AS workspace, c.type, c.body, c.title, c.root_id, c.version_number,
@@ -57,7 +57,7 @@ export function deleteContent(db: Database.Database, id: number, cascade = false
       if (row.is_latest === 1) {
         const newLatest = db
           .prepare("SELECT id FROM contents WHERE (id = ? OR root_id = ?) ORDER BY version_number DESC LIMIT 1")
-          .get(chainRoot, chainRoot) as { id: number } | undefined;
+          .get(chainRoot, chainRoot) as { id: string } | undefined;
         if (newLatest) {
           db.prepare("UPDATE contents SET is_latest = 1 WHERE id = ?").run(newLatest.id);
         }
@@ -70,7 +70,7 @@ export function deleteContent(db: Database.Database, id: number, cascade = false
   db.transaction(() => {
     const newRoot = db
       .prepare("SELECT id FROM contents WHERE root_id = ? ORDER BY version_number ASC LIMIT 1")
-      .get(id) as { id: number };
+      .get(id) as { id: string };
 
     // All other children get root_id updated to new root
     db.prepare("UPDATE contents SET root_id = ? WHERE root_id = ? AND id != ?").run(newRoot.id, id, newRoot.id);

@@ -140,9 +140,9 @@ describe("migration 3: embedding column + vec_contents", () => {
 
     const fakeVec = Buffer.alloc(384 * 4, 0);
     db.prepare("INSERT INTO contents (type, body, embedding) VALUES ('idea', 'hello', ?)").run(fakeVec);
-    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE body = 'hello'").get() as { id: number };
+    const { rowid: contentRowid } = db.prepare("SELECT rowid FROM contents WHERE body = 'hello'").get() as { rowid: number };
 
-    const row = db.prepare("SELECT rowid FROM vec_contents WHERE rowid = ?").get(contentId);
+    const row = db.prepare("SELECT rowid FROM vec_contents WHERE rowid = ?").get(contentRowid);
     expect(row).toBeTruthy();
   });
 
@@ -208,15 +208,16 @@ describe("migration 4: content_links table", () => {
     const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
 
     db.prepare("INSERT INTO contents (type, body) VALUES ('idea', 'parent')").run();
-    const parent = db.prepare("SELECT id FROM contents WHERE body = 'parent'").get() as { id: number };
+    const parent = db.prepare("SELECT id FROM contents WHERE body = 'parent'").get() as { id: string };
     db.prepare("INSERT INTO contents (type, body) VALUES ('spec', 'child')").run();
-    const child = db.prepare("SELECT id FROM contents WHERE body = 'child'").get() as { id: number };
+    const child = db.prepare("SELECT id FROM contents WHERE body = 'child'").get() as { id: string };
 
     db.prepare("INSERT INTO content_links (parent_id, child_id) VALUES (?, ?)").run(parent.id, child.id);
     expect(db.prepare("SELECT COUNT(*) AS n FROM content_links").get() as { n: number }).toEqual({ n: 1 });
 
+    // content_links is CRR-compatible — no FK CASCADE; application must clean up manually
     db.prepare("DELETE FROM contents WHERE id = ?").run(parent.id);
-    expect(db.prepare("SELECT COUNT(*) AS n FROM content_links").get() as { n: number }).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM content_links").get() as { n: number }).toEqual({ n: 1 });
   });
 
   it("composite PK prevents duplicate links", () => {

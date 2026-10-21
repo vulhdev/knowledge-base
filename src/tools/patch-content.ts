@@ -18,7 +18,7 @@ function countOccurrences(haystack: string, needle: string): number {
 
 export async function patchContent(
   db: Database.Database,
-  id: number,
+  id: string,
   oldString: string,
   newString: string,
   replaceAll = false,

@@ -3,7 +3,7 @@ import type { AttachCodeRefResult, CodeRefFile } from "../types.js";
 
 export function attachCodeRef(
   db: Database.Database,
-  contentId: number,
+  contentId: string,
   commitHash: string,
   filePaths: CodeRefFile[],
   taskRef?: string,
@@ -23,7 +23,7 @@ export function attachCodeRef(
     )
     .get(contentId, commitHash) as {
     id: number;
-    content_id: number;
+    content_id: string;
     task_ref: string | null;
     commit_hash: string;
     file_paths: string;

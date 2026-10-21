@@ -14,7 +14,7 @@ const SCORE_THRESHOLD = 0.25;
 async function suggestParents(
   db: Database.Database,
   workspace: string,
-  contentId: number,
+  contentId: string,
   type: string,
   body: string,
   embeddingBlob: Buffer | null,
@@ -29,12 +29,12 @@ async function suggestParents(
 
   if (embeddingBlob) {
     try {
-      type VecRow = { id: number; type: string; title: string | null; score: number };
+      type VecRow = { id: string; type: string; title: string | null; score: number };
       const rows = db
         .prepare(
           `SELECT c.id, c.type, c.title, v.distance AS score
            FROM vec_contents v
-           JOIN contents c ON v.rowid = c.id
+           JOIN contents c ON v.rowid = c.rowid
            JOIN content_features cf ON cf.content_id = c.id
            JOIN features f ON cf.feature_id = f.id
            JOIN workspaces w ON f.workspace_id = w.id
@@ -65,12 +65,12 @@ async function suggestParents(
 
     const ftsQuery = words.join(" OR ");
 
-    type FtsRow = { id: number; type: string; title: string | null };
+    type FtsRow = { id: string; type: string; title: string | null };
     const rows = db
       .prepare(
         `SELECT c.id, c.type, c.title
          FROM contents_fts fts
-         JOIN contents c ON fts.rowid = c.id
+         JOIN contents c ON fts.rowid = c.rowid
          JOIN content_features cf ON cf.content_id = c.id
          JOIN features f ON cf.feature_id = f.id
          JOIN workspaces w ON f.workspace_id = w.id
@@ -149,7 +149,7 @@ export async function createContent(
           .prepare("INSERT INTO contents (type, title, body, created_by, updated_by) VALUES (?, ?, ?, ?, ?)")
           .run(type, title ?? null, body, resolvedCreatedBy, resolvedCreatedBy);
 
-    const id = Number(lastInsertRowid);
+    const { id } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
 
     for (const featureId of featureIds) {
       db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(id, featureId);
@@ -186,7 +186,7 @@ export async function createContent(
 
   const row = db
     .prepare("SELECT id, title, created_at FROM contents WHERE id = ?")
-    .get(contentId) as { id: number; title: string | null; created_at: string };
+    .get(contentId) as { id: string; title: string | null; created_at: string };
 
   const suggested_parents = await suggestParents(db, workspace, contentId, type, body, embeddingBlob);
 

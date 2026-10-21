@@ -11,7 +11,7 @@ type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: num
 
 export async function updateContent(
   db: Database.Database,
-  id: number,
+  id: string,
   body: string,
   type?: ContentType,
   title?: string,

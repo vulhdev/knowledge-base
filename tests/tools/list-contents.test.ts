@@ -135,7 +135,7 @@ describe("listContents", () => {
 describe("listContents batched feature lookup", () => {
   const SEEDED = 210;
   let db: Database.Database;
-  let multiWorkspaceId: number;
+  let multiWorkspaceId: string;
 
   beforeEach(() => {
     db = createTestDb();
@@ -148,10 +148,12 @@ describe("listContents batched feature lookup", () => {
     const fForeign = Number(insertFeature.run(wsB, "foreign").lastInsertRowid);
 
     const insertContent = db.prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)");
+    const getUuid = db.prepare("SELECT id FROM contents WHERE rowid = ?");
     const link = db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)");
     db.transaction(() => {
       for (let i = 0; i < SEEDED; i++) {
-        const id = Number(insertContent.run(i % 2 === 0 ? "idea" : "spec", `doc ${i}`, `body ${i}`).lastInsertRowid);
+        const { lastInsertRowid } = insertContent.run(i % 2 === 0 ? "idea" : "spec", `doc ${i}`, `body ${i}`);
+        const { id } = getUuid.get(lastInsertRowid) as { id: string };
         link.run(id, fMain);
         if (i % 3 === 0) link.run(id, fExtra);
         if (i === SEEDED - 3) {
@@ -219,29 +221,32 @@ describe("listContents ordering and query plan", () => {
     featureId = Number(db.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "ft").lastInsertRowid);
   });
 
-  function seed(rows: { type: string; created_at: string }[]): { id: number; created_at: string }[] {
+  function seed(rows: { type: string; created_at: string }[]): { id: string; created_at: string }[] {
     const insert = db.prepare("INSERT INTO contents (type, body, created_at, updated_at) VALUES (?, ?, ?, ?)");
+    const getUuid = db.prepare("SELECT id FROM contents WHERE rowid = ?");
     const link = db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)");
     return rows.map((r, i) => {
-      const id = Number(insert.run(r.type, `body ${i}`, r.created_at, r.created_at).lastInsertRowid);
+      const { lastInsertRowid } = insert.run(r.type, `body ${i}`, r.created_at, r.created_at);
+      const { id } = getUuid.get(lastInsertRowid) as { id: string };
       link.run(id, featureId);
       return { id, created_at: r.created_at };
     });
   }
 
-  function pageThrough(feature?: string): number[] {
-    const ids: number[] = [];
+  function pageThrough(feature?: string): string[] {
+    const ids: string[] = [];
     for (let offset = 0; ; offset++) {
       const page = listContents(db, "order-ws", feature, undefined, 1, offset);
       if (page.results.length === 0) break;
-      ids.push(page.results[0].id);
+      ids.push(page.results[0].id as string);
     }
     return ids;
   }
 
   it("orders documents sharing created_at by id descending, without and with a feature filter", () => {
     const seeded = seed(Array.from({ length: 4 }, () => ({ type: "idea", created_at: "2026-01-01 00:00:00" })));
-    const expected = seeded.map((r) => r.id).sort((a, b) => b - a);
+    // IDs are UUIDs — sort lexicographically descending (same as ORDER BY id DESC on TEXT column)
+    const expected = seeded.map((r) => r.id).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
 
     for (const feature of [undefined, "ft"]) {
       const ids = pageThrough(feature);
@@ -259,7 +264,7 @@ describe("listContents ordering and query plan", () => {
       { type: "doc", created_at: "2026-01-01 00:00:00" },
     ]);
     const expected = [...seeded]
-      .sort((a, b) => (a.created_at === b.created_at ? b.id - a.id : a.created_at < b.created_at ? 1 : -1))
+      .sort((a, b) => (a.created_at === b.created_at ? (a.id < b.id ? 1 : a.id > b.id ? -1 : 0) : a.created_at < b.created_at ? 1 : -1))
       .map((r) => r.id);
 
     const { results } = listContents(db, "order-ws");

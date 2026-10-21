@@ -212,8 +212,8 @@ function migrateContentsToUuid(db: Database.Database): void {
     LEFT JOIN _uuid_map r ON r.old_id = c.root_id;
 
     CREATE TABLE _content_features_uuid (
-      content_id TEXT    NOT NULL DEFAULT '',
-      feature_id INTEGER NOT NULL DEFAULT 0,
+      content_id TEXT    NOT NULL,
+      feature_id INTEGER NOT NULL,
       PRIMARY KEY (content_id, feature_id)
     );
     INSERT INTO _content_features_uuid (content_id, feature_id)
@@ -224,8 +224,8 @@ function migrateContentsToUuid(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_content_features_feature ON content_features(feature_id);
 
     CREATE TABLE _content_links_uuid (
-      parent_id  TEXT NOT NULL DEFAULT '',
-      child_id   TEXT NOT NULL DEFAULT '',
+      parent_id  TEXT NOT NULL,
+      child_id   TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (parent_id, child_id)
     );
@@ -240,7 +240,7 @@ function migrateContentsToUuid(db: Database.Database): void {
 
     CREATE TABLE _code_refs_uuid (
       id          INTEGER PRIMARY KEY,
-      content_id  TEXT    NOT NULL DEFAULT '',
+      content_id  TEXT    NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
       task_ref    TEXT,
       commit_hash TEXT    NOT NULL DEFAULT '',
       file_paths  TEXT    NOT NULL DEFAULT '',
@@ -256,7 +256,7 @@ function migrateContentsToUuid(db: Database.Database): void {
 
     CREATE TABLE _reviews_uuid (
       id           INTEGER PRIMARY KEY,
-      content_id   TEXT NOT NULL DEFAULT '',
+      content_id   TEXT NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
       status       TEXT NOT NULL DEFAULT 'pending',
       created_at   TEXT NOT NULL DEFAULT (datetime('now')),
       committed_at TEXT
@@ -270,7 +270,7 @@ function migrateContentsToUuid(db: Database.Database): void {
 
     CREATE TABLE _content_chunks_uuid (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      content_id    TEXT    NOT NULL DEFAULT '',
+      content_id    TEXT    NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
       kind          TEXT    NOT NULL DEFAULT '',
       chunk_key     TEXT    NOT NULL DEFAULT '',
       ord           INTEGER NOT NULL DEFAULT 0,
@@ -300,8 +300,9 @@ function migrateContentsToUuid(db: Database.Database): void {
     ALTER TABLE _contents_uuid RENAME TO contents;
 
     CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
-    CREATE INDEX IF NOT EXISTS idx_contents_created_at ON contents(created_at) WHERE is_latest = 1;
-    CREATE INDEX IF NOT EXISTS idx_contents_type_created_at ON contents(type, created_at) WHERE is_latest = 1;
+    CREATE INDEX IF NOT EXISTS idx_contents_created_at ON contents(created_at, id) WHERE is_latest = 1;
+    CREATE INDEX IF NOT EXISTS idx_contents_type_created_at ON contents(type, created_at, id) WHERE is_latest = 1;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_contents_source_key ON contents(source_key) WHERE source_key IS NOT NULL;
 
     DROP TABLE IF EXISTS _uuid_map;
     COMMIT;

@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import type { Content } from "../types.js";
 import { fetchFeatures } from "./_helpers.js";
 
-export function getContent(db: Database.Database, id: number): Content & { version_count: number } {
+export function getContent(db: Database.Database, id: string): Content & { version_count: number } {
   type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number; version_count: number };
   const row = db
     .prepare(
