@@ -239,8 +239,51 @@ async function main(): Promise<void> {
       p.log.success(`Team created. Invite peers with:`);
       p.log.info(`  knowledge-base team invite --workspace ${workspaceName} @<github-username>`);
     }
+  } else if (isStaleKeypair(hasTeam.noise_keypair)) {
+    p.log.warn(`Outdated keypair detected for "${workspaceName}" — auto-migrating to Ed25519.`);
+    const fresh = loadSettings();
+    fresh.workspaces ??= {};
+    fresh.workspaces[workspaceName] ??= {};
+    fresh.workspaces[workspaceName].team = {
+      ...hasTeam,
+      noise_keypair: generateNoiseKeypair(),
+    };
+    writeSettings(fresh);
+    p.log.success("Keypair migrated.");
+    p.log.warn(`Restart team server to apply the new keypair: knowledge-base team server --workspace ${workspaceName}`);
   } else {
-    p.log.info(`Team mode already configured for "${workspaceName}" (role: ${hasTeam.role}).`);
+    const reconfigureChoice = await p.select<string>({
+      message: `Team mode already configured for "${workspaceName}" (role: ${hasTeam.role}). What would you like to do?`,
+      options: [
+        { value: "keep",        label: "Keep existing configuration" },
+        { value: "reconfigure", label: "Reconfigure — generate new keypair (disconnects current peers)" },
+      ],
+    });
+    if (p.isCancel(reconfigureChoice)) { p.cancel("Cancelled."); process.exit(0); }
+
+    if ((reconfigureChoice as string) === "reconfigure") {
+      p.log.warn("All peers connected to this team will lose their connection. They will need to re-join.");
+      const confirmReconfig = await p.confirm({
+        message: "Continue with reconfiguration?",
+        initialValue: false,
+      });
+      if (p.isCancel(confirmReconfig) || !confirmReconfig) {
+        p.log.info("Reconfiguration cancelled. Existing configuration kept.");
+      } else {
+        const githubUsername = await runGitHubAuth();
+        const fresh = loadSettings();
+        fresh.workspaces ??= {};
+        fresh.workspaces[workspaceName] ??= {};
+        fresh.workspaces[workspaceName].team = {
+          ...hasTeam,
+          noise_keypair: generateNoiseKeypair(),
+        };
+        fresh.identity = { ...(fresh.identity ?? { name: "", email: "" }), github_username: githubUsername };
+        writeSettings(fresh);
+        p.log.success("Keypair reconfigured.");
+        p.log.warn(`Restart team server to apply the new keypair: knowledge-base team server --workspace ${workspaceName}`);
+      }
+    }
   }
 
   if (isModelReady()) {
