@@ -207,7 +207,9 @@ export function startSync(
   }
 
   const { swarm, destroy: destroySwarm } = createSwarm(db, workspaceName);
+  swarm.on("error", () => { /* swarm-level errors (e.g. DHT timeouts) are expected */ });
   swarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
+    (socket as NodeJS.EventEmitter).on("error", () => { /* ECONNRESET and other connection errors are expected */ });
     const publicKey = info.publicKey.toString("hex");
     const username = lookupUsername(db, publicKey);
     logger?.onPeerConnect(workspaceName, username, publicKey);
@@ -229,12 +231,13 @@ export function startSync(
     joinSwarm = new Hyperswarm({ keyPair });
     joinSwarm.join(deriveJoinTopic(workspaceName, team.noise_keypair.publicKey));
     joinSwarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
+      (socket as NodeJS.EventEmitter).on("error", () => { /* ECONNRESET and other connection errors are expected */ });
       handleJoinConnection(db, workspaceName, socket, info.publicKey, {
         onJoinAttempt: (u) => logger?.onJoinAttempt(workspaceName, u),
         onJoinResult: (u, accepted, reason) => logger?.onJoinResult(workspaceName, u, accepted, reason),
       });
     });
-    joinSwarm.on("error", () => { /* connection-level errors are expected (timeouts, resets) */ });
+    joinSwarm.on("error", () => { /* swarm-level errors (e.g. DHT timeouts) are expected */ });
   }
 
   return {
