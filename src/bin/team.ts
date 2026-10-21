@@ -59,18 +59,8 @@ async function runInvite(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const settings = loadSettings();
-  const team = settings.workspaces?.[workspaceName]?.team;
-  if (!team) {
-    console.error(`Error: No team config found for workspace "${workspaceName}". Run "knowledge-base init" first.`);
-    process.exit(1);
-  }
-  if (team.role !== "host") {
-    console.error(`Error: Only the host can invite peers (your role is "${team.role}").`);
-    process.exit(1);
-  }
-
-  const code = generateInvite(workspaceName, githubUsername);
+  const db = openDb();
+  const code = generateInvite(db, workspaceName, githubUsername);
   p.log.success(`Invite created for @${githubUsername}`);
   p.log.info(`Share this invite code:`);
   console.log(`\n  ${code}\n`);
