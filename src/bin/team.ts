@@ -113,7 +113,12 @@ async function runJoin(args: string[]): Promise<void> {
   const spinner = p.spinner();
   spinner.start(`Connecting to host…`);
 
-  const swarm = new Hyperswarm();
+  const swarm = new Hyperswarm({
+    keyPair: {
+      publicKey: Buffer.from(kp.publicKey, "hex"),
+      secretKey: Buffer.from(kp.secretKey, "hex"),
+    },
+  });
   let result: { accepted: true; secret: string } | { accepted: false; reason: string };
   try {
     result = await Promise.race([

@@ -146,6 +146,7 @@ export function handleJoinConnection(
         (socket as NodeJS.WritableStream).write(
           JSON.stringify({ type: "join_result", accepted: false, reason: "public key mismatch" }) + "\n",
         );
+        (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy();
         return;
       }
 
@@ -233,6 +234,7 @@ export function startSync(
         onJoinResult: (u, accepted, reason) => logger?.onJoinResult(workspaceName, u, accepted, reason),
       });
     });
+    joinSwarm.on("error", () => { /* connection-level errors are expected (timeouts, resets) */ });
   }
 
   return {
