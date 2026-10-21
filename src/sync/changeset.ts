@@ -37,7 +37,7 @@ export function decodeChangeset(data: Buffer): ChangesetRow[] {
 export function getChanges(db: Database.Database, sinceVersion: number): ChangesetRow[] {
   return db
     .prepare(
-      "SELECT tbl, pk, cid, val, col_version, db_version, site_id " +
+      'SELECT "table" AS tbl, pk, cid, val, col_version, db_version, site_id ' +
       "FROM crsql_changes WHERE db_version > ?",
     )
     .all(sinceVersion) as ChangesetRow[];
@@ -53,7 +53,7 @@ export function applyChanges(db: Database.Database, rows: ChangesetRow[]): void 
     }
   }
   const stmt = db.prepare(
-    "INSERT INTO crsql_changes (tbl, pk, cid, val, col_version, db_version, site_id) " +
+    'INSERT INTO crsql_changes ("table", pk, cid, val, col_version, db_version, site_id) ' +
     "VALUES (?, ?, ?, ?, ?, ?, ?)",
   );
   db.transaction(() => {

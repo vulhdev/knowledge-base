@@ -6,14 +6,16 @@ export function generateSecret(): string {
 }
 
 export function generateNoiseKeypair(): NoiseKeypair {
-  const { publicKey, privateKey } = generateKeyPairSync("x25519", {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519", {
     publicKeyEncoding: { type: "spki", format: "der" },
     privateKeyEncoding: { type: "pkcs8", format: "der" },
   });
-  // Raw X25519 keys are the last 32 bytes of DER-encoded SPKI/PKCS8
+  // Hyperswarm expects Ed25519: publicKey=32 bytes, secretKey=64 bytes (seed ++ publicKey)
+  const pubRaw = publicKey.subarray(-32);
+  const seedRaw = privateKey.subarray(-32);
   return {
-    publicKey:  publicKey.subarray(-32).toString("hex"),
-    secretKey:  privateKey.subarray(-32).toString("hex"),
+    publicKey: pubRaw.toString("hex"),
+    secretKey: Buffer.concat([seedRaw, pubRaw]).toString("hex"),
   };
 }
 

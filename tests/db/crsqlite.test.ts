@@ -31,7 +31,7 @@ describe.skipIf(!isCrsqliteReady())("Migration 17 — crsql_as_crr", () => {
   it("crsql_changes virtual table is queryable", () => {
     const db = createCrsqlDb();
     expect(() =>
-      db.prepare("SELECT tbl, pk, cid, val, col_version, db_version, site_id FROM crsql_changes").all()
+      db.prepare('SELECT "table", pk, cid, val, col_version, db_version, site_id FROM crsql_changes').all()
     ).not.toThrow();
   });
 
@@ -40,22 +40,23 @@ describe.skipIf(!isCrsqliteReady())("Migration 17 — crsql_as_crr", () => {
     expect(() => applySchema(db)).not.toThrow();
   });
 
-  it("INSERT into workspaces produces a crsql_changes row", () => {
+  it("INSERT into contents produces a crsql_changes row", () => {
     const db = createCrsqlDb();
-    db.prepare("INSERT INTO workspaces (name) VALUES (?)").run("test-ws");
+    db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("spec", "test body");
     const changes = db
-      .prepare("SELECT tbl FROM crsql_changes WHERE tbl = 'workspaces'")
+      .prepare('SELECT "table" AS tbl FROM crsql_changes WHERE "table" = \'contents\'')
       .all() as { tbl: string }[];
     expect(changes.length).toBeGreaterThan(0);
   });
 
-  it("INSERT into features produces a crsql_changes row", () => {
+  it("INSERT into content_links produces a crsql_changes row", () => {
     const db = createCrsqlDb();
-    db.prepare("INSERT INTO workspaces (name) VALUES (?)").run("test-ws");
-    const ws = db.prepare("SELECT id FROM workspaces WHERE name = ?").get("test-ws") as { id: number };
-    db.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(ws.id, "auth");
+    db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("spec", "parent");
+    db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("spec", "child");
+    const [p, c] = db.prepare("SELECT id FROM contents").all() as { id: number }[];
+    db.prepare("INSERT INTO content_links (parent_id, child_id) VALUES (?, ?)").run(p.id, c.id);
     const changes = db
-      .prepare("SELECT tbl FROM crsql_changes WHERE tbl = 'features'")
+      .prepare('SELECT "table" AS tbl FROM crsql_changes WHERE "table" = \'content_links\'')
       .all() as { tbl: string }[];
     expect(changes.length).toBeGreaterThan(0);
   });
@@ -66,7 +67,7 @@ describe.skipIf(!isCrsqliteReady())("Migration 17 — crsql_as_crr", () => {
       "INSERT INTO team_peers (public_key, display_name) VALUES (?, ?)"
     ).run("a".repeat(64), "@alice");
     const changes = db
-      .prepare("SELECT tbl FROM crsql_changes WHERE tbl = 'team_peers'")
+      .prepare('SELECT "table" AS tbl FROM crsql_changes WHERE "table" = \'team_peers\'')
       .all() as { tbl: string }[];
     expect(changes.length).toBe(0);
   });
