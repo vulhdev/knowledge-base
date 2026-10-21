@@ -105,8 +105,8 @@ describe("writeSettings", () => {
     vi.clearAllMocks();
   });
 
-  it("writes serialized settings to SETTINGS_PATH", async () => {
-    const { writeFileSync } = await import("node:fs");
+  it("writes serialized settings to tmp path then renames atomically", async () => {
+    const { writeFileSync, renameSync } = await import("node:fs");
     const { writeSettings } = await import("../src/config.js");
 
     const settings = {
@@ -115,20 +115,20 @@ describe("writeSettings", () => {
     };
     writeSettings(settings);
 
-    expect(writeFileSync).toHaveBeenCalledWith(
-      "/test/home/.claude/knowledge-base/settings.json",
-      JSON.stringify(settings, null, 2),
-    );
+    const tmp = "/test/home/.claude/knowledge-base/settings.json.tmp";
+    const final = "/test/home/.claude/knowledge-base/settings.json";
+    expect(writeFileSync).toHaveBeenCalledWith(tmp, JSON.stringify(settings, null, 2));
+    expect(renameSync).toHaveBeenCalledWith(tmp, final);
   });
 
-  it("sets chmod 600 on settings.json after write", async () => {
+  it("sets chmod 600 on tmp file before rename", async () => {
     const { chmodSync } = await import("node:fs");
     const { writeSettings } = await import("../src/config.js");
 
     writeSettings({ db_path: "/db", model_cache_dir: "/m" });
 
     expect(chmodSync).toHaveBeenCalledWith(
-      "/test/home/.claude/knowledge-base/settings.json",
+      "/test/home/.claude/knowledge-base/settings.json.tmp",
       0o600,
     );
   });
