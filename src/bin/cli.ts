@@ -2,9 +2,11 @@
 const [, , command] = process.argv;
 
 switch (command) {
-  case "init":
-    await import("./init.js");
+  case "init": {
+    const { main } = await import("./init.js");
+    await main();
     break;
+  }
   case "gui":
     await import("./gui.js");
     break;
