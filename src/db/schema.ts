@@ -94,6 +94,8 @@ export function applySchema(db: Database.Database): void {
   db.function("kb_cjk_bigram", { deterministic: true }, (text: unknown) =>
     text === null || text === undefined ? null : bigramIndexText(String(text)),
   );
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");
 
   db.exec(`
