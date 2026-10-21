@@ -6,7 +6,7 @@ import { openDb } from "../db/client.js";
 import { generateNoiseKeypair } from "../team/generate.js";
 import { generateInvite, normalizeGithubUsername, parseInviteCode } from "../team/invite.js";
 import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
-import { kickPeer, listPeers, findPeerByUsername } from "../team/kick.js";
+import { kickPeer, listPeers, findPeerByUsername, deletePeer } from "../team/kick.js";
 import { deriveJoinTopic } from "../sync/join.js";
 import { startSync, type SyncHandle } from "../sync/index.js";
 import { makeConsoleLogger } from "../sync/activity.js";
@@ -22,6 +22,8 @@ if (subcommand === "invite") {
   await runList(args);
 } else if (subcommand === "kick") {
   await runKick(args);
+} else if (subcommand === "delete") {
+  await runDelete(args);
 } else if (subcommand === "server") {
   await runServer(args);
 } else {
@@ -31,6 +33,7 @@ if (subcommand === "invite") {
   console.error("  knowledge-base team join <invite-code>");
   console.error("  knowledge-base team list --workspace <name>");
   console.error("  knowledge-base team kick @<github-username> --workspace <name>");
+  console.error("  knowledge-base team delete @<github-username> --workspace <name>");
   console.error("  knowledge-base team server [--workspace <name>]");
   process.exit(1);
 }
@@ -300,6 +303,55 @@ async function runKick(args: string[]): Promise<void> {
 
   kickPeer(db, peer.public_key);
   console.log(`✓ Removed @${githubUsername} from team`);
+}
+
+async function runDelete(args: string[]): Promise<void> {
+  const wsIdx = args.indexOf("--workspace");
+  if (wsIdx === -1 || !args[wsIdx + 1]) {
+    console.error("Error: --workspace <name> is required");
+    process.exit(1);
+  }
+  const workspaceName = args[wsIdx + 1];
+  const usernameRaw = args.find((a) => !a.startsWith("--") && a !== args[wsIdx + 1]);
+  if (!usernameRaw) {
+    console.error("Error: GitHub username is required (e.g. @alice)");
+    process.exit(1);
+  }
+
+  let githubUsername: string;
+  try {
+    githubUsername = normalizeGithubUsername(usernameRaw);
+  } catch (err) {
+    console.error(String(err));
+    process.exit(1);
+  }
+
+  const settings = loadSettings();
+  const team = settings.workspaces?.[workspaceName]?.team;
+  if (!team) {
+    console.error(`Error: No team config found for workspace "${workspaceName}"`);
+    process.exit(1);
+  }
+  if (team.role !== "host") {
+    console.error("Error: Only the host can delete team members");
+    process.exit(1);
+  }
+
+  const db = openDb();
+  const peer = findPeerByUsername(db, githubUsername);
+  if (!peer) {
+    console.error(`Error: Member not found: @${githubUsername}`);
+    process.exit(1);
+  }
+
+  try {
+    deletePeer(db, peer.public_key);
+  } catch (err) {
+    console.error(`Error: ${String(err).replace("Error: ", "")}`);
+    process.exit(1);
+  }
+
+  console.log(`✓ @${githubUsername} has been removed. You can now re-invite them.`);
 }
 
 async function runServer(args: string[]): Promise<void> {
