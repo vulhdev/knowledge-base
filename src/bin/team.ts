@@ -14,6 +14,9 @@ import { deriveJoinTopic } from "../sync/join.js";
 import { startSync, type SyncHandle } from "../sync/index.js";
 import { makeConsoleLogger } from "../sync/activity.js";
 import { deriveTopicBuffer } from "../sync/peer.js";
+import { performInitialSync } from "../sync/initial.js";
+import { mergeWorkspace } from "../sync/merge.js";
+import { listWorkspaces } from "../db/workspaces.js";
 
 const [, , , subcommand, ...args] = process.argv;
 
@@ -160,6 +163,47 @@ async function runJoin(args: string[]): Promise<void> {
   writeSettings(fresh);
 
   p.outro(`Joined workspace "${workspaceName}" as @${githubUsername}`);
+
+  const syncSpinner = p.spinner();
+  syncSpinner.start("Syncing data from host… do not close terminal");
+  const syncResult = await performInitialSync(db, workspaceName);
+  if (syncResult.ok) {
+    syncSpinner.stop(`Sync complete — ${syncResult.rowsReceived} rows received`);
+  } else {
+    syncSpinner.stop(`Sync skipped (${syncResult.reason})`);
+  }
+
+  await promptMerge(db, workspaceName);
+}
+
+export async function promptMerge(
+  db: import("better-sqlite3").Database,
+  teamWorkspaceName: string,
+): Promise<void> {
+  const allWorkspaces = listWorkspaces(db);
+  const teamNames = new Set(listTeamWorkspaces(db).map((w) => w.name));
+  const candidates = allWorkspaces.filter((w) => !teamNames.has(w.name));
+  if (candidates.length === 0) return;
+
+  const choice = await p.select({
+    message: "Merge an existing local workspace into the team workspace? (optional)",
+    options: [
+      { label: "Skip", value: null },
+      ...candidates.map((w) => ({ label: w.name, value: w.name as string | null })),
+    ],
+  });
+  if (p.isCancel(choice) || choice === null) return;
+
+  const confirmed = await p.confirm({
+    message: `Merge all docs from "${choice}" into "${teamWorkspaceName}"?`,
+  });
+  if (p.isCancel(confirmed) || !confirmed) return;
+
+  const result = mergeWorkspace(db, choice, teamWorkspaceName);
+  p.log.success(
+    `Merged: ${result.featuresMoved} feature(s) moved` +
+    (result.featuresRenamed.length > 0 ? `, ${result.featuresRenamed.length} renamed` : ""),
+  );
 }
 
 export async function attemptJoin(
