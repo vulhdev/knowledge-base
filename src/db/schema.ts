@@ -8,17 +8,17 @@ const VEC_TABLE_AND_TRIGGERS = `
 
   CREATE TRIGGER IF NOT EXISTS contents_vec_ai AFTER INSERT ON contents
   WHEN new.embedding IS NOT NULL BEGIN
-    INSERT INTO vec_contents(rowid, embedding) VALUES (new.id, new.embedding);
+    INSERT INTO vec_contents(rowid, embedding) VALUES (new.rowid, new.embedding);
   END;
 
   CREATE TRIGGER IF NOT EXISTS contents_vec_au AFTER UPDATE ON contents
   WHEN new.embedding IS NOT NULL BEGIN
-    DELETE FROM vec_contents WHERE rowid = old.id;
-    INSERT INTO vec_contents(rowid, embedding) VALUES (new.id, new.embedding);
+    DELETE FROM vec_contents WHERE rowid = old.rowid;
+    INSERT INTO vec_contents(rowid, embedding) VALUES (new.rowid, new.embedding);
   END;
 
   CREATE TRIGGER IF NOT EXISTS contents_vec_ad AFTER DELETE ON contents BEGIN
-    DELETE FROM vec_contents WHERE rowid = old.id;
+    DELETE FROM vec_contents WHERE rowid = old.rowid;
   END;
 
   CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
@@ -52,16 +52,16 @@ const FTS_AND_TRIGGERS = `
   );
 
   CREATE TRIGGER IF NOT EXISTS contents_ai AFTER INSERT ON contents BEGIN
-    INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, kb_cjk_bigram(new.title), kb_cjk_bigram(new.body));
+    INSERT INTO contents_fts(rowid, title, body) VALUES (new.rowid, kb_cjk_bigram(new.title), kb_cjk_bigram(new.body));
   END;
 
   CREATE TRIGGER IF NOT EXISTS contents_ad AFTER DELETE ON contents BEGIN
-    DELETE FROM contents_fts WHERE rowid = old.id;
+    DELETE FROM contents_fts WHERE rowid = old.rowid;
   END;
 
   CREATE TRIGGER IF NOT EXISTS contents_au AFTER UPDATE ON contents BEGIN
-    DELETE FROM contents_fts WHERE rowid = old.id;
-    INSERT INTO contents_fts(rowid, title, body) VALUES (new.id, kb_cjk_bigram(new.title), kb_cjk_bigram(new.body));
+    DELETE FROM contents_fts WHERE rowid = old.rowid;
+    INSERT INTO contents_fts(rowid, title, body) VALUES (new.rowid, kb_cjk_bigram(new.title), kb_cjk_bigram(new.body));
   END;
 `;
 
@@ -70,7 +70,7 @@ function repopulateContentsFts(db: Database.Database): void {
   db.exec(`
     DELETE FROM contents_fts;
     INSERT INTO contents_fts(rowid, title, body)
-      SELECT id, kb_cjk_bigram(title), kb_cjk_bigram(body) FROM contents;
+      SELECT rowid, kb_cjk_bigram(title), kb_cjk_bigram(body) FROM contents;
   `);
 }
 
@@ -147,6 +147,201 @@ export function applySchema(db: Database.Database): void {
       severity  TEXT NOT NULL DEFAULT 'error'
     );
   `);
+}
+
+// Migration 19: convert contents.id from INTEGER to TEXT UUID so each peer's rows never
+// collide in CRSQLite LWW merge. Rebuilds all FK child tables and vec/fts indexes.
+function migrateContentsToUuid(db: Database.Database): void {
+  const isCrsqlLoaded = (() => {
+    try { db.prepare("SELECT crsql_site_id()").get(); return true; } catch { return false; }
+  })();
+
+  // vec_contents is normally created by VEC_TABLE_AND_TRIGGERS after runMigrations, but
+  // migration 19 needs it earlier to rebuild the index. Create it here if not yet present.
+  db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS vec_contents USING vec0(embedding float[384])");
+
+  db.exec("PRAGMA foreign_keys = OFF");
+
+  db.exec(`
+    BEGIN;
+
+    DROP TABLE IF EXISTS _content_chunks_uuid;
+    DROP TABLE IF EXISTS _reviews_uuid;
+    DROP TABLE IF EXISTS _code_refs_uuid;
+    DROP TABLE IF EXISTS _content_links_uuid;
+    DROP TABLE IF EXISTS _content_features_uuid;
+    DROP TABLE IF EXISTS _contents_uuid;
+    DROP TABLE IF EXISTS _uuid_map;
+
+    CREATE TABLE _uuid_map (old_id INTEGER PRIMARY KEY, new_id TEXT NOT NULL);
+    INSERT INTO _uuid_map (old_id, new_id)
+      SELECT id, lower(hex(randomblob(16))) FROM contents;
+
+    DROP TRIGGER IF EXISTS contents_ai;
+    DROP TRIGGER IF EXISTS contents_au;
+    DROP TRIGGER IF EXISTS contents_ad;
+    DROP TABLE IF EXISTS contents_fts;
+    DROP TRIGGER IF EXISTS contents_vec_ai;
+    DROP TRIGGER IF EXISTS contents_vec_au;
+    DROP TRIGGER IF EXISTS contents_vec_ad;
+
+    CREATE TABLE _contents_uuid (
+      id             TEXT    NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      type           TEXT    NOT NULL DEFAULT '',
+      title          TEXT,
+      body           TEXT    NOT NULL DEFAULT '',
+      embedding      BLOB,
+      created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+      root_id        TEXT,
+      version_number INTEGER NOT NULL DEFAULT 1,
+      is_latest      INTEGER NOT NULL DEFAULT 1,
+      created_by     TEXT,
+      updated_by     TEXT,
+      source_key     TEXT,
+      source_sha     TEXT
+    );
+    INSERT INTO _contents_uuid
+      (id, type, title, body, embedding, created_at, updated_at,
+       root_id, version_number, is_latest, created_by, updated_by, source_key, source_sha)
+    SELECT m.new_id, c.type, c.title, c.body, c.embedding, c.created_at, c.updated_at,
+           r.new_id, c.version_number, c.is_latest, c.created_by, c.updated_by,
+           c.source_key, c.source_sha
+    FROM contents c
+    JOIN _uuid_map m ON m.old_id = c.id
+    LEFT JOIN _uuid_map r ON r.old_id = c.root_id;
+
+    CREATE TABLE _content_features_uuid (
+      content_id TEXT    NOT NULL DEFAULT '',
+      feature_id INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (content_id, feature_id)
+    );
+    INSERT INTO _content_features_uuid (content_id, feature_id)
+      SELECT m.new_id, cf.feature_id
+      FROM content_features cf JOIN _uuid_map m ON m.old_id = cf.content_id;
+    DROP TABLE content_features;
+    ALTER TABLE _content_features_uuid RENAME TO content_features;
+    CREATE INDEX IF NOT EXISTS idx_content_features_feature ON content_features(feature_id);
+
+    CREATE TABLE _content_links_uuid (
+      parent_id  TEXT NOT NULL DEFAULT '',
+      child_id   TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (parent_id, child_id)
+    );
+    INSERT INTO _content_links_uuid (parent_id, child_id, created_at)
+      SELECT mp.new_id, mc.new_id, cl.created_at
+      FROM content_links cl
+      JOIN _uuid_map mp ON mp.old_id = cl.parent_id
+      JOIN _uuid_map mc ON mc.old_id = cl.child_id;
+    DROP TABLE content_links;
+    ALTER TABLE _content_links_uuid RENAME TO content_links;
+    CREATE INDEX IF NOT EXISTS idx_content_links_child ON content_links(child_id);
+
+    CREATE TABLE _code_refs_uuid (
+      id          INTEGER PRIMARY KEY,
+      content_id  TEXT    NOT NULL DEFAULT '',
+      task_ref    TEXT,
+      commit_hash TEXT    NOT NULL DEFAULT '',
+      file_paths  TEXT    NOT NULL DEFAULT '',
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(content_id, commit_hash)
+    );
+    INSERT INTO _code_refs_uuid (id, content_id, task_ref, commit_hash, file_paths, created_at)
+      SELECT cr.id, m.new_id, cr.task_ref, cr.commit_hash, cr.file_paths, cr.created_at
+      FROM code_refs cr JOIN _uuid_map m ON m.old_id = cr.content_id;
+    DROP TABLE code_refs;
+    ALTER TABLE _code_refs_uuid RENAME TO code_refs;
+    CREATE INDEX IF NOT EXISTS idx_code_refs_content ON code_refs(content_id);
+
+    CREATE TABLE _reviews_uuid (
+      id           INTEGER PRIMARY KEY,
+      content_id   TEXT NOT NULL DEFAULT '',
+      status       TEXT NOT NULL DEFAULT 'pending',
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      committed_at TEXT
+    );
+    INSERT INTO _reviews_uuid (id, content_id, status, created_at, committed_at)
+      SELECT rv.id, m.new_id, rv.status, rv.created_at, rv.committed_at
+      FROM reviews rv JOIN _uuid_map m ON m.old_id = rv.content_id;
+    DROP TABLE reviews;
+    ALTER TABLE _reviews_uuid RENAME TO reviews;
+    CREATE INDEX IF NOT EXISTS idx_reviews_content ON reviews(content_id);
+
+    CREATE TABLE _content_chunks_uuid (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      content_id    TEXT    NOT NULL DEFAULT '',
+      kind          TEXT    NOT NULL DEFAULT '',
+      chunk_key     TEXT    NOT NULL DEFAULT '',
+      ord           INTEGER NOT NULL DEFAULT 0,
+      heading_path  TEXT    NOT NULL DEFAULT '',
+      start_char    INTEGER,
+      end_char      INTEGER,
+      start_line    INTEGER NOT NULL DEFAULT 0,
+      end_line      INTEGER NOT NULL DEFAULT 0,
+      source_path   TEXT,
+      source_commit TEXT,
+      chunk_sha     TEXT    NOT NULL DEFAULT '',
+      embedding     BLOB,
+      UNIQUE(content_id, kind, chunk_key)
+    );
+    INSERT INTO _content_chunks_uuid
+      (id, content_id, kind, chunk_key, ord, heading_path, start_char, end_char,
+       start_line, end_line, source_path, source_commit, chunk_sha, embedding)
+    SELECT cc.id, m.new_id, cc.kind, cc.chunk_key, cc.ord, cc.heading_path,
+           cc.start_char, cc.end_char, cc.start_line, cc.end_line,
+           cc.source_path, cc.source_commit, cc.chunk_sha, cc.embedding
+    FROM content_chunks cc JOIN _uuid_map m ON m.old_id = cc.content_id;
+    DROP TABLE content_chunks;
+    ALTER TABLE _content_chunks_uuid RENAME TO content_chunks;
+    CREATE INDEX IF NOT EXISTS idx_content_chunks_content ON content_chunks(content_id);
+
+    DROP TABLE contents;
+    ALTER TABLE _contents_uuid RENAME TO contents;
+
+    CREATE INDEX IF NOT EXISTS idx_contents_root_id ON contents(root_id);
+    CREATE INDEX IF NOT EXISTS idx_contents_created_at ON contents(created_at) WHERE is_latest = 1;
+    CREATE INDEX IF NOT EXISTS idx_contents_type_created_at ON contents(type, created_at) WHERE is_latest = 1;
+
+    DROP TABLE IF EXISTS _uuid_map;
+    COMMIT;
+  `);
+
+  db.transaction(() => {
+    db.exec(FTS_AND_TRIGGERS.replace(/IF NOT EXISTS /g, ""));
+    repopulateContentsFts(db);
+  })();
+
+  db.exec(`
+    DELETE FROM vec_contents;
+    CREATE TRIGGER contents_vec_ai AFTER INSERT ON contents
+    WHEN new.embedding IS NOT NULL BEGIN
+      INSERT INTO vec_contents(rowid, embedding) VALUES (new.rowid, new.embedding);
+    END;
+    CREATE TRIGGER contents_vec_au AFTER UPDATE ON contents
+    WHEN new.embedding IS NOT NULL BEGIN
+      DELETE FROM vec_contents WHERE rowid = old.rowid;
+      INSERT INTO vec_contents(rowid, embedding) VALUES (new.rowid, new.embedding);
+    END;
+    CREATE TRIGGER contents_vec_ad AFTER DELETE ON contents BEGIN
+      DELETE FROM vec_contents WHERE rowid = old.rowid;
+    END;
+  `);
+  db.exec(
+    `INSERT INTO vec_contents(rowid, embedding)
+       SELECT rowid, embedding FROM contents WHERE embedding IS NOT NULL`,
+  );
+
+  if (isCrsqlLoaded) {
+    db.exec("DROP INDEX IF EXISTS idx_contents_source_key");
+    db.exec("DROP INDEX IF EXISTS uq_feature_digest");
+    db.exec("SELECT crsql_as_crr('contents')");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_contents_source_key ON contents(source_key) WHERE source_key IS NOT NULL");
+    db.exec("SELECT crsql_as_crr('content_features')");
+    db.exec("SELECT crsql_as_crr('content_links')");
+  }
+
+  db.exec("PRAGMA foreign_keys = ON");
 }
 
 function runMigrations(db: Database.Database): void {
@@ -452,6 +647,14 @@ function runMigrations(db: Database.Database): void {
     db.exec(`SELECT crsql_as_crr('content_features')`);
     ensureContentLinksForCrr(db);
     db.exec(`SELECT crsql_as_crr('content_links')`);
+  }
+
+  // Migration 19: convert contents.id from INTEGER to TEXT UUID
+  const { type: contentsIdType } = db.prepare(
+    "SELECT type FROM pragma_table_info('contents') WHERE name = 'id'"
+  ).get() as { type: string };
+  if (contentsIdType.toUpperCase() !== "TEXT") {
+    migrateContentsToUuid(db);
   }
 }
 
