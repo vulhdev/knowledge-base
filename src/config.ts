@@ -41,12 +41,16 @@ export function loadSettings(): Settings {
   return cached;
 }
 
-export function writeSettings(settings: Settings): void {
-  mkdirSync(SETTINGS_DIR, { recursive: true });
-  const tmp = SETTINGS_PATH + ".tmp";
+export function writeSettingsTo(settings: Settings, dir: string, path: string): void {
+  mkdirSync(dir, { recursive: true });
+  const tmp = path + ".tmp";
   writeFileSync(tmp, JSON.stringify(settings, null, 2));
   chmodSync(tmp, 0o600);
-  renameSync(tmp, SETTINGS_PATH);
+  renameSync(tmp, path);
+}
+
+export function writeSettings(settings: Settings): void {
+  writeSettingsTo(settings, SETTINGS_DIR, SETTINGS_PATH);
   cached = null;
 }
 
