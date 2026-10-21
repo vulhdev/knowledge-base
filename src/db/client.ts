@@ -6,7 +6,7 @@ import { join, dirname, basename, resolve } from "node:path";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { applySchema } from "./schema.js";
 import { startBackfill } from "../embedding/backfill.js";
-import { loadSettings } from "../config.js";
+import { loadSettings, writeSettings } from "../config.js";
 import { insertTeam, getTeamByName, addInvite } from "./team.js";
 import { createWorkspace } from "./workspaces.js";
 
@@ -37,9 +37,10 @@ export function openDb(): Database.Database {
   return instance;
 }
 
-function migrateSettingsToDb(db: Database.Database): void {
+export function migrateSettingsToDb(db: Database.Database): void {
   const settings = loadSettings();
   if (!settings.workspaces) return;
+  let migrated = false;
   for (const [name, ws] of Object.entries(settings.workspaces)) {
     const team = ws.team;
     if (!team) continue;
@@ -60,6 +61,11 @@ function migrateSettingsToDb(db: Database.Database): void {
     for (const username of [...new Set(usernames)]) {
       addInvite(db, row.id, username);
     }
+    migrated = true;
+  }
+  if (migrated) {
+    const { workspaces: _, ...cleaned } = settings;
+    writeSettings(cleaned);
   }
 }
 
