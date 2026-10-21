@@ -1,6 +1,6 @@
 import Hyperswarm from "hyperswarm";
 import { createHash } from "node:crypto";
-import { loadSettings } from "../config.js";
+import { getTeamByName } from "../db/team.js";
 import type Database from "better-sqlite3";
 
 export type SwarmHandle = {
@@ -24,13 +24,12 @@ export function createFirewall(db: Database.Database): (remotePublicKey: Buffer)
 }
 
 export function createSwarm(db: Database.Database, workspaceName: string): SwarmHandle {
-  const settings = loadSettings();
-  const team = settings.workspaces?.[workspaceName]?.team;
+  const team = getTeamByName(db, workspaceName);
   if (!team) throw new Error(`No team config for workspace "${workspaceName}"`);
 
   const keyPair = {
-    publicKey: Buffer.from(team.noise_keypair.publicKey, "hex"),
-    secretKey: Buffer.from(team.noise_keypair.secretKey, "hex"),
+    publicKey: Buffer.from(team.noise_public_key, "hex"),
+    secretKey: Buffer.from(team.noise_secret_key, "hex"),
   };
 
   const swarm = new Hyperswarm({ keyPair, firewall: createFirewall(db) });

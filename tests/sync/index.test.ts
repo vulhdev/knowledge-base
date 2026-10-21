@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "node:events";
 import { createTestDb } from "../setup.js";
+import { insertTeam } from "../../src/db/team.js";
+import { createWorkspace } from "../../src/db/workspaces.js";
 
 class MockSocket extends EventEmitter {
   readonly writes: Buffer[] = [];
@@ -35,41 +37,22 @@ vi.mock("../../src/sync/changeset.js", async (importOriginal) => {
 
 vi.mock("../../src/sync/rebuild.js", () => ({ rebuildFts: vi.fn() }));
 
-vi.mock("node:os", () => ({ homedir: vi.fn().mockReturnValue("/test/home") }));
-vi.mock("node:fs", () => ({
-  existsSync: vi.fn().mockReturnValue(true),
-  mkdirSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  chmodSync: vi.fn(),
-  renameSync: vi.fn(),
-  copyFileSync: vi.fn(),
-  unlinkSync: vi.fn(),
-}));
-
-const HOST_SETTINGS = {
-  db_path: "/db",
-  model_cache_dir: "/m",
-  workspaces: {
-    myws: {
-      team: {
-        role: "host" as const,
-        secret: "a".repeat(64),
-        noise_keypair: { publicKey: "b".repeat(64), secretKey: "c".repeat(64) },
-      },
-    },
-  },
-};
+function seedHostTeam(db: ReturnType<typeof createTestDb>): void {
+  const ws = createWorkspace(db, "myws");
+  insertTeam(db, ws.id, {
+    role: "host",
+    secret: "a".repeat(64),
+    noise_public_key: "b".repeat(64),
+    noise_secret_key: "c".repeat(64),
+    host_public_key: null,
+    last_synced_at: null,
+  });
+}
 
 describe("startSync", () => {
-  beforeEach(async () => {
-    vi.resetModules();
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(HOST_SETTINGS));
-  });
-
   it("returns a handle with a destroy function", async () => {
     const db = createTestDb();
+    seedHostTeam(db);
     const { startSync } = await import("../../src/sync/index.js");
     const handle = startSync(db, "myws");
     expect(typeof handle.destroy).toBe("function");
@@ -78,6 +61,7 @@ describe("startSync", () => {
 
   it("creates a Hyperswarm instance", async () => {
     const db = createTestDb();
+    seedHostTeam(db);
     const Hyperswarm = (await import("hyperswarm")).default;
     const { startSync } = await import("../../src/sync/index.js");
     startSync(db, "myws");
@@ -86,6 +70,7 @@ describe("startSync", () => {
 
   it("registers a connection event listener on the swarm", async () => {
     const db = createTestDb();
+    seedHostTeam(db);
     const Hyperswarm = (await import("hyperswarm")).default;
     const { startSync } = await import("../../src/sync/index.js");
     startSync(db, "myws");
@@ -93,28 +78,23 @@ describe("startSync", () => {
     expect(swarmInstance.on).toHaveBeenCalledWith("connection", expect.any(Function));
   });
 
-  it("writes last_synced_at to settings via recordSyncTimestamp", async () => {
-    const { writeFileSync, readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(HOST_SETTINGS));
-
+  it("records last_synced_at in DB via recordSyncTimestamp", async () => {
+    const db = createTestDb();
+    seedHostTeam(db);
     const { recordSyncTimestamp } = await import("../../src/sync/index.js");
-    recordSyncTimestamp("myws");
+    recordSyncTimestamp(db, "myws");
 
-    const calls = vi.mocked(writeFileSync).mock.calls;
-    const settingsCall = calls.find(([p, body]) =>
-      typeof p === "string" && p.includes("settings.json") && String(body).includes("last_synced_at")
-    );
-    expect(settingsCall).toBeDefined();
+    const row = db
+      .prepare("SELECT last_synced_at FROM workspace_team WHERE workspace_id = (SELECT id FROM workspaces WHERE name = 'myws')")
+      .get() as { last_synced_at: string | null } | undefined;
+    expect(row?.last_synced_at).toBeTruthy();
   });
 
   it("throws when workspace has no team config", async () => {
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(
-      JSON.stringify({ db_path: "/db", model_cache_dir: "/m" }),
-    );
     const db = createTestDb();
+    createWorkspace(db, "unlocked-ws");
     const { startSync } = await import("../../src/sync/index.js");
-    expect(() => startSync(db, "myws")).toThrow(/no team config/i);
+    expect(() => startSync(db, "unlocked-ws")).toThrow(/no team config/i);
   });
 });
 
@@ -128,11 +108,6 @@ function createSyncTestDb() {
 }
 
 describe("handleJoinConnection — security guards", () => {
-  beforeEach(async () => {
-    vi.resetModules();
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(HOST_SETTINGS));
-  });
 
   it("rejects join_request when wire peerPublicKey differs from Noise transport key", async () => {
     const noiseKey = Buffer.from("a".repeat(64), "hex");
@@ -244,11 +219,8 @@ describe("handleJoinConnection — security guards", () => {
 });
 
 describe("handleSyncConnection — buf framing", () => {
-  beforeEach(async () => {
-    vi.resetModules();
+  beforeEach(() => {
     vi.clearAllMocks(); // reset spy call counts so tests don't accumulate
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(HOST_SETTINGS));
   });
 
   it("two frames in one data event — both are applied", async () => {

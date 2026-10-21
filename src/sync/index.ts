@@ -6,7 +6,7 @@ import { decodeChangeset, encodeChangeset, getChanges, applyChanges, MAX_CHANGES
 import type { ChangesetRow } from "./changeset.js";
 import type { ActivityLogger } from "./activity.js";
 import { rebuildFts } from "./rebuild.js";
-import { loadSettings, writeSettings } from "../config.js";
+import { getTeamByName, updateLastSynced } from "../db/team.js";
 import { acquireSyncLock } from "./lock.js";
 
 const MAX_HANDSHAKE_BYTES = 4 * 1024;   // generous for {"v":1,"dbVersion":9999999}
@@ -26,12 +26,9 @@ type JoinCallbacks = {
   onJoinResult?: (githubUsername: string, accepted: boolean, reason?: string) => void;
 };
 
-export function recordSyncTimestamp(workspaceName: string): void {
-  const s = loadSettings();
-  if (s.workspaces?.[workspaceName]?.team) {
-    s.workspaces[workspaceName].team!.last_synced_at = new Date().toISOString();
-    writeSettings(s);
-  }
+export function recordSyncTimestamp(db: Database.Database, workspaceName: string): void {
+  const team = getTeamByName(db, workspaceName);
+  if (team) updateLastSynced(db, team.workspace_id, new Date().toISOString());
 }
 
 type HandshakeMsg = { v: number; dbVersion: number };
@@ -94,7 +91,7 @@ export function handleSyncConnection(
           const rows = decodeChangeset(buf.slice(4, 4 + size));
           applyChanges(db, rows);
           rebuildFts(db);
-          recordSyncTimestamp(workspaceName);
+          recordSyncTimestamp(db, workspaceName);
           if (rows.length > 0) callbacks?.onChangesReceived?.(rows);
         } catch {
           // ignore bad changeset
@@ -199,8 +196,7 @@ export function startSync(
   const release = acquireSyncLock(workspaceName);
   if (!release) return null;
 
-  const settings = loadSettings();
-  const team = settings.workspaces?.[workspaceName]?.team;
+  const team = getTeamByName(db, workspaceName);
   if (!team) {
     release();
     throw new Error(`No team config for workspace "${workspaceName}"`);
@@ -225,11 +221,11 @@ export function startSync(
   let joinSwarm: InstanceType<typeof Hyperswarm> | null = null;
   if (team.role === "host") {
     const keyPair = {
-      publicKey: Buffer.from(team.noise_keypair.publicKey, "hex"),
-      secretKey: Buffer.from(team.noise_keypair.secretKey, "hex"),
+      publicKey: Buffer.from(team.noise_public_key, "hex"),
+      secretKey: Buffer.from(team.noise_secret_key, "hex"),
     };
     joinSwarm = new Hyperswarm({ keyPair });
-    joinSwarm.join(deriveJoinTopic(workspaceName, team.noise_keypair.publicKey));
+    joinSwarm.join(deriveJoinTopic(workspaceName, team.noise_public_key));
     joinSwarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
       (socket as NodeJS.EventEmitter).on("error", () => { /* ECONNRESET and other connection errors are expected */ });
       handleJoinConnection(db, workspaceName, socket, info.publicKey, {

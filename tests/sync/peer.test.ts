@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestDb } from "../setup.js";
 import type Database from "better-sqlite3";
+import { insertTeam } from "../../src/db/team.js";
+import { createWorkspace } from "../../src/db/workspaces.js";
 
 vi.mock("hyperswarm", () => {
   return {
@@ -12,32 +14,6 @@ vi.mock("hyperswarm", () => {
     })),
   };
 });
-
-vi.mock("node:os", () => ({ homedir: vi.fn().mockReturnValue("/test/home") }));
-vi.mock("node:fs", () => ({
-  existsSync: vi.fn().mockReturnValue(true),
-  mkdirSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  chmodSync: vi.fn(),
-  renameSync: vi.fn(),
-  copyFileSync: vi.fn(),
-  unlinkSync: vi.fn(),
-}));
-
-const MOCK_SETTINGS = {
-  db_path: "/db",
-  model_cache_dir: "/m",
-  workspaces: {
-    myws: {
-      team: {
-        role: "host" as const,
-        secret: "a".repeat(64),
-        noise_keypair: { publicKey: "b".repeat(64), secretKey: "c".repeat(64) },
-      },
-    },
-  },
-};
 
 describe("createFirewall", () => {
   let db: Database.Database;
@@ -103,11 +79,18 @@ describe("deriveTopicBuffer", () => {
 
 describe("createSwarm", () => {
   let db: Database.Database;
-  beforeEach(async () => {
+
+  beforeEach(() => {
     db = createTestDb();
-    vi.resetModules();
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(MOCK_SETTINGS));
+    const ws = createWorkspace(db, "myws");
+    insertTeam(db, ws.id, {
+      role: "host",
+      secret: "a".repeat(64),
+      noise_public_key: "b".repeat(64),
+      noise_secret_key: "c".repeat(64),
+      host_public_key: null,
+      last_synced_at: null,
+    });
   });
 
   it("calls Hyperswarm constructor with firewall and keyPair", async () => {
@@ -134,11 +117,9 @@ describe("createSwarm", () => {
   });
 
   it("throws when workspace has no team config", async () => {
-    const { readFileSync } = await import("node:fs");
-    vi.mocked(readFileSync).mockReturnValue(
-      JSON.stringify({ db_path: "/db", model_cache_dir: "/m" }),
-    );
+    const emptyDb = createTestDb();
+    createWorkspace(emptyDb, "myws");
     const { createSwarm } = await import("../../src/sync/peer.js");
-    expect(() => createSwarm(db, "myws")).toThrow(/no team config/i);
+    expect(() => createSwarm(emptyDb, "myws")).toThrow(/no team config/i);
   });
 });
