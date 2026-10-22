@@ -113,7 +113,9 @@ async function runJoin(args: string[]): Promise<void> {
 
   const kp = generateNoiseKeypair();
   const spinner = p.spinner();
-  spinner.start(`Connecting to host…`);
+  const joinTopic = deriveJoinTopic(workspaceName, hostPublicKey);
+  const topicHex = joinTopic.toString("hex").slice(0, 12);
+  spinner.start(`Connecting to host… (topic: ${topicHex}…)`);
 
   const swarm = new Hyperswarm({
     keyPair: {
@@ -121,14 +123,28 @@ async function runJoin(args: string[]): Promise<void> {
       secretKey: Buffer.from(kp.secretKey, "hex"),
     },
   });
+
+  const diagnostics: string[] = [];
+  const onDiagnostic = (msg: string) => {
+    diagnostics.push(msg);
+    spinner.message(`Connecting… ${msg}`);
+  };
+
   let result: { accepted: true; secret: string } | { accepted: false; reason: string };
   try {
     result = await Promise.race([
-      attemptJoin(swarm, hostPublicKey, workspaceName, kp.publicKey, githubToken, githubUsername),
+      attemptJoin(swarm, hostPublicKey, workspaceName, kp.publicKey, githubToken, githubUsername, onDiagnostic),
       new Promise<never>((_, reject) =>
         setTimeout(() => {
           swarm.destroy().catch(() => undefined);
-          reject(new Error("Host is not online, try again when host is running"));
+          reject(new Error(
+            `Host not reachable after 30s\n` +
+            `  topic:   ${topicHex}…\n` +
+            `  host:    ${hostPublicKey.slice(0, 12)}…\n` +
+            `  version: ${HOST_VERSION}\n` +
+            (diagnostics.length > 0 ? `  events:  ${diagnostics.join("; ")}\n` : "") +
+            `  Check: team server is running on host, UDP ports are open, same major.minor version`,
+          ));
         }, 30_000),
       ),
     ]);
@@ -216,6 +232,7 @@ export async function attemptJoin(
   peerPublicKey: string,
   githubToken: string,
   githubUsername: string,
+  onDiagnostic?: (msg: string) => void,
 ): Promise<{ accepted: true; secret: string } | { accepted: false; reason: string }> {
   const joinTopic = deriveJoinTopic(workspaceName, hostPublicKey);
 
@@ -224,6 +241,7 @@ export async function attemptJoin(
 
     swarm.on("connection", (socket: NodeJS.ReadWriteStream, info) => {
       if (info.publicKey.toString("hex") !== hostPublicKey) {
+        onDiagnostic?.(`key mismatch: got ${info.publicKey.toString("hex").slice(0, 12)}…, expected ${hostPublicKey.slice(0, 12)}… — ignoring`);
         (socket as Duplex).destroy();
         return;
       }
@@ -262,7 +280,11 @@ export async function attemptJoin(
       });
     });
 
-    swarm.on("error", (...args: unknown[]) => reject(args[0] instanceof Error ? args[0] : new Error(String(args[0]))));
+    swarm.on("error", (...args: unknown[]) => {
+      const err = args[0] instanceof Error ? args[0] : new Error(String(args[0]));
+      onDiagnostic?.(`swarm error: ${err.message}`);
+      reject(err);
+    });
   });
 }
 

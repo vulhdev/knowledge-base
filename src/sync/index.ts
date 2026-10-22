@@ -291,6 +291,7 @@ export function startSync(
     joinSwarm.join(deriveJoinTopic(workspaceName, team.noise_public_key));
     joinSwarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
       (socket as NodeJS.EventEmitter).on("error", () => { /* ECONNRESET and other connection errors are expected */ });
+      logger?.onJoinConnect(workspaceName, info.publicKey.toString("hex"));
       handleJoinConnection(db, workspaceName, socket, info.publicKey, {
         onJoinAttempt: (u) => logger?.onJoinAttempt(workspaceName, u),
         onJoinResult: (u, accepted, reason) => logger?.onJoinResult(workspaceName, u, accepted, reason),

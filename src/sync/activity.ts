@@ -6,6 +6,7 @@ export type ActivityLogger = {
   onPeerDisconnect: (workspace: string, username: string | null, publicKey: string) => void;
   onChangesetReceived: (workspace: string, username: string | null, rows: ChangesetRow[], db: Database.Database) => void;
   onChangesetSent: (workspace: string, username: string | null, count: number) => void;
+  onJoinConnect: (workspace: string, publicKey: string) => void;
   onJoinAttempt: (workspace: string, githubUsername: string) => void;
   onJoinResult: (workspace: string, githubUsername: string, accepted: boolean, reason?: string) => void;
 };
@@ -109,6 +110,10 @@ export function makeConsoleLogger(): ActivityLogger {
 
     onChangesetSent(workspace, username, count) {
       console.log(`${ts()} ${c.dimCyan}→${c.reset} sent ${count} change${count !== 1 ? "s" : ""} to ${peer(username, "")} ${ws(workspace)}`);
+    },
+
+    onJoinConnect(workspace, publicKey) {
+      console.log(`${ts()} ${c.dim}↗${c.reset} join connection (key: ${publicKey.slice(0, 12)}…)      ${ws(workspace)}`);
     },
 
     onJoinAttempt(workspace, githubUsername) {

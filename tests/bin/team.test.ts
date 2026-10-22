@@ -126,4 +126,39 @@ describe("attemptJoin", () => {
     // swarm stays alive; impostor socket's destroy gets called but not the swarm
     expect(swarm.destroy).not.toHaveBeenCalled();
   });
+
+  it("calls onDiagnostic with key mismatch info when connection is from wrong host", async () => {
+    const { attemptJoin } = await import("../../src/bin/team.js");
+    const swarm = makeMockSwarm();
+    const impostorSocket = makeMockSocket();
+    const onDiagnostic = vi.fn();
+
+    attemptJoin(
+      swarm as unknown as import("hyperswarm").default,
+      HOST_PUBLIC_KEY, "ws", PEER_PUBLIC_KEY, "gho_tok", "alice",
+      onDiagnostic,
+    );
+
+    swarm.emit("connection", impostorSocket, { publicKey: Buffer.from("c".repeat(64), "hex") });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.stringContaining("key mismatch"));
+  });
+
+  it("calls onDiagnostic with error info then rejects when swarm emits error", async () => {
+    const { attemptJoin } = await import("../../src/bin/team.js");
+    const swarm = makeMockSwarm();
+    const onDiagnostic = vi.fn();
+
+    const joinPromise = attemptJoin(
+      swarm as unknown as import("hyperswarm").default,
+      HOST_PUBLIC_KEY, "ws", PEER_PUBLIC_KEY, "gho_tok", "alice",
+      onDiagnostic,
+    );
+
+    swarm.emit("error", new Error("DHT bootstrap failed"));
+
+    await expect(joinPromise).rejects.toThrow();
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.stringContaining("DHT bootstrap failed"));
+  });
 });
