@@ -26,6 +26,7 @@ import { createVersion } from "./tools/create-version.js";
 import { listVersions } from "./tools/list-versions.js";
 import { insertErrorLog } from "./db/error-log.js";
 import { startSyncFromClaudeMd } from "./sync/boot.js";
+import { pushToAllWorkspaces } from "./sync/push.js";
 
 const db = openDb();
 startSyncFromClaudeMd(db);
@@ -104,6 +105,7 @@ server.tool(
   async ({ workspace, features, type, title, body }) => {
     try {
       const result = await createContent(db, workspace, features, type, body, title, requestSampling);
+      pushToAllWorkspaces();
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "create_content", err instanceof Error ? err.message : String(err));
@@ -123,6 +125,7 @@ server.tool(
   ({ id, workspace, feature }) => {
     try {
       const result = attachFeature(db, id, workspace, feature);
+      pushToAllWorkspaces();
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
       insertErrorLog(db, "attach_feature", err instanceof Error ? err.message : String(err));
@@ -142,6 +145,7 @@ server.tool(
   ({ id, workspace, feature }) => {
     try {
       const result = detachFeature(db, id, workspace, feature);
+      pushToAllWorkspaces();
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
       insertErrorLog(db, "detach_feature", err instanceof Error ? err.message : String(err));
@@ -221,6 +225,7 @@ server.tool(
   async ({ id, body, type, title }) => {
     try {
       const result = await updateContent(db, id, body, type, title, requestSampling);
+      pushToAllWorkspaces();
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "update_content", err instanceof Error ? err.message : String(err));
@@ -241,6 +246,7 @@ server.tool(
   async ({ id, old_string, new_string, replace_all }) => {
     try {
       const result = await patchContent(db, id, old_string, new_string, replace_all);
+      pushToAllWorkspaces();
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "patch_content", err instanceof Error ? err.message : String(err));
@@ -259,6 +265,7 @@ server.tool(
   async ({ id, text }) => {
     try {
       const result = await appendContent(db, id, text);
+      pushToAllWorkspaces();
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "append_content", err instanceof Error ? err.message : String(err));
@@ -277,6 +284,7 @@ server.tool(
   async ({ id, cascade }) => {
     try {
       const result = deleteContent(db, id, cascade);
+      pushToAllWorkspaces();
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       insertErrorLog(db, "delete_content", err instanceof Error ? err.message : String(err));
@@ -295,6 +303,7 @@ server.tool(
   async ({ child_id, parent_id }) => {
     try {
       const result = linkContent(db, child_id, parent_id);
+      pushToAllWorkspaces();
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       insertErrorLog(db, "link_content", err instanceof Error ? err.message : String(err));
@@ -315,6 +324,7 @@ server.tool(
   async ({ parent_id, type, body, title }) => {
     try {
       const result = await deriveContent(db, parent_id, type, body, title);
+      pushToAllWorkspaces();
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
       insertErrorLog(db, "derive_content", err instanceof Error ? err.message : String(err));
@@ -488,6 +498,7 @@ server.tool(
   async ({ id }) => {
     try {
       const result = createVersion(db, id);
+      pushToAllWorkspaces();
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
       insertErrorLog(db, "create_version", err instanceof Error ? err.message : String(err));
