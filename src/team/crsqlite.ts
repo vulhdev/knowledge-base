@@ -30,6 +30,11 @@ export const PLATFORM_ZIP_MAP: Record<string, PlatformEntry> = {
     binName: "crsqlite.so",
     sha256: "8f6fd31a2be2ba8c3101aad067a504a2e63c8e9b51cc4ace786009c02e7ecbae",
   },
+  "linux-arm64": {
+    zipName: "crsqlite-linux-aarch64.zip",
+    binName: "crsqlite.so",
+    sha256: "c26aac668db9f0c455a37cbfba2ae129a11313a1f5b30b4bdcee69cfa1d1f94a",
+  },
   "win32-x64": {
     zipName: "crsqlite-win-x86_64.zip",
     binName: "crsqlite.dll",
