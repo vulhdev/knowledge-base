@@ -96,6 +96,44 @@ describe("startSync", () => {
     const { startSync } = await import("../../src/sync/index.js");
     expect(() => startSync(db, "unlocked-ws")).toThrow(/no team config/i);
   });
+
+  it("routes unknown peer to handleJoinConnection even when info.topics is empty (DHT server-side connection)", async () => {
+    // Hyperswarm only populates info.topics when the LOCAL node initiates the TCP connection
+    // (DHT client side). When the REMOTE peer initiates (DHT server side), info.topics = [].
+    // The router must NOT rely on info.topics for join routing.
+    const db = createTestDb();
+    seedHostTeam(db);
+    const Hyperswarm = (await import("hyperswarm")).default;
+    const { startSync, handleJoinConnection } = await import("../../src/sync/index.js");
+
+    const handleJoinSpy = vi.spyOn({ handleJoinConnection }, "handleJoinConnection");
+    // Track socket.destroy calls — if the router drops the connection it would be called
+    const MockSocketClass = class extends EventEmitter {
+      writes: Buffer[] = [];
+      destroyed = false;
+      writable = true;
+      write(d: Buffer | string) { this.writes.push(Buffer.isBuffer(d) ? d : Buffer.from(d as string)); return true; }
+      destroy() { this.destroyed = true; }
+    };
+
+    startSync(db, "myws");
+    const swarmInstance = vi.mocked(Hyperswarm).mock.results[0].value;
+    const connectionHandler = vi.mocked(swarmInstance.on).mock.calls.find(
+      ([event]) => event === "connection",
+    )?.[1] as ((socket: unknown, info: unknown) => void) | undefined;
+    expect(connectionHandler).toBeDefined();
+
+    const socket = new MockSocketClass();
+    // Simulate: peer is unknown (not in team_peers), info.topics = [] (server-side connection)
+    connectionHandler!(socket, {
+      publicKey: Buffer.from("e".repeat(64), "hex"),
+      topics: [], // empty — as Hyperswarm provides when local node is the acceptor
+    });
+
+    // Socket must NOT be immediately destroyed (join handler should take over)
+    expect(socket.destroyed).toBe(false);
+    handleJoinSpy.mockRestore();
+  });
 });
 
 function createSyncTestDb() {

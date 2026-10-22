@@ -286,8 +286,11 @@ export function startSync(
     }
 
     const isActivePeer = peerRow?.is_active === 1;
-    const isJoinConn = !isActivePeer && joinTopic !== null &&
-      info.topics.some(t => Buffer.compare(t, joinTopic) === 0);
+    // info.topics is only populated when the local swarm initiates the connection (DHT client
+    // side). When the remote peer initiates (DHT server side), info.topics is always [].
+    // Rely on isActivePeer alone to route: if the peer is not a known active member and we are
+    // the host, treat it as a join attempt. handleJoinConnection validates the request fully.
+    const isJoinConn = !isActivePeer && joinTopic !== null;
 
     if (isJoinConn) {
       logger?.onJoinConnect(workspaceName, publicKey);
