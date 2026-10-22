@@ -129,11 +129,19 @@ async function runJoin(args: string[]): Promise<void> {
   const topicHex = joinTopic.toString("hex").slice(0, 12);
   spinner.start(`Connecting to host… (topic: ${topicHex}…)`);
 
+  const bootstrapEnv = process.env.KB_DHT_BOOTSTRAP;
+  const bootstrap = bootstrapEnv
+    ? bootstrapEnv.split(",").map((addr) => {
+        const [host, portStr] = addr.split(":");
+        return { host: host ?? "127.0.0.1", port: Number(portStr) };
+      })
+    : undefined;
   const swarm = new Hyperswarm({
     keyPair: {
       publicKey: Buffer.from(kp.publicKey, "hex"),
       secretKey: Buffer.from(kp.secretKey, "hex"),
     },
+    ...(bootstrap && { bootstrap }),
   });
 
   const diagnostics: string[] = [];

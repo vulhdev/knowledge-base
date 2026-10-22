@@ -122,4 +122,31 @@ describe("createSwarm", () => {
     const { createSwarm } = await import("../../src/sync/peer.js");
     expect(() => createSwarm(emptyDb, "myws")).toThrow(/no team config/i);
   });
+
+  it("passes bootstrap option to Hyperswarm when KB_DHT_BOOTSTRAP env var is set", async () => {
+    process.env.KB_DHT_BOOTSTRAP = "127.0.0.1:49737";
+    try {
+      vi.resetModules();
+      const Hyperswarm = (await import("hyperswarm")).default;
+      const { createSwarm } = await import("../../src/sync/peer.js");
+      createSwarm(db, "myws");
+      expect(Hyperswarm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bootstrap: [{ host: "127.0.0.1", port: 49737 }],
+        }),
+      );
+    } finally {
+      delete process.env.KB_DHT_BOOTSTRAP;
+    }
+  });
+
+  it("does not pass bootstrap option when KB_DHT_BOOTSTRAP is not set", async () => {
+    delete process.env.KB_DHT_BOOTSTRAP;
+    vi.resetModules();
+    const Hyperswarm = (await import("hyperswarm")).default;
+    const { createSwarm } = await import("../../src/sync/peer.js");
+    createSwarm(db, "myws");
+    const call = vi.mocked(Hyperswarm).mock.calls[0][0] as Record<string, unknown>;
+    expect(call.bootstrap).toBeUndefined();
+  });
 });
