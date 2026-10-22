@@ -1,5 +1,3 @@
-version: "3.9"
-
 networks:
   e2e:
     driver: bridge
@@ -12,7 +10,7 @@ services:
     build:
       context: ..
       dockerfile: e2e/Dockerfile.e2e
-    command: ["/app/node_modules/.bin/hyperdht", "--bootstrap", "--host", "0.0.0.0", "--port", "49737"]
+    command: ["/app/node_modules/.bin/hyperdht", "--bootstrap", "--port", "49737"]
     networks:
       - e2e
     healthcheck:
