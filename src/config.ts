@@ -29,6 +29,8 @@ const DEFAULT_DB    = join(SETTINGS_DIR, "knowledge-base.db");
 const DEFAULT_MODEL = join(homedir(), ".cache", "knowledge-base", "models");
 const LEGACY_DB     = join(homedir(), ".claude", "knowledge-base.db");
 
+export const LOG_DIR = join(SETTINGS_DIR, "logs");
+
 let cached: Settings | null = null;
 
 export function loadSettings(): Settings {
