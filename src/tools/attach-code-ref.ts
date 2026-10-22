@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { AttachCodeRefResult, CodeRefFile } from "../types.js";
+import { logInfo } from "../log/logger.js";
 
 export function attachCodeRef(
   db: Database.Database,
@@ -8,6 +9,8 @@ export function attachCodeRef(
   filePaths: CodeRefFile[],
   taskRef?: string,
 ): AttachCodeRefResult {
+  const t0 = Date.now();
+  logInfo("attach_code_ref", { event: "start", content_id: contentId, commit: commitHash.slice(0, 7), files: filePaths.length });
   const exists = db.prepare("SELECT id FROM contents WHERE id = ?").get(contentId);
   if (!exists) throw new Error(`Content not found: id=${contentId}`);
 
@@ -30,7 +33,7 @@ export function attachCodeRef(
     created_at: string;
   };
 
-  return {
+  const result = {
     id: row.id,
     content_id: row.content_id,
     task_ref: row.task_ref,
@@ -38,4 +41,6 @@ export function attachCodeRef(
     file_paths: JSON.parse(row.file_paths) as CodeRefFile[],
     created_at: row.created_at,
   };
+  logInfo("attach_code_ref", { event: "done", ms: String(Date.now() - t0), id: result.id });
+  return result;
 }

@@ -3,6 +3,7 @@ import type { Content } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { fetchFeatures } from "./_helpers.js";
 import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
+import { logInfo } from "../log/logger.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
 
@@ -11,6 +12,8 @@ export async function appendContent(
   id: string,
   text: string,
 ): Promise<Content> {
+  const t0 = Date.now();
+  logInfo("append_content", { event: "start", id });
   if (!text.trim()) {
     throw new Error("text must not be empty");
   }
@@ -62,5 +65,7 @@ export async function appendContent(
     )
     .get(id) as RawRow;
 
-  return { ...row, features: fetchFeatures(db, id), has_code_refs: row.has_code_refs === 1 };
+  const result = { ...row, features: fetchFeatures(db, id), has_code_refs: row.has_code_refs === 1 };
+  logInfo("append_content", { event: "done", ms: String(Date.now() - t0), id });
+  return result;
 }
