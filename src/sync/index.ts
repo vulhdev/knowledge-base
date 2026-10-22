@@ -312,7 +312,9 @@ export function startSync(
       return;
     }
 
-    const isActivePeer = peerRow?.is_active === 1;
+    // A peer-role node recognises the host by host_public_key (not in team_peers on peer side).
+    const isHostConn = team.role === "peer" && !!team.host_public_key && publicKey === team.host_public_key;
+    const isActivePeer = peerRow?.is_active === 1 || isHostConn;
     // info.topics is only populated when the local swarm initiates the connection (DHT client
     // side). When the remote peer initiates (DHT server side), info.topics is always [].
     // Rely on isActivePeer alone to route: if the peer is not a known active member and we are

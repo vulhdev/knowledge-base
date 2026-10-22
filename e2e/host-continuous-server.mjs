@@ -21,14 +21,12 @@ const poll = setInterval(() => {
   triggered = true;
   clearInterval(poll);
 
-  const updated = db
-    .prepare("UPDATE contents SET body = ? WHERE body LIKE 'E2E seed%' LIMIT 1 RETURNING id")
-    .get(UPDATED_BODY);
-
-  if (!updated) {
+  const target = db.prepare("SELECT id FROM contents WHERE body LIKE 'E2E seed%' LIMIT 1").get();
+  if (!target) {
     console.error("[host-continuous-server] WARN: no seeded doc found to update");
   } else {
-    console.log(`[host-continuous-server] updated content id=${updated.id} body="${UPDATED_BODY}"`);
+    db.prepare("UPDATE contents SET body = ? WHERE id = ?").run(UPDATED_BODY, target.id);
+    console.log(`[host-continuous-server] updated content id=${target.id} body="${UPDATED_BODY}"`);
   }
 
   pushToAllWorkspaces();
