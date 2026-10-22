@@ -49,6 +49,23 @@ export function getChanges(db: Database.Database, sinceVersion: number): Changes
 // as Buffer-like objects ({type:"Buffer",data:[...]}) or as hex/binary strings up to ~256 bytes.
 const MAX_PK_SERIALIZED_LEN = 4096; // generous cap against flooding attacks
 
+// crsql stores pk and site_id as BLOBs. After JSON round-trip (encodeChangeset →
+// decodeChangeset), Buffers become plain objects: {type:"Buffer",data:[...]}.
+// better-sqlite3 treats plain objects as named-parameter maps and throws. Convert back
+// to Buffer before inserting so the CRDT merge can read the binary-encoded primary key.
+function toBlob(val: unknown): Buffer {
+  if (Buffer.isBuffer(val)) return val;
+  if (
+    typeof val === "object" &&
+    val !== null &&
+    (val as { type?: unknown }).type === "Buffer" &&
+    Array.isArray((val as { data?: unknown }).data)
+  ) {
+    return Buffer.from((val as { data: number[] }).data);
+  }
+  return Buffer.from(String(val), "utf8");
+}
+
 export function applyChanges(db: Database.Database, rows: ChangesetRow[]): void {
   if (rows.length > MAX_CHANGESET_ROWS) {
     throw new Error(`Changeset too many rows: ${rows.length} (max ${MAX_CHANGESET_ROWS})`);
@@ -57,7 +74,6 @@ export function applyChanges(db: Database.Database, rows: ChangesetRow[]): void 
     if (!CRDT_TABLES.has(row.tbl)) {
       throw new Error(`Changeset targets non-CRDT table: ${row.tbl}`);
     }
-    // pk may be a string or a Buffer-like object after JSON round-trip; validate presence only.
     if (row.pk === null || row.pk === undefined || row.pk === "") {
       throw new Error(`Changeset row has invalid pk: must be non-empty`);
     }
@@ -77,7 +93,7 @@ export function applyChanges(db: Database.Database, rows: ChangesetRow[]): void 
   );
   db.transaction(() => {
     for (const row of rows) {
-      stmt.run(row.tbl, row.pk, row.cid, row.val, row.col_version, row.db_version, row.site_id, row.cl, row.seq);
+      stmt.run(row.tbl, toBlob(row.pk), row.cid, row.val, row.col_version, row.db_version, toBlob(row.site_id), row.cl, row.seq);
     }
   })();
 }
