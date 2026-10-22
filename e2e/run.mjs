@@ -23,7 +23,9 @@ try {
   compose("build");
 
   console.log("\n=== Running E2E suite ===");
-  compose("up", "--abort-on-container-exit", "--exit-code-from", "peer");
+  // No --exit-code-from: compose returns the first non-zero exit code (any container failure).
+  // peer exits 0 on success → all services stop cleanly → compose exits 0.
+  compose("up", "--abort-on-container-exit");
 
   console.log("\n✓ E2E test PASSED");
 } catch (err) {
