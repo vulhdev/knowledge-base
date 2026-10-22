@@ -16,7 +16,20 @@ import { deriveJoinTopic } from "../sync/join.js";
 import { HOST_VERSION } from "../sync/version.js";
 import type { Duplex } from "node:stream";
 import { startSync, type SyncHandle } from "../sync/index.js";
-import { makeConsoleLogger } from "../sync/activity.js";
+import { makeConsoleLogger, makeFileLogger, type ActivityLogger } from "../sync/activity.js";
+import { logInfo, logWarn, logError } from "../log/logger.js";
+
+function makeCompositeLogger(a: ActivityLogger, b: ActivityLogger): ActivityLogger {
+  return {
+    onPeerConnect: (...args) => { a.onPeerConnect(...args); b.onPeerConnect(...args); },
+    onPeerDisconnect: (...args) => { a.onPeerDisconnect(...args); b.onPeerDisconnect(...args); },
+    onChangesetReceived: (...args) => { a.onChangesetReceived(...args); b.onChangesetReceived(...args); },
+    onChangesetSent: (...args) => { a.onChangesetSent(...args); b.onChangesetSent(...args); },
+    onJoinConnect: (...args) => { a.onJoinConnect(...args); b.onJoinConnect(...args); },
+    onJoinAttempt: (...args) => { a.onJoinAttempt(...args); b.onJoinAttempt(...args); },
+    onJoinResult: (...args) => { a.onJoinResult(...args); b.onJoinResult(...args); },
+  };
+}
 import { deriveTopicBuffer } from "../sync/peer.js";
 import { performInitialSyncOnSocket } from "../sync/initial.js";
 import { mergeWorkspace } from "../sync/merge.js";
@@ -70,7 +83,9 @@ async function runInvite(args: string[]): Promise<void> {
   }
 
   const db = openDb();
+  logInfo("team_invite", { event: "start", workspace: workspaceName, github: githubUsername });
   const code = generateInvite(db, workspaceName, githubUsername);
+  logInfo("team_invite", { event: "done", workspace: workspaceName, github: githubUsername });
   p.log.success(`Invite created for @${githubUsername}`);
   p.log.info(`Share this invite code:`);
   console.log(`\n  ${code}\n`);
@@ -90,10 +105,13 @@ async function runJoin(args: string[]): Promise<void> {
   try {
     ({ hostPublicKey, workspaceName } = parseInviteCode(inviteCode));
   } catch (err) {
+    logError("team_join", err instanceof Error ? err : new Error(String(err)));
+    logInfo("team_join", { event: "parse_invite_failed", reason: String(err) });
     console.error(`Error: ${String(err)}`);
     process.exit(1);
   }
 
+  logInfo("team_join", { event: "start", workspace: workspaceName });
   p.intro("Joining team workspace");
 
   const authArgs = parseGitHubAuthArgs(args);
@@ -107,9 +125,11 @@ async function runJoin(args: string[]): Promise<void> {
   if (authArgs.noAuth) {
     githubToken = "no-github-auth-token";
     githubUsername = authArgs.username;
+    logInfo("team_join", { event: "github_auth_skip", github: githubUsername });
     p.log.info(`Skipping GitHub auth (--no-github-auth) — joining as @${githubUsername}`);
   } else {
     p.log.info("Authenticate with GitHub to verify your identity.");
+    logInfo("team_join", { event: "github_auth_start" });
     try {
       const flow = await startDeviceFlow();
       p.log.info(`Open ${flow.verificationUri} and enter code: ${flow.userCode}`);
@@ -118,7 +138,10 @@ async function runJoin(args: string[]): Promise<void> {
       githubToken = await pollForToken(flow.deviceCode, flow.interval, flow.expiresIn);
       githubUsername = await getGitHubUsername(githubToken);
       spinner.stop(`Authenticated as @${githubUsername}`);
+      logInfo("team_join", { event: "github_auth_done", github: githubUsername });
     } catch (err) {
+      logError("team_join", err instanceof Error ? err : new Error(String(err)));
+      logInfo("team_join", { event: "github_auth_failed", reason: String(err) });
       p.log.error(`GitHub authentication failed: ${String(err)}`);
       process.exit(1);
     }
@@ -149,9 +172,11 @@ async function runJoin(args: string[]): Promise<void> {
     ...(dhtNode ? { dht: dhtNode } : (bootstrap && { bootstrap })),
   });
 
+  logInfo("team_join", { event: "connect_start", workspace: workspaceName, topic: topicHex });
   const diagnostics: string[] = [];
   const onDiagnostic = (msg: string) => {
     diagnostics.push(msg);
+    logInfo("team_join", { event: "connect_diagnostic", msg });
     spinner.message(`Connecting… ${msg}`);
   };
 
@@ -174,17 +199,21 @@ async function runJoin(args: string[]): Promise<void> {
       ),
     ]);
   } catch (err: unknown) {
+    logError("team_join", err instanceof Error ? err : new Error(String(err)));
+    logInfo("team_join", { event: "connect_timeout", diagnostics: diagnostics.join("; ") });
     spinner.stop("Connection failed");
     p.log.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
 
   if (!result.accepted) {
+    logWarn("team_join", { event: "connect_rejected", workspace: workspaceName, reason: result.reason });
     spinner.stop("Join rejected");
     p.log.error(`Host rejected: ${result.reason}`);
     process.exit(1);
   }
 
+  logInfo("team_join", { event: "connect_accepted", workspace: workspaceName });
   spinner.stop("Joined successfully");
 
   const db = openDb();
@@ -210,17 +239,21 @@ async function runJoin(args: string[]): Promise<void> {
 
   const syncSpinner = p.spinner();
   syncSpinner.start("Syncing data from host… do not close terminal");
+  logInfo("team_join", { event: "initial_sync_start", workspace: workspaceName });
   // Reuse the join socket — host calls handleSyncConnection on it right after sending
   // join_result, so no new DHT round-trip is needed and there is no timeout risk.
   const syncResult = await performInitialSyncOnSocket(db, workspaceName, result.socket, result.remainder);
   await swarm.destroy().catch(() => undefined);
   if (syncResult.ok) {
+    logInfo("team_join", { event: "initial_sync_done", workspace: workspaceName, rows: String(syncResult.rowsReceived) });
     syncSpinner.stop(`Sync complete — ${syncResult.rowsReceived} rows received`);
   } else {
+    logWarn("team_join", { event: "initial_sync_skipped", workspace: workspaceName, reason: syncResult.reason });
     syncSpinner.stop(`Sync skipped (${syncResult.reason})`);
   }
 
   await promptMerge(db, workspaceName);
+  logInfo("team_join", { event: "done", workspace: workspaceName, github: githubUsername });
 }
 
 export function parseGitHubAuthArgs(
@@ -412,6 +445,7 @@ async function runKick(args: string[]): Promise<void> {
   }
 
   kickPeer(db, peer.public_key);
+  logInfo("team_kick", { event: "done", workspace: workspaceName, github: githubUsername });
   console.log(`✓ Removed @${githubUsername} from team`);
 }
 
@@ -460,6 +494,7 @@ async function runDelete(args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  logInfo("team_delete", { event: "done", workspace: workspaceName, github: githubUsername });
   console.log(`✓ @${githubUsername} has been removed. You can now re-invite them.`);
 }
 
@@ -484,7 +519,8 @@ async function runServer(args: string[]): Promise<void> {
     }
   }
 
-  const logger = makeConsoleLogger();
+  logInfo("team_server", { event: "start", workspaces: workspaceNames.join(",") });
+  const logger = makeCompositeLogger(makeConsoleLogger(), makeFileLogger());
   const handles: SyncHandle[] = [];
 
   console.log(`Sync server started — watching ${workspaceNames.length} workspace(s)\n`);
@@ -493,9 +529,11 @@ async function runServer(args: string[]): Promise<void> {
     const topic = deriveTopicBuffer(name, team.secret).toString("hex");
     const handle = startSync(db, name, logger);
     if (!handle) {
+      logWarn("team_server", { event: "workspace_skip", workspace: name, reason: "already_running" });
       console.log(`  ${name.padEnd(20)} ⚠ Sync already running for this workspace — skipping`);
       continue;
     }
+    logInfo("team_server", { event: "workspace_started", workspace: name, role: team.role });
     console.log(`  ${name.padEnd(20)} topic: ${topic.slice(0, 6)}…   role: ${team.role}`);
     handles.push(handle);
   }

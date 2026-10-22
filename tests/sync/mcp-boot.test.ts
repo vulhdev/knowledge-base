@@ -98,7 +98,7 @@ describe("startSyncFromClaudeMd", () => {
 
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     startSyncFromClaudeMd(db, dir);
-    expect(startSync).toHaveBeenCalledWith(db, "test-ws");
+    expect(startSync).toHaveBeenCalledWith(db, "test-ws", expect.objectContaining({ onPeerConnect: expect.any(Function) }));
     expect(stderrSpy).toHaveBeenCalledWith('[knowledge-base] sync started for workspace "test-ws"\n');
     stderrSpy.mockRestore();
   });
