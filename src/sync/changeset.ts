@@ -66,6 +66,23 @@ function toBlob(val: unknown): Buffer {
   return Buffer.from(String(val), "utf8");
 }
 
+// val can hold any column value (string, number, null, or BLOB). Unlike pk/site_id,
+// strings and numbers must pass through unchanged — only Buffer-like objects from the
+// JSON round-trip need to be converted back to a real Buffer so better-sqlite3 can
+// bind them as blobs (e.g. contents.embedding).
+function toSqliteVal(val: unknown): unknown {
+  if (Buffer.isBuffer(val)) return val;
+  if (
+    typeof val === "object" &&
+    val !== null &&
+    (val as { type?: unknown }).type === "Buffer" &&
+    Array.isArray((val as { data?: unknown }).data)
+  ) {
+    return Buffer.from((val as { data: number[] }).data);
+  }
+  return val;
+}
+
 export function applyChanges(db: Database.Database, rows: ChangesetRow[]): void {
   if (rows.length > MAX_CHANGESET_ROWS) {
     throw new Error(`Changeset too many rows: ${rows.length} (max ${MAX_CHANGESET_ROWS})`);
@@ -93,7 +110,7 @@ export function applyChanges(db: Database.Database, rows: ChangesetRow[]): void 
   );
   db.transaction(() => {
     for (const row of rows) {
-      stmt.run(row.tbl, toBlob(row.pk), row.cid, row.val, row.col_version, row.db_version, toBlob(row.site_id), row.cl, row.seq);
+      stmt.run(row.tbl, toBlob(row.pk), row.cid, toSqliteVal(row.val), row.col_version, row.db_version, toBlob(row.site_id), row.cl, row.seq);
     }
   })();
 }

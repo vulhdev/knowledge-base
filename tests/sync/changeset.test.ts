@@ -137,4 +137,40 @@ describe("applyChanges", () => {
     const rows = [{ tbl: "contents", pk: "abc", cid: "title", val: "x", col_version: 1, db_version: -1, site_id: "aa", cl: 1, seq: 0 }];
     expect(() => applyChanges({} as unknown as import("better-sqlite3").Database, rows)).toThrow(/invalid.*db_version/i);
   });
+
+  it("converts Buffer-like val objects (e.g. embedding blobs) back to Buffer before binding", async () => {
+    const { applyChanges } = await import("../../src/sync/changeset.js");
+    const blobVal = { type: "Buffer", data: [1, 2, 3, 4] };
+    const rows = [{ tbl: "contents", pk: "abc", cid: "embedding", val: blobVal, col_version: 1, db_version: 1, site_id: "aa", cl: 1, seq: 0 }];
+    let capturedVal: unknown;
+    const mockDb = {
+      prepare: () => ({
+        run: (_tbl: unknown, _pk: unknown, _cid: unknown, val: unknown) => { capturedVal = val; },
+      }),
+      transaction: (fn: () => void) => fn,
+    } as unknown as import("better-sqlite3").Database;
+    applyChanges(mockDb, rows);
+    expect(Buffer.isBuffer(capturedVal)).toBe(true);
+    expect(capturedVal).toEqual(Buffer.from([1, 2, 3, 4]));
+  });
+
+  it("passes string and number val through unchanged (not converted to Buffer)", async () => {
+    const { applyChanges } = await import("../../src/sync/changeset.js");
+    const capturedVals: unknown[] = [];
+    const mockDb = {
+      prepare: () => ({
+        run: (_tbl: unknown, _pk: unknown, _cid: unknown, val: unknown) => { capturedVals.push(val); },
+      }),
+      transaction: (fn: () => void) => fn,
+    } as unknown as import("better-sqlite3").Database;
+    const rows = [
+      { tbl: "contents", pk: "a", cid: "type", val: "spec", col_version: 1, db_version: 1, site_id: "aa", cl: 1, seq: 0 },
+      { tbl: "contents", pk: "a", cid: "version_number", val: 3, col_version: 1, db_version: 1, site_id: "aa", cl: 1, seq: 0 },
+      { tbl: "contents", pk: "a", cid: "title", val: null, col_version: 1, db_version: 1, site_id: "aa", cl: 1, seq: 0 },
+    ];
+    applyChanges(mockDb, rows);
+    expect(capturedVals[0]).toBe("spec");
+    expect(capturedVals[1]).toBe(3);
+    expect(capturedVals[2]).toBeNull();
+  });
 });
