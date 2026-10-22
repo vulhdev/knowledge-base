@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type Database from "better-sqlite3";
+import { createTestDb } from "../setup.js";
+import { loadCrsqlite, isCrsqliteReady } from "../../src/team/crsqlite.js";
 
 vi.mock("../../src/sync/join.js", () => ({
   handleJoinRequest: vi.fn().mockResolvedValue({ accepted: true, secret: "s".repeat(64) }),
@@ -275,5 +277,70 @@ describe("pusher registry", () => {
     const unregister = registerPusher("ws-e", fn);
     unregister();
     expect(() => unregister()).not.toThrow(); // double unregister safe
+  });
+});
+
+// ── Task 5: integration tests with real DBs ───────────────────────────────────
+
+describe("push-on-write integration", () => {
+  it.skipIf(!isCrsqliteReady())("pushDelta sends real CRSQLite rows written after sync handshake", async () => {
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+    const { decodeChangeset } = await import("../../src/sync/changeset.js");
+
+    // Load CRSQLite into a minimal in-memory DB (not createTestDb — that has unique indices
+    // on contents which CRSQLite forbids when calling crsql_as_crr)
+    const Database = (await import("better-sqlite3")).default;
+    const hostDb = new Database(":memory:");
+    loadCrsqlite(hostDb);
+    // Minimal contents table — no unique indices except PK so crsql_as_crr succeeds
+    hostDb.exec("CREATE TABLE contents (id TEXT PRIMARY KEY NOT NULL, type TEXT DEFAULT '', body TEXT DEFAULT '')");
+    hostDb.exec("SELECT crsql_as_crr('contents')");
+
+    const socket = new MockSocket();
+    const { pushDelta } = handleSyncConnection(hostDb, "test-ws", socket as unknown as NodeJS.ReadWriteStream);
+
+    // Simulate peer handshake so peerVersion is set and initial changeset is sent
+    await new Promise<void>((resolve) => {
+      process.nextTick(() => {
+        socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 0 }) + "\n"));
+        resolve();
+      });
+    });
+    await new Promise<void>((r) => process.nextTick(r));
+
+    // Record writes so far (handshake + initial changeset; contents is a CRR table, currently empty)
+    const writesBefore = socket.writes.length;
+
+    // Write a new content row (CRR table → tracked by crsql_changes)
+    hostDb.prepare("INSERT INTO contents (id, type, body) VALUES ('c1', 'idea', 'hello push-on-write')").run();
+
+    // pushDelta should send the new CRSQLite changeset
+    pushDelta();
+
+    expect(socket.writes.length).toBeGreaterThan(writesBefore);
+
+    // Verify the last frame decodes to real changeset rows
+    const lastWrite = socket.writes[socket.writes.length - 1];
+    const size = lastWrite.readUInt32BE(0);
+    const rows = decodeChangeset(lastWrite.slice(4, 4 + size));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.some(r => r.tbl === "contents")).toBe(true);
+  });
+
+  it("unregister stops pushes after socket close", async () => {
+    const { registerPusher, pushToWorkspace } = await import("../../src/sync/push.js");
+
+    const pushFn = vi.fn();
+    const unregister = registerPusher("integration-ws", pushFn);
+
+    pushToWorkspace("integration-ws");
+    expect(pushFn).toHaveBeenCalledOnce();
+
+    // Simulate close
+    unregister();
+
+    pushFn.mockClear();
+    pushToWorkspace("integration-ws");
+    expect(pushFn).not.toHaveBeenCalled();
   });
 });
