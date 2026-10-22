@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { LinkedContent, LineageResult } from "../types.js";
+import { logInfo } from "../log/logger.js";
 
 // One statement for the whole lineage, so the number of queries no longer grows with it.
 // `up` follows only the smallest-rowid parent (the row the old per-node `.get()` returned);
@@ -101,6 +102,8 @@ function copyNode(node: LinkedContent): LinkedContent {
 }
 
 export function getLineage(db: Database.Database, contentId: string): LineageResult {
+  const t0 = Date.now();
+  logInfo("get_lineage", { event: "start", id: contentId });
   const rows = lineageStatement(db).all(contentId, contentId) as LineageRow[];
   const graph = buildGraph(rows);
 
@@ -111,6 +114,7 @@ export function getLineage(db: Database.Database, contentId: string): LineageRes
   const ancestors = walkAncestors(graph, contentId);
   const descendants = walkDescendants(graph, contentId);
 
+  logInfo("get_lineage", { event: "done", ms: String(Date.now() - t0), ancestors: ancestors.length, descendants: descendants.length });
   return { root, ancestors, descendants };
 }
 

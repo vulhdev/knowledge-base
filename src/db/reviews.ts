@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { logInfo } from "../log/logger.js";
 
 export interface Review {
   id: number;
@@ -121,7 +122,9 @@ export function resolveReview(db: Database.Database, reviewId: number): Review {
 }
 
 export function listContentsWithPendingReview(db: Database.Database): ContentWithReview[] {
-  return db
+  const t0 = Date.now();
+  logInfo("list_contents_with_pending_review", { event: "start" });
+  const results = db
     .prepare(
       `SELECT c.id, c.title, c.type, w.name AS workspace, MIN(f.name) AS feature
        FROM contents c
@@ -134,4 +137,6 @@ export function listContentsWithPendingReview(db: Database.Database): ContentWit
        ORDER BY MAX(r.committed_at) DESC`,
     )
     .all() as ContentWithReview[];
+  logInfo("list_contents_with_pending_review", { event: "done", ms: String(Date.now() - t0), count: results.length });
+  return results;
 }
