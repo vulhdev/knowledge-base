@@ -10,7 +10,10 @@ services:
     build:
       context: ..
       dockerfile: e2e/Dockerfile.e2e
-    command: ["/app/node_modules/.bin/hyperdht", "--bootstrap", "--port", "49737"]
+    entrypoint: ["/bin/sh"]
+    command: ["/e2e/bootstrap-entrypoint.sh"]
+    volumes:
+      - ../e2e:/e2e:ro
     networks:
       - e2e
     healthcheck:

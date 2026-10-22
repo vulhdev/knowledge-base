@@ -19,4 +19,8 @@ COPY assets/ ./assets/
 # hyperdht bootstrap CLI is a transitive dep, expose it
 RUN ln -s /app/node_modules/.bin/hyperdht /usr/local/bin/hyperdht || true
 
+# Pre-download CRSQLite extension for team sync (linux/x64).
+# This creates settings.json as a side effect; entrypoints delete it so DB_PATH takes effect.
+RUN echo "import { downloadCrsqlite } from '/app/dist/team/crsqlite.js'; await downloadCrsqlite();" | node --input-type=module
+
 ENTRYPOINT ["node"]
