@@ -94,21 +94,33 @@ async function runJoin(args: string[]): Promise<void> {
   }
 
   p.intro("Joining team workspace");
-  p.log.info("Authenticate with GitHub to verify your identity.");
+
+  const authArgs = parseGitHubAuthArgs(args);
+  if (authArgs.noAuth === "error") {
+    console.error(`Error: ${authArgs.message}`);
+    process.exit(1);
+  }
 
   let githubToken: string;
   let githubUsername: string;
-  try {
-    const flow = await startDeviceFlow();
-    p.log.info(`Open ${flow.verificationUri} and enter code: ${flow.userCode}`);
-    const spinner = p.spinner();
-    spinner.start("Waiting for GitHub authorization…");
-    githubToken = await pollForToken(flow.deviceCode, flow.interval, flow.expiresIn);
-    githubUsername = await getGitHubUsername(githubToken);
-    spinner.stop(`Authenticated as @${githubUsername}`);
-  } catch (err) {
-    p.log.error(`GitHub authentication failed: ${String(err)}`);
-    process.exit(1);
+  if (authArgs.noAuth) {
+    githubToken = "no-github-auth-token";
+    githubUsername = authArgs.username;
+    p.log.info(`Skipping GitHub auth (--no-github-auth) — joining as @${githubUsername}`);
+  } else {
+    p.log.info("Authenticate with GitHub to verify your identity.");
+    try {
+      const flow = await startDeviceFlow();
+      p.log.info(`Open ${flow.verificationUri} and enter code: ${flow.userCode}`);
+      const spinner = p.spinner();
+      spinner.start("Waiting for GitHub authorization…");
+      githubToken = await pollForToken(flow.deviceCode, flow.interval, flow.expiresIn);
+      githubUsername = await getGitHubUsername(githubToken);
+      spinner.stop(`Authenticated as @${githubUsername}`);
+    } catch (err) {
+      p.log.error(`GitHub authentication failed: ${String(err)}`);
+      process.exit(1);
+    }
   }
 
   const kp = generateNoiseKeypair();
@@ -196,6 +208,17 @@ async function runJoin(args: string[]): Promise<void> {
   }
 
   await promptMerge(db, workspaceName);
+}
+
+export function parseGitHubAuthArgs(
+  args: string[],
+): { noAuth: true; username: string } | { noAuth: false } | { noAuth: "error"; message: string } {
+  if (!args.includes("--no-github-auth")) return { noAuth: false };
+  const idx = args.indexOf("--username");
+  if (idx === -1 || !args[idx + 1]) {
+    return { noAuth: "error", message: "--username <name> is required with --no-github-auth" };
+  }
+  return { noAuth: true, username: args[idx + 1] };
 }
 
 export async function promptMerge(

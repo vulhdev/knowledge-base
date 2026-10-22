@@ -41,6 +41,36 @@ function makeMockSocket() {
   return socket;
 }
 
+describe("parseGitHubAuthArgs", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("returns noAuth:false when --no-github-auth flag is absent", async () => {
+    const { parseGitHubAuthArgs } = await import("../../src/bin/team.js");
+    expect(parseGitHubAuthArgs(["join", "invite123"])).toEqual({ noAuth: false });
+  });
+
+  it("returns error when --no-github-auth is present but --username is missing", async () => {
+    const { parseGitHubAuthArgs } = await import("../../src/bin/team.js");
+    const result = parseGitHubAuthArgs(["join", "--no-github-auth", "invite123"]);
+    expect(result).toMatchObject({ noAuth: "error" });
+    expect((result as { message: string }).message).toMatch(/--username/i);
+  });
+
+  it("returns username when --no-github-auth and --username are both present", async () => {
+    const { parseGitHubAuthArgs } = await import("../../src/bin/team.js");
+    const result = parseGitHubAuthArgs(["join", "--no-github-auth", "--username", "alice", "invite123"]);
+    expect(result).toEqual({ noAuth: true, username: "alice" });
+  });
+
+  it("is order-independent: --username before --no-github-auth works", async () => {
+    const { parseGitHubAuthArgs } = await import("../../src/bin/team.js");
+    const result = parseGitHubAuthArgs(["--username", "alice", "--no-github-auth", "invite123"]);
+    expect(result).toEqual({ noAuth: true, username: "alice" });
+  });
+});
+
 describe("attemptJoin", () => {
   const HOST_PUBLIC_KEY = "a".repeat(64);
   const PEER_PUBLIC_KEY = "b".repeat(64);
