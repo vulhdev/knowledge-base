@@ -1,0 +1,63 @@
+version: "3.9"
+
+networks:
+  e2e:
+    driver: bridge
+
+volumes:
+  shared:   # host writes invite code here; peer reads it
+
+services:
+  bootstrap:
+    build:
+      context: ..
+      dockerfile: e2e/Dockerfile.e2e
+    command: ["/app/node_modules/.bin/hyperdht", "--bootstrap", "--host", "0.0.0.0", "--port", "49737"]
+    networks:
+      - e2e
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const s=require('node:net').createConnection(49737,'127.0.0.1');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))\""]
+      interval: 2s
+      retries: 15
+      start_period: 3s
+
+  host:
+    build:
+      context: ..
+      dockerfile: e2e/Dockerfile.e2e
+    command: ["/bin/sh", "/e2e/host-entrypoint.sh"]
+    depends_on:
+      bootstrap:
+        condition: service_healthy
+    environment:
+      KB_DHT_BOOTSTRAP: "bootstrap:49737"
+      KB_E2E_NO_GITHUB_AUTH: "1"
+      DB_PATH: /data/host.db
+    volumes:
+      - shared:/shared
+      - ../e2e:/e2e:ro
+    networks:
+      - e2e
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /shared/invite.txt"]
+      interval: 2s
+      retries: 20
+      start_period: 5s
+
+  peer:
+    build:
+      context: ..
+      dockerfile: e2e/Dockerfile.e2e
+    command: ["/bin/sh", "/e2e/peer-entrypoint.sh"]
+    depends_on:
+      host:
+        condition: service_healthy
+    environment:
+      KB_DHT_BOOTSTRAP: "bootstrap:49737"
+      KB_E2E_NO_GITHUB_AUTH: "1"
+      DB_PATH: /data/peer.db
+    volumes:
+      - shared:/shared
+      - ../e2e:/e2e:ro
+    networks:
+      - e2e
