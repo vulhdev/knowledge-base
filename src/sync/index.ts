@@ -1,5 +1,4 @@
 import type Database from "better-sqlite3";
-import Hyperswarm from "hyperswarm";
 import { createSwarm } from "./peer.js";
 import { deriveJoinTopic, handleJoinRequest } from "./join.js";
 import { decodeChangeset, encodeChangeset, getChanges, applyChanges, MAX_CHANGESET_BYTES } from "./changeset.js";
@@ -247,17 +246,6 @@ export function handleJoinConnection(
 
 type MockableSocket = { writable?: boolean };
 
-function lookupUsername(db: Database.Database, publicKey: string): string | null {
-  try {
-    const row = db
-      .prepare("SELECT github_username FROM team_peers WHERE public_key = ?")
-      .get(publicKey) as { github_username: string | null } | undefined;
-    return row?.github_username ?? null;
-  } catch {
-    return null;
-  }
-}
-
 export function startSync(
   db: Database.Database,
   workspaceName: string,
@@ -274,10 +262,48 @@ export function startSync(
 
   const { swarm, destroy: destroySwarm } = createSwarm(db, workspaceName);
   swarm.on("error", () => { /* swarm-level errors (e.g. DHT timeouts) are expected */ });
-  swarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
+
+  // Join the join topic on the SAME swarm to avoid DHT routing conflicts that arise when two
+  // Hyperswarm instances share an identical noise keypair (same DHT node identity).
+  const joinTopic = team.role === "host"
+    ? deriveJoinTopic(workspaceName, team.noise_public_key)
+    : null;
+  if (joinTopic) {
+    swarm.join(joinTopic);
+  }
+
+  swarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer; topics: Buffer[] }) => {
     (socket as NodeJS.EventEmitter).on("error", () => { /* ECONNRESET and other connection errors are expected */ });
     const publicKey = info.publicKey.toString("hex");
-    const username = lookupUsername(db, publicKey);
+
+    const peerRow = db
+      .prepare("SELECT is_active, github_username FROM team_peers WHERE public_key = ?")
+      .get(publicKey) as { is_active: number; github_username: string | null } | undefined;
+
+    if (peerRow?.is_active === 0) {
+      (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy();
+      return;
+    }
+
+    const isActivePeer = peerRow?.is_active === 1;
+    const isJoinConn = !isActivePeer && joinTopic !== null &&
+      info.topics.some(t => Buffer.compare(t, joinTopic) === 0);
+
+    if (isJoinConn) {
+      logger?.onJoinConnect(workspaceName, publicKey);
+      handleJoinConnection(db, workspaceName, socket, info.publicKey, {
+        onJoinAttempt: (u) => logger?.onJoinAttempt(workspaceName, u),
+        onJoinResult: (u, accepted, reason) => logger?.onJoinResult(workspaceName, u, accepted, reason),
+      });
+      return;
+    }
+
+    if (!isActivePeer) {
+      (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy();
+      return;
+    }
+
+    const username = peerRow?.github_username ?? null;
     logger?.onPeerConnect(workspaceName, username, publicKey);
     (socket as NodeJS.EventEmitter).once("close", () => {
       logger?.onPeerDisconnect(workspaceName, username, publicKey);
@@ -288,28 +314,8 @@ export function startSync(
     });
   });
 
-  let joinSwarm: InstanceType<typeof Hyperswarm> | null = null;
-  if (team.role === "host") {
-    const keyPair = {
-      publicKey: Buffer.from(team.noise_public_key, "hex"),
-      secretKey: Buffer.from(team.noise_secret_key, "hex"),
-    };
-    joinSwarm = new Hyperswarm({ keyPair });
-    joinSwarm.join(deriveJoinTopic(workspaceName, team.noise_public_key));
-    joinSwarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
-      (socket as NodeJS.EventEmitter).on("error", () => { /* ECONNRESET and other connection errors are expected */ });
-      logger?.onJoinConnect(workspaceName, info.publicKey.toString("hex"));
-      handleJoinConnection(db, workspaceName, socket, info.publicKey, {
-        onJoinAttempt: (u) => logger?.onJoinAttempt(workspaceName, u),
-        onJoinResult: (u, accepted, reason) => logger?.onJoinResult(workspaceName, u, accepted, reason),
-      });
-    });
-    joinSwarm.on("error", () => { /* swarm-level errors (e.g. DHT timeouts) are expected */ });
-  }
-
   return {
     destroy: async () => {
-      if (joinSwarm) await joinSwarm.destroy();
       await destroySwarm();
       release();
     },

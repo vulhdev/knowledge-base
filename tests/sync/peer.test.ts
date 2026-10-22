@@ -19,11 +19,11 @@ describe("createFirewall", () => {
   let db: Database.Database;
   beforeEach(() => { db = createTestDb(); });
 
-  it("blocks unknown peers (not in team_peers)", async () => {
+  it("allows unknown peers (not in team_peers) — they may be joining", async () => {
     const { createFirewall } = await import("../../src/sync/peer.js");
     const firewall = createFirewall(db);
     const blocked = firewall(Buffer.from("d".repeat(64), "hex"));
-    expect(blocked).toBe(true);
+    expect(blocked).toBe(false);
   });
 
   it("allows active peers", async () => {

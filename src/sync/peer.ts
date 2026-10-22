@@ -19,7 +19,8 @@ export function createFirewall(db: Database.Database): (remotePublicKey: Buffer)
     const row = db
       .prepare("SELECT is_active FROM team_peers WHERE public_key = ?")
       .get(hexKey) as { is_active: number } | undefined;
-    return !(row?.is_active === 1);
+    // Only block kicked peers. Unknown peers may be joining and are handled by the connection handler.
+    return row?.is_active === 0;
   };
 }
 
