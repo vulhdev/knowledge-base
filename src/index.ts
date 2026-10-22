@@ -24,11 +24,14 @@ import { patchContent } from "./tools/patch-content.js";
 import { appendContent } from "./tools/append-content.js";
 import { createVersion } from "./tools/create-version.js";
 import { listVersions } from "./tools/list-versions.js";
-import { insertErrorLog } from "./db/error-log.js";
+
 import { startSyncFromClaudeMd } from "./sync/boot.js";
 import { pushToAllWorkspaces } from "./sync/push.js";
+import { logError } from './log/logger.js';
+import { initRotation } from './log/rotate.js';
 
 const db = openDb();
+initRotation();
 startSyncFromClaudeMd(db);
 
 const server = new McpServer({
@@ -106,7 +109,7 @@ server.tool(
       pushToAllWorkspaces();
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
-      insertErrorLog(db, "create_content", err instanceof Error ? err.message : String(err));
+      logError("create_content", err);
       return errorContent(err);
     }
   },
@@ -126,7 +129,7 @@ server.tool(
       pushToAllWorkspaces();
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
-      insertErrorLog(db, "attach_feature", err instanceof Error ? err.message : String(err));
+      logError("attach_feature", err);
       return errorContent(err);
     }
   },
@@ -146,7 +149,7 @@ server.tool(
       pushToAllWorkspaces();
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
-      insertErrorLog(db, "detach_feature", err instanceof Error ? err.message : String(err));
+      logError("detach_feature", err);
       return errorContent(err);
     }
   },
@@ -163,7 +166,7 @@ server.tool(
       const result = getContent(db, id);
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
-      insertErrorLog(db, "get_content", err instanceof Error ? err.message : String(err));
+      logError("get_content", err);
       return errorContent(err);
     }
   },
@@ -184,7 +187,7 @@ server.tool(
       const result = listContents(db, workspace, feature, type, limit, offset);
       return { content: [{ type: "text", text: formatPage(result, result.results) }] };
     } catch (err) {
-      insertErrorLog(db, "list_contents", err instanceof Error ? err.message : String(err));
+      logError("list_contents", err);
       return errorContent(err);
     }
   },
@@ -205,7 +208,7 @@ server.tool(
       const page = await searchSemantic(db, query, workspace, type, limit, offset);
       return { content: [{ type: "text", text: formatPage(page, page.results) }] };
     } catch (err) {
-      insertErrorLog(db, "search_semantic", err instanceof Error ? err.message : String(err));
+      logError("search_semantic", err);
       return errorContent(err);
     }
   },
@@ -226,7 +229,7 @@ server.tool(
       pushToAllWorkspaces();
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
-      insertErrorLog(db, "update_content", err instanceof Error ? err.message : String(err));
+      logError("update_content", err);
       return errorContent(err);
     }
   },
@@ -247,7 +250,7 @@ server.tool(
       pushToAllWorkspaces();
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
-      insertErrorLog(db, "patch_content", err instanceof Error ? err.message : String(err));
+      logError("patch_content", err);
       return errorContent(err);
     }
   },
@@ -266,7 +269,7 @@ server.tool(
       pushToAllWorkspaces();
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
-      insertErrorLog(db, "append_content", err instanceof Error ? err.message : String(err));
+      logError("append_content", err);
       return errorContent(err);
     }
   },
@@ -285,7 +288,7 @@ server.tool(
       pushToAllWorkspaces();
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "delete_content", err instanceof Error ? err.message : String(err));
+      logError("delete_content", err);
       return errorContent(err);
     }
   },
@@ -304,7 +307,7 @@ server.tool(
       pushToAllWorkspaces();
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "link_content", err instanceof Error ? err.message : String(err));
+      logError("link_content", err);
       return errorContent(err);
     }
   },
@@ -325,7 +328,7 @@ server.tool(
       pushToAllWorkspaces();
       return { content: [{ type: "text", text: formatSingle(result) }] };
     } catch (err) {
-      insertErrorLog(db, "derive_content", err instanceof Error ? err.message : String(err));
+      logError("derive_content", err);
       return errorContent(err);
     }
   },
@@ -342,7 +345,7 @@ server.tool(
       const result = getLineage(db, content_id);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "get_lineage", err instanceof Error ? err.message : String(err));
+      logError("get_lineage", err);
       return errorContent(err);
     }
   },
@@ -364,7 +367,7 @@ server.tool(
       const result = attachCodeRef(db, content_id, commit_hash, file_paths, task_ref);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "attach_code_ref", err instanceof Error ? err.message : String(err));
+      logError("attach_code_ref", err);
       return errorContent(err);
     }
   },
@@ -381,7 +384,7 @@ server.tool(
       const result = getCodeRefs(db, content_id);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "get_code_refs", err instanceof Error ? err.message : String(err));
+      logError("get_code_refs", err);
       return errorContent(err);
     }
   },
@@ -399,7 +402,7 @@ server.tool(
       const result = openForReview(db, content_id, port);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "open_for_review", err instanceof Error ? err.message : String(err));
+      logError("open_for_review", err);
       return errorContent(err);
     }
   },
@@ -417,9 +420,7 @@ server.tool(
       const result = await waitForReview(db, content_id, timeout_seconds);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const isTimeout = msg.includes("not committed within");
-      insertErrorLog(db, "wait_for_review", msg, isTimeout ? "warning" : "error");
+      logError("wait_for_review", err);
       return errorContent(err);
     }
   },
@@ -436,7 +437,7 @@ server.tool(
       const result = getPendingReviewTool(db, content_id);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "get_pending_review", err instanceof Error ? err.message : String(err));
+      logError("get_pending_review", err);
       return errorContent(err);
     }
   },
@@ -451,7 +452,7 @@ server.tool(
       const results = listContentsWithPendingReview(db);
       return { content: [{ type: "text", text: toText(results) }] };
     } catch (err) {
-      insertErrorLog(db, "list_contents_with_pending_review", err instanceof Error ? err.message : String(err));
+      logError("list_contents_with_pending_review", err);
       return errorContent(err);
     }
   },
@@ -466,7 +467,7 @@ server.tool(
       const result = resolveComment(db, comment_id);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "resolve_comment", err instanceof Error ? err.message : String(err));
+      logError("resolve_comment", err);
       return errorContent(err);
     }
   },
@@ -481,7 +482,7 @@ server.tool(
       const result = resolveReview(db, review_id);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "resolve_review", err instanceof Error ? err.message : String(err));
+      logError("resolve_review", err);
       return errorContent(err);
     }
   },
@@ -499,7 +500,7 @@ server.tool(
       pushToAllWorkspaces();
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "create_version", err instanceof Error ? err.message : String(err));
+      logError("create_version", err);
       return errorContent(err);
     }
   },
@@ -516,7 +517,7 @@ server.tool(
       const result = listVersions(db, id);
       return { content: [{ type: "text", text: toText(result) }] };
     } catch (err) {
-      insertErrorLog(db, "list_versions", err instanceof Error ? err.message : String(err));
+      logError("list_versions", err);
       return errorContent(err);
     }
   },
