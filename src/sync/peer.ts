@@ -1,4 +1,5 @@
 import Hyperswarm from "hyperswarm";
+import HyperDHT from "hyperdht";
 import { createHash } from "node:crypto";
 import { getTeamByName } from "../db/team.js";
 import type Database from "better-sqlite3";
@@ -43,7 +44,13 @@ export function createSwarm(db: Database.Database, workspaceName: string): Swarm
   };
 
   const bootstrap = parseBootstrapEnv();
-  const swarm = new Hyperswarm({ keyPair, firewall: createFirewall(db), ...(bootstrap && { bootstrap }) });
+  // KB_DHT_OPEN=1: Docker bridge IPs are bogon so dht-rpc's default firewalled=true makes
+  // remoteAddress() return null → FIREWALL.UNKNOWN → holepunch fails inside Docker bridge.
+  // With firewalled=false remoteAddress() returns the container IP → FIREWALL.OPEN → direct.
+  const dhtNode = process.env.KB_DHT_OPEN === "1"
+    ? new HyperDHT({ ...(bootstrap && { bootstrap }), firewalled: false })
+    : undefined;
+  const swarm = new Hyperswarm({ keyPair, firewall: createFirewall(db), ...(dhtNode ? { dht: dhtNode } : (bootstrap && { bootstrap })) });
   const topic = deriveTopicBuffer(workspaceName, team.secret);
   swarm.join(topic);
 

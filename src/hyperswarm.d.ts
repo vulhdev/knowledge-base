@@ -1,3 +1,14 @@
+declare module "hyperdht" {
+  interface DHTOptions {
+    bootstrap?: { host: string; port: number }[];
+    firewalled?: boolean;
+  }
+  export default class HyperDHT {
+    constructor(options?: DHTOptions);
+    destroy(): Promise<void>;
+  }
+}
+
 declare module "hyperswarm" {
   import { EventEmitter } from "node:events";
 
@@ -11,6 +22,8 @@ declare module "hyperswarm" {
     firewall?: (remotePublicKey: Buffer) => boolean;
     maxPeers?: number;
     seed?: Buffer;
+    bootstrap?: { host: string; port: number }[];
+    dht?: object;
   }
 
   interface PeerInfo {

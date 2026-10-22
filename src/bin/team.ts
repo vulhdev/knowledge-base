@@ -2,6 +2,7 @@
 import type Database from "better-sqlite3";
 import * as p from "@clack/prompts";
 import Hyperswarm from "hyperswarm";
+import HyperDHT from "hyperdht";
 import { loadSettings, writeSettings } from "../config.js";
 import { openDb } from "../db/client.js";
 import { getTeamByName, insertTeam, listTeamWorkspaces } from "../db/team.js";
@@ -136,12 +137,16 @@ async function runJoin(args: string[]): Promise<void> {
         return { host: host ?? "127.0.0.1", port: Number(portStr) };
       })
     : undefined;
+  // KB_DHT_OPEN=1: same firewalled=false fix as createSwarm — needed for Docker bridge E2E.
+  const dhtNode = process.env.KB_DHT_OPEN === "1"
+    ? new HyperDHT({ ...(bootstrap && { bootstrap }), firewalled: false })
+    : undefined;
   const swarm = new Hyperswarm({
     keyPair: {
       publicKey: Buffer.from(kp.publicKey, "hex"),
       secretKey: Buffer.from(kp.secretKey, "hex"),
     },
-    ...(bootstrap && { bootstrap }),
+    ...(dhtNode ? { dht: dhtNode } : (bootstrap && { bootstrap })),
   });
 
   const diagnostics: string[] = [];
@@ -295,8 +300,11 @@ export async function attemptJoin(
         const newline = buf.indexOf(0x0a);
         if (newline === -1) return;
         const line = buf.slice(0, newline).toString("utf8");
-        // Remove this listener so the socket is clean for the sync protocol handler
+        // Remove this listener so the socket is clean for the sync protocol handler.
+        // Pause immediately after to prevent incoming bytes from being discarded while
+        // the stream has no "data" listener — handleSyncConnection will resume it.
         (socket as NodeJS.ReadableStream).removeListener("data", onData);
+        (socket as NodeJS.ReadableStream).pause();
         try {
           const result = JSON.parse(line) as { type: string; accepted: boolean; secret?: string; reason?: string };
           if (result.accepted && result.secret) {

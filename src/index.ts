@@ -35,8 +35,7 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-// sampling was removed from ServerCapabilities in MCP SDK 1.20+; use type cast for compatibility.
-server.server.registerCapabilities({ sampling: {} } as Parameters<typeof server.server.registerCapabilities>[0]);
+server.server.registerCapabilities({ sampling: {} });
 
 async function requestSampling(prompt: string): Promise<string> {
   const result = await server.server.createMessage({
