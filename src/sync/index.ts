@@ -7,6 +7,7 @@ import type { ActivityLogger } from "./activity.js";
 import { rebuildFts } from "./rebuild.js";
 import { getTeamByName, updateLastSynced } from "../db/team.js";
 import { acquireSyncLock } from "./lock.js";
+import { registerPusher } from "./push.js";
 
 const MAX_HANDSHAKE_BYTES = 4 * 1024;   // generous for {"v":1,"dbVersion":9999999}
 const MAX_JOIN_REQUEST_BYTES = 8 * 1024; // generous for a join_request JSON
@@ -23,6 +24,7 @@ type SyncCallbacks = {
 type JoinCallbacks = {
   onJoinAttempt?: (githubUsername: string) => void;
   onJoinResult?: (githubUsername: string, accepted: boolean, reason?: string) => void;
+  onSyncStarted?: (handle: { pushDelta: () => void }) => void;
 };
 
 export function recordSyncTimestamp(db: Database.Database, workspaceName: string): void {
@@ -249,7 +251,8 @@ export function handleJoinConnection(
           // Reuse the open join socket for initial sync — peer calls performInitialSyncOnSocket
           // on the same socket, eliminating the DHT round-trip that caused timeouts.
           if (result.accepted) {
-            handleSyncConnection(db, workspaceName, socket);
+            const syncHandle = handleSyncConnection(db, workspaceName, socket);
+            callbacks?.onSyncStarted?.(syncHandle);
           }
         }
       }).catch(() => {
@@ -321,6 +324,10 @@ export function startSync(
       handleJoinConnection(db, workspaceName, socket, info.publicKey, {
         onJoinAttempt: (u) => logger?.onJoinAttempt(workspaceName, u),
         onJoinResult: (u, accepted, reason) => logger?.onJoinResult(workspaceName, u, accepted, reason),
+        onSyncStarted: ({ pushDelta }) => {
+          const unregister = registerPusher(workspaceName, pushDelta);
+          (socket as NodeJS.EventEmitter).once("close", unregister);
+        },
       });
       return;
     }
@@ -335,10 +342,12 @@ export function startSync(
     (socket as NodeJS.EventEmitter).once("close", () => {
       logger?.onPeerDisconnect(workspaceName, username, publicKey);
     });
-    handleSyncConnection(db, workspaceName, socket, {
+    const { pushDelta } = handleSyncConnection(db, workspaceName, socket, {
       onChangesReceived: (rows) => logger?.onChangesetReceived(workspaceName, username, rows, db),
       onChangesSent: (count) => logger?.onChangesetSent(workspaceName, username, count),
     });
+    const unregister = registerPusher(workspaceName, pushDelta);
+    (socket as NodeJS.EventEmitter).once("close", unregister);
   });
 
   return {

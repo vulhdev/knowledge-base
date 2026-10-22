@@ -3,6 +3,11 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type Database from "better-sqlite3";
 
+vi.mock("../../src/sync/join.js", () => ({
+  handleJoinRequest: vi.fn().mockResolvedValue({ accepted: true, secret: "s".repeat(64) }),
+  deriveJoinTopic: vi.fn().mockReturnValue(Buffer.alloc(32)),
+}));
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 class MockSocket extends EventEmitter {
@@ -187,6 +192,44 @@ describe("handleSyncConnection return value", () => {
     const secondRows = decodeChangeset(secondPushWrite.slice(4));
     expect(secondRows).toHaveLength(1);
     expect(secondRows[0].db_version).toBe(5);
+  });
+});
+
+// ── Task 3: handleJoinConnection calls onSyncStarted ─────────────────────────
+
+describe("handleJoinConnection onSyncStarted", () => {
+  it("calls onSyncStarted with { pushDelta } when join is accepted", async () => {
+    const { handleJoinConnection } = await import("../../src/sync/index.js");
+
+    const NOISE_KEY = Buffer.from("a".repeat(64), "hex");
+
+    // handleJoinRequest is mocked to return accepted:true — DB only needs to serve handleSyncConnection
+    const db = makeMockDb(0);
+
+    const socket = new MockSocket();
+    const onSyncStarted = vi.fn();
+
+    handleJoinConnection(db, "test-ws", socket as unknown as NodeJS.ReadWriteStream, NOISE_KEY, {
+      onSyncStarted,
+    });
+
+    // Emit a valid join_request from the peer — peerPublicKey must match NOISE_KEY hex
+    socket.emit("data", Buffer.from(
+      JSON.stringify({
+        type: "join_request",
+        githubToken: "gho_test",
+        peerPublicKey: "a".repeat(64),
+        githubUsername: "alice",
+      }) + "\n",
+    ));
+
+    // handleJoinRequest is async — wait for the promise to resolve
+    await new Promise<void>((r) => setTimeout(r, 20));
+
+    // onSyncStarted must have been called with an object containing pushDelta
+    expect(onSyncStarted).toHaveBeenCalledOnce();
+    const arg = onSyncStarted.mock.calls[0][0] as { pushDelta?: unknown };
+    expect(typeof arg.pushDelta).toBe("function");
   });
 });
 
