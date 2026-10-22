@@ -8,8 +8,8 @@ export function registerPusher(workspace: string, push: () => void): () => void 
   }
   pushers.add(push);
   return () => {
-    pushers!.delete(push);
-    if (pushers!.size === 0) activePushers.delete(workspace);
+    pushers.delete(push);
+    if (pushers.size === 0) activePushers.delete(workspace);
   };
 }
 

@@ -36,8 +36,6 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-server.server.registerCapabilities({ sampling: {} });
-
 async function requestSampling(prompt: string): Promise<string> {
   const result = await server.server.createMessage({
     messages: [{ role: "user", content: { type: "text", text: prompt } }],
