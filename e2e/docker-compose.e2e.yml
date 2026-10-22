@@ -33,6 +33,7 @@ services:
         condition: service_healthy
     environment:
       KB_DHT_BOOTSTRAP: "bootstrap:49737"
+      KB_DHT_OPEN: "1"
       KB_E2E_NO_GITHUB_AUTH: "1"
       DB_PATH: /data/host.db
     volumes:
@@ -57,6 +58,7 @@ services:
         condition: service_healthy
     environment:
       KB_DHT_BOOTSTRAP: "bootstrap:49737"
+      KB_DHT_OPEN: "1"
       KB_E2E_NO_GITHUB_AUTH: "1"
       DB_PATH: /data/peer.db
     volumes:

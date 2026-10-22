@@ -12,7 +12,8 @@ echo "[peer] Joining with invite: $INVITE"
 
 # cd to homedir so writeWorkspaceToClaude passes its home-directory guard
 cd /root
-node /app/dist/bin/cli.js team join --no-github-auth --username e2e-peer "$INVITE"
+# invite code must be args[0]; flags come after
+node /app/dist/bin/cli.js team join "$INVITE" --no-github-auth --username e2e-peer
 
 echo "[peer] Verifying synced docs..."
 node /e2e/verify-peer.mjs
