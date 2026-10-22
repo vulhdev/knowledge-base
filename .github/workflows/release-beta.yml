@@ -27,6 +27,7 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - run: npm run test:e2e
 
       - name: Publish to npm (beta)
         run: npm publish --tag beta --provenance --access public
