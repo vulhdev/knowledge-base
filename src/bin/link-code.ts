@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 import { openDb } from "../db/client.js";
 import { attachCodeRef } from "../tools/attach-code-ref.js";
 import type { CodeRefFile } from "../types.js";
+import { logInfo, logError } from "../log/logger.js";
 
 function parseArgs(argv: string[]): Record<string, string> {
   const args: Record<string, string> = {};
@@ -87,11 +88,14 @@ async function main(): Promise<void> {
   const taskRef = args["task"];
 
   const db = openDb();
+  logInfo("link_code", { event: "start", content_id: contentId, commit: commitHash.slice(0, 7), files: String(filePaths.length), task: taskRef });
   try {
     attachCodeRef(db, contentId, commitHash, filePaths, taskRef);
     const shortHash = commitHash.slice(0, 7);
+    logInfo("link_code", { event: "done", content_id: contentId, commit: shortHash });
     console.log(`✓ Linked commit ${shortHash} → plan #${contentId} (${taskRef})`);
   } catch (err) {
+    logError("link_code", err instanceof Error ? err : new Error(String(err)));
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }

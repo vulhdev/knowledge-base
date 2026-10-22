@@ -1,6 +1,7 @@
 // knowledge-base import-sources — import personal docs (branch A) and SOT pointers (branch B)
 // into a database chosen by path. Never opens the user's live database.
 import { writeFileSync, mkdirSync } from "node:fs";
+import { logInfo, logError } from "../log/logger.js";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertNotRealDb } from "../db/client.js";
@@ -95,19 +96,28 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   const started = Date.now();
+  logInfo("import_sources", { event: "start", workspace: args.workspace, dirs: String(args.dirs.length), dry_run: String(args.dryRun) });
   const scan = scanSources(args.dirs, { ref: args.ref });
   const plan = buildLoadPlan(scan, args.workspace, args.sotWorkspace);
   if (args.planOut) writeFile(args.planOut, JSON.stringify(plan, null, 2));
 
   if (args.dryRun) {
     if (args.report) writeFile(args.report, renderReport(plan));
+    logInfo("import_sources", { event: "done", workspace: args.workspace, dry_run: "true", ms: String(Date.now() - started) });
     process.stdout.write(JSON.stringify({ dry_run: true, db: args.db, kb_commit: kbCommit(), stats: plan.stats, warnings: plan.warnings.length, elapsed_ms: Date.now() - started }) + "\n");
     return 0;
   }
 
   const { applyPlan } = await import("../import/apply-docs.js");
-  const result = await applyPlan(args.db, plan);
+  let result;
+  try {
+    result = await applyPlan(args.db, plan);
+  } catch (err) {
+    logError("import_sources", err instanceof Error ? err : new Error(String(err)));
+    throw err;
+  }
   const out = { db: args.db, kb_commit: kbCommit(), ...result, elapsed_ms: Date.now() - started };
+  logInfo("import_sources", { event: "done", workspace: args.workspace, ms: String(Date.now() - started), exit_code: String(result.exit_code) });
   if (args.report) writeFile(args.report, renderReport(plan, [`- result: \`${JSON.stringify(out)}\``]));
   process.stdout.write(JSON.stringify(out) + "\n");
   return result.exit_code;

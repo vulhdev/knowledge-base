@@ -4,6 +4,7 @@ import { openDb } from "../db/client.js";
 import { listTeamWorkspaces, getTeamByName } from "../db/team.js";
 import { createSwarm } from "../sync/peer.js";
 import type Database from "better-sqlite3";
+import { logInfo } from "../log/logger.js";
 
 const PROBE_TIMEOUT_MS = 10_000;
 
@@ -60,12 +61,14 @@ async function resolveWorkspace(db: Database.Database): Promise<string | null> {
 }
 
 async function main(): Promise<void> {
+  const t0 = Date.now();
   const db = openDb();
   const workspaceName = await resolveWorkspace(db);
   if (!workspaceName) {
     process.exit(0);
   }
 
+  logInfo("status", { event: "start", workspace: workspaceName });
   const team = getTeamByName(db, workspaceName)!;
 
   console.log(`\nWorkspace : ${workspaceName}  (role: ${team.role})`);
@@ -119,6 +122,7 @@ async function main(): Promise<void> {
     console.log(`Last sync  : ${lastSync}`);
   }
 
+  logInfo("status", { event: "done", workspace: workspaceName, ms: String(Date.now() - t0), peers: String(connectedKeys.size) });
   console.log("");
 }
 

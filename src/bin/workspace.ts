@@ -2,6 +2,7 @@
 import * as p from "@clack/prompts";
 import { openDb } from "../db/client.js";
 import { mergeWorkspace } from "../sync/merge.js";
+import { logInfo, logWarn } from "../log/logger.js";
 
 const [, , , subcommand, ...args] = process.argv;
 
@@ -27,6 +28,7 @@ async function runMerge(args: string[]): Promise<void> {
   p.intro(`Merging workspace "${src}" into "${dst}"`);
 
   const db = openDb();
+  logInfo("workspace_merge", { event: "start", src, dst });
   let result;
   try {
     result = mergeWorkspace(db, src, dst);
@@ -40,12 +42,14 @@ async function runMerge(args: string[]): Promise<void> {
   } else {
     p.log.success(`Moved ${result.featuresMoved} feature(s) into "${dst}".`);
     if (result.featuresRenamed.length > 0) {
+      logWarn("workspace_merge", { event: "features_renamed", count: String(result.featuresRenamed.length) });
       p.log.warn(
         `${result.featuresRenamed.length} feature(s) renamed to avoid collisions:\n` +
         result.featuresRenamed.map((n) => `  "${n}" → "${n} [${src}]"`).join("\n"),
       );
     }
   }
+  logInfo("workspace_merge", { event: "done", src, dst, features_moved: String(result.featuresMoved) });
 
   p.log.info(`Workspace "${src}" is now empty. Update KNOWLEDGE_BASE_WORKSPACE=${dst} in your CLAUDE.md.`);
   p.outro("Done.");
