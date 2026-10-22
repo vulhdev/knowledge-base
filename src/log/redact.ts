@@ -2,6 +2,13 @@ import { homedir } from "node:os";
 
 const HOME = homedir();
 
+function stringify(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return "";
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value);
+  return JSON.stringify(value);
+}
+
 export function redactFields(fields: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(fields)) {
@@ -12,7 +19,7 @@ export function redactFields(fields: Record<string, unknown>): Record<string, st
 
 function redactValue(key: string, value: unknown): string {
   if (key === "body") {
-    const str = typeof value === "string" ? value : String(value ?? "");
+    const str = stringify(value);
     return `[body redacted, ${str.length} chars]`;
   }
 
@@ -21,7 +28,7 @@ function redactValue(key: string, value: unknown): string {
   if (key === "noise_public_key" || key === "noise_secret_key") return "[key redacted]";
   if (key.includes("token")) return "[token redacted]";
 
-  const str = typeof value === "string" ? value : String(value ?? "");
+  const str = stringify(value);
 
   if (key === "host_public_key" || key === "publicKey" || key === "pub_key") {
     if (/^[0-9a-f]{64}$/i.test(str)) {
