@@ -50,6 +50,116 @@ function seedPeerTeam(db: ReturnType<typeof createTestDb>): void {
   });
 }
 
+describe("performInitialSyncOnSocket", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns crsql_unavailable when crsql extension is not loaded", async () => {
+    const db = createTestDb();
+    const socket = new MockSocket();
+    const { performInitialSyncOnSocket } = await import("../../src/sync/initial.js");
+    const result = await performInitialSyncOnSocket(db, "myws", socket as unknown as NodeJS.ReadWriteStream);
+    expect(result).toEqual({ ok: false, reason: "crsql_unavailable" });
+  });
+
+  it("resolves ok with rowsReceived when socket closes after sync", async () => {
+    const db = createTestDb();
+    db.exec(
+      "CREATE TABLE IF NOT EXISTS crsql_changes " +
+      "(tbl TEXT, pk TEXT, cid TEXT, val ANY, col_version INTEGER, db_version INTEGER, site_id TEXT, cl INTEGER, seq INTEGER)",
+    );
+    db.function("crsql_site_id", () => Buffer.alloc(16));
+    const ws = createWorkspace(db, "myws");
+    insertTeam(db, ws.id, {
+      role: "peer",
+      secret: "a".repeat(64),
+      noise_public_key: "b".repeat(64),
+      noise_secret_key: "c".repeat(64),
+      host_public_key: "d".repeat(64),
+      last_synced_at: null,
+    });
+
+    const { performInitialSyncOnSocket } = await import("../../src/sync/initial.js");
+    const socket = new MockSocket();
+    const syncPromise = performInitialSyncOnSocket(db, "myws", socket as unknown as NodeJS.ReadWriteStream);
+    socket.emit("close");
+    const result = await syncPromise;
+    expect(result).toEqual({ ok: true, rowsReceived: 3 });
+  });
+
+  it("re-emits remainder bytes as a data event so handleSyncConnection processes pre-buffered sync handshake", async () => {
+    const db = createTestDb();
+    db.exec(
+      "CREATE TABLE IF NOT EXISTS crsql_changes " +
+      "(tbl TEXT, pk TEXT, cid TEXT, val ANY, col_version INTEGER, db_version INTEGER, site_id TEXT, cl INTEGER, seq INTEGER)",
+    );
+    db.function("crsql_site_id", () => Buffer.alloc(16));
+    const ws = createWorkspace(db, "myws");
+    insertTeam(db, ws.id, {
+      role: "peer",
+      secret: "a".repeat(64),
+      noise_public_key: "b".repeat(64),
+      noise_secret_key: "c".repeat(64),
+      host_public_key: "d".repeat(64),
+      last_synced_at: null,
+    });
+
+    const { handleSyncConnection } = await import("../../src/sync/index.js");
+    const { performInitialSyncOnSocket } = await import("../../src/sync/initial.js");
+
+    const remainder = Buffer.from('{"v":1,"dbVersion":0}\n');
+    const socket = new MockSocket();
+    const dataEvents: Buffer[] = [];
+    socket.on("data", (chunk: Buffer) => dataEvents.push(chunk));
+
+    const syncPromise = performInitialSyncOnSocket(db, "myws", socket as unknown as NodeJS.ReadWriteStream, remainder);
+
+    // Allow process.nextTick to fire the remainder emit
+    await new Promise((r) => setTimeout(r, 10));
+
+    // handleSyncConnection was called and the remainder was re-emitted as a data event
+    expect(vi.mocked(handleSyncConnection)).toHaveBeenCalled();
+    expect(dataEvents.some((b) => b.equals(remainder))).toBe(true);
+
+    socket.emit("close");
+    const result = await syncPromise;
+    expect(result.ok).toBe(true);
+  });
+
+  it("works fine when remainder is empty (no data event emitted)", async () => {
+    const db = createTestDb();
+    db.exec(
+      "CREATE TABLE IF NOT EXISTS crsql_changes " +
+      "(tbl TEXT, pk TEXT, cid TEXT, val ANY, col_version INTEGER, db_version INTEGER, site_id TEXT, cl INTEGER, seq INTEGER)",
+    );
+    db.function("crsql_site_id", () => Buffer.alloc(16));
+    const ws = createWorkspace(db, "myws");
+    insertTeam(db, ws.id, {
+      role: "peer",
+      secret: "a".repeat(64),
+      noise_public_key: "b".repeat(64),
+      noise_secret_key: "c".repeat(64),
+      host_public_key: "d".repeat(64),
+      last_synced_at: null,
+    });
+
+    const { performInitialSyncOnSocket } = await import("../../src/sync/initial.js");
+    const socket = new MockSocket();
+    const dataEvents: Buffer[] = [];
+    socket.on("data", (chunk: Buffer) => dataEvents.push(chunk));
+
+    const syncPromise = performInitialSyncOnSocket(db, "myws", socket as unknown as NodeJS.ReadWriteStream, Buffer.alloc(0));
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Empty remainder: no data event should be emitted
+    expect(dataEvents).toHaveLength(0);
+
+    socket.emit("close");
+    await syncPromise;
+  });
+});
+
 describe("performInitialSync", () => {
   beforeEach(() => {
     connectionHandler = null;

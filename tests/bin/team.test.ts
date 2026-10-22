@@ -49,7 +49,7 @@ describe("attemptJoin", () => {
     vi.resetModules();
   });
 
-  it("destroys swarm and resolves accepted:true when host accepts", async () => {
+  it("does NOT destroy swarm on accepted:true and returns socket for caller to reuse", async () => {
     const { attemptJoin } = await import("../../src/bin/team.js");
     const swarm = makeMockSwarm();
     const socket = makeMockSocket();
@@ -67,7 +67,12 @@ describe("attemptJoin", () => {
 
     const result = await joinPromise;
     expect(result.accepted).toBe(true);
-    expect(swarm.destroy).toHaveBeenCalled();
+    // Swarm must NOT be destroyed — runJoin will use the socket for sync then destroy
+    expect(swarm.destroy).not.toHaveBeenCalled();
+    // Socket must be returned so runJoin can use it for performInitialSyncOnSocket
+    if (result.accepted) {
+      expect((result as { socket?: unknown }).socket).toBeDefined();
+    }
   });
 
   it("destroys swarm and resolves accepted:false when host rejects", async () => {

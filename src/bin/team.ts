@@ -17,7 +17,7 @@ import type { Duplex } from "node:stream";
 import { startSync, type SyncHandle } from "../sync/index.js";
 import { makeConsoleLogger } from "../sync/activity.js";
 import { deriveTopicBuffer } from "../sync/peer.js";
-import { performInitialSync } from "../sync/initial.js";
+import { performInitialSyncOnSocket } from "../sync/initial.js";
 import { mergeWorkspace } from "../sync/merge.js";
 import { listWorkspaces } from "../db/workspaces.js";
 
@@ -130,7 +130,7 @@ async function runJoin(args: string[]): Promise<void> {
     spinner.message(`Connecting… ${msg}`);
   };
 
-  let result: { accepted: true; secret: string } | { accepted: false; reason: string };
+  let result: { accepted: true; secret: string; socket: NodeJS.ReadWriteStream; remainder: Buffer } | { accepted: false; reason: string };
   try {
     result = await Promise.race([
       attemptJoin(swarm, hostPublicKey, workspaceName, kp.publicKey, githubToken, githubUsername, onDiagnostic),
@@ -185,7 +185,10 @@ async function runJoin(args: string[]): Promise<void> {
 
   const syncSpinner = p.spinner();
   syncSpinner.start("Syncing data from host… do not close terminal");
-  const syncResult = await performInitialSync(db, workspaceName);
+  // Reuse the join socket — host calls handleSyncConnection on it right after sending
+  // join_result, so no new DHT round-trip is needed and there is no timeout risk.
+  const syncResult = await performInitialSyncOnSocket(db, workspaceName, result.socket, result.remainder);
+  await swarm.destroy().catch(() => undefined);
   if (syncResult.ok) {
     syncSpinner.stop(`Sync complete — ${syncResult.rowsReceived} rows received`);
   } else {
@@ -233,7 +236,7 @@ export async function attemptJoin(
   githubToken: string,
   githubUsername: string,
   onDiagnostic?: (msg: string) => void,
-): Promise<{ accepted: true; secret: string } | { accepted: false; reason: string }> {
+): Promise<{ accepted: true; secret: string; socket: NodeJS.ReadWriteStream; remainder: Buffer } | { accepted: false; reason: string }> {
   const joinTopic = deriveJoinTopic(workspaceName, hostPublicKey);
 
   return new Promise((resolve, reject) => {
@@ -256,23 +259,28 @@ export async function attemptJoin(
       (socket as NodeJS.WritableStream).write(msg + "\n");
 
       let buf = Buffer.alloc(0);
-      (socket as NodeJS.ReadableStream).on("data", (chunk: Buffer) => {
+      const onData = (chunk: Buffer) => {
         buf = Buffer.concat([buf, chunk]);
         const newline = buf.indexOf(0x0a);
         if (newline === -1) return;
         const line = buf.slice(0, newline).toString("utf8");
-        swarm.destroy().catch(() => undefined);
+        // Remove this listener so the socket is clean for the sync protocol handler
+        (socket as NodeJS.ReadableStream).removeListener("data", onData);
         try {
           const result = JSON.parse(line) as { type: string; accepted: boolean; secret?: string; reason?: string };
           if (result.accepted && result.secret) {
-            resolve({ accepted: true, secret: result.secret });
+            // Keep swarm alive — caller reuses socket for sync, then destroys swarm
+            resolve({ accepted: true, secret: result.secret, socket, remainder: buf.slice(newline + 1) });
           } else {
+            swarm.destroy().catch(() => undefined);
             resolve({ accepted: false, reason: result.reason ?? "unknown" });
           }
         } catch {
+          swarm.destroy().catch(() => undefined);
           reject(new Error("Invalid response from host"));
         }
-      });
+      };
+      (socket as NodeJS.ReadableStream).on("data", onData);
 
       (socket as NodeJS.EventEmitter).on("error", (err: unknown) => {
         swarm.destroy().catch(() => undefined);

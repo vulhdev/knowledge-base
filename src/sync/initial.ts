@@ -8,6 +8,51 @@ export type InitialSyncResult =
   | { ok: true; rowsReceived: number }
   | { ok: false; reason: "timeout" | "crsql_unavailable" };
 
+// Run the sync protocol on an already-open socket (the join socket) instead of
+// spinning up a new Hyperswarm and waiting for a DHT-routed connection.
+// This avoids the 60-second timeout that occurs when DHT lookup is slow.
+// remainder: bytes already buffered from the socket before handing it over (e.g. the
+// sync handshake that arrived in the same TCP segment as the join_result).
+export async function performInitialSyncOnSocket(
+  db: Database.Database,
+  workspaceName: string,
+  socket: NodeJS.ReadWriteStream,
+  remainder?: Buffer,
+): Promise<InitialSyncResult> {
+  try {
+    db.prepare("SELECT crsql_site_id()").get();
+  } catch {
+    return { ok: false, reason: "crsql_unavailable" };
+  }
+
+  const team = getTeamByName(db, workspaceName);
+  if (!team) return { ok: false, reason: "crsql_unavailable" };
+
+  return new Promise((resolve) => {
+    let rowsReceived = 0;
+    let settled = false;
+    const settle = (result: InitialSyncResult) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    handleSyncConnection(db, workspaceName, socket, {
+      onChangesReceived: (rows) => { rowsReceived += rows.length; },
+    });
+    // Re-emit bytes already read from the socket (sync handshake that arrived together
+    // with the join_result in the same segment) so the data handler processes them.
+    if (remainder && remainder.length > 0) {
+      process.nextTick(() => (socket as NodeJS.EventEmitter).emit("data", remainder));
+    }
+    (socket as NodeJS.EventEmitter).on("error", () => {
+      settle({ ok: false, reason: "timeout" });
+    });
+    (socket as NodeJS.EventEmitter).once("close", () => {
+      settle({ ok: true, rowsReceived });
+    });
+  });
+}
+
 export async function performInitialSync(
   db: Database.Database,
   workspaceName: string,

@@ -227,6 +227,11 @@ export function handleJoinConnection(
         callbacks?.onJoinResult?.(claimedUsername, result.accepted, result.accepted ? undefined : (result as { reason: string }).reason);
         if ((socket as unknown as MockableSocket).writable !== false) {
           (socket as NodeJS.WritableStream).write(JSON.stringify({ type: "join_result", ...result }) + "\n");
+          // Reuse the open join socket for initial sync — peer calls performInitialSyncOnSocket
+          // on the same socket, eliminating the DHT round-trip that caused timeouts.
+          if (result.accepted) {
+            handleSyncConnection(db, workspaceName, socket);
+          }
         }
       }).catch(() => {
         callbacks?.onJoinResult?.(claimedUsername, false, "internal error");

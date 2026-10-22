@@ -145,6 +145,60 @@ function createSyncTestDb() {
   return db;
 }
 
+describe("handleJoinConnection — socket reuse for initial sync", () => {
+  it("writes sync handshake on socket immediately after an accepted join", async () => {
+    const noiseKeyHex = "a".repeat(64);
+    const noiseKey = Buffer.from(noiseKeyHex, "hex");
+    const db = createSyncTestDb();
+    const { handleJoinConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    handleJoinConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream, noiseKey);
+
+    socket.emit("data", Buffer.from(JSON.stringify({
+      type: "join_request",
+      githubToken: "gho_abc",
+      peerPublicKey: noiseKeyHex,
+      githubUsername: "vulhdev",
+      appVersion: "1.17.0",
+    }) + "\n"));
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // First write: join_result; subsequent writes: sync handshake + empty changeset
+    const allWrites = socket.writes.map((b) => b.toString()).join("");
+    expect(allWrites).toContain('"accepted":true');
+    expect(allWrites).toContain('"v":1');
+    expect(allWrites).toContain('"dbVersion"');
+  });
+
+  it("does not write sync handshake after a rejected join", async () => {
+    const noiseKeyHex = "a".repeat(64);
+    const noiseKey = Buffer.from(noiseKeyHex, "hex");
+    const db = createSyncTestDb();
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+    vi.mocked(handleJoinRequest).mockResolvedValueOnce({ accepted: false, reason: "not invited" });
+    const { handleJoinConnection } = await import("../../src/sync/index.js");
+
+    const socket = new MockSocket();
+    handleJoinConnection(db, "myws", socket as unknown as NodeJS.ReadWriteStream, noiseKey);
+
+    socket.emit("data", Buffer.from(JSON.stringify({
+      type: "join_request",
+      githubToken: "gho_abc",
+      peerPublicKey: noiseKeyHex,
+      githubUsername: "vulhdev",
+      appVersion: "1.17.0",
+    }) + "\n"));
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(socket.writes.length).toBe(1);
+    const response = JSON.parse(socket.writes[0]!.toString().trim()) as { accepted: boolean };
+    expect(response.accepted).toBe(false);
+  });
+});
+
 describe("handleJoinConnection — security guards", () => {
 
   it("rejects join_request when wire peerPublicKey differs from Noise transport key", async () => {
