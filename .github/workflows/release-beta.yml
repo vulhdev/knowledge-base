@@ -30,7 +30,7 @@ jobs:
       - run: npm run test:e2e
 
       - name: Publish to npm (beta)
-        run: npm publish --tag beta --provenance --access public
+        run: npm publish --tag beta --provenance --access public --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
