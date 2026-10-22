@@ -4,8 +4,8 @@ import { reverseDirectionReason } from "./_type-order.js";
 
 export function linkContent(
   db: Database.Database,
-  childId: number,
-  parentId: number,
+  childId: string,
+  parentId: string,
 ): LinkResult {
   const parent = db
     .prepare(
@@ -17,7 +17,7 @@ export function linkContent(
        WHERE c.id = ?
        LIMIT 1`,
     )
-    .get(parentId) as { id: number; type: string; workspace: string } | undefined;
+    .get(parentId) as { id: string; type: string; workspace: string } | undefined;
 
   if (!parent) throw new Error(`Content not found: id=${parentId}`);
 
@@ -31,7 +31,7 @@ export function linkContent(
        WHERE c.id = ?
        LIMIT 1`,
     )
-    .get(childId) as { id: number; type: string; workspace: string } | undefined;
+    .get(childId) as { id: string; type: string; workspace: string } | undefined;
 
   if (!child) throw new Error(`Content not found: id=${childId}`);
 

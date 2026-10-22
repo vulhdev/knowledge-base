@@ -10,7 +10,7 @@ export interface OpenForReviewResult {
 
 export function openForReview(
   db: Database.Database,
-  contentId: number,
+  contentId: string,
   port = 57891,
 ): OpenForReviewResult {
   const content = getContent(db, contentId);

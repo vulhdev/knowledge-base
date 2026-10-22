@@ -30,7 +30,7 @@ describe("Migration 14 — source_key / source_sha", () => {
 });
 
 describe("provenance parameter of createContent / updateContent", () => {
-  const prov = (db: ReturnType<typeof createTestDb>, id: number) =>
+  const prov = (db: ReturnType<typeof createTestDb>, id: string) =>
     db.prepare("SELECT source_key, source_sha FROM contents WHERE id = ?").get(id) as { source_key: string | null; source_sha: string | null };
 
   it("writes source_key / source_sha in the INSERT and the UPDATE", async () => {

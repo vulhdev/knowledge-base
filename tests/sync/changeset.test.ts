@@ -113,4 +113,28 @@ describe("applyChanges", () => {
     expect(CRDT_TABLES.has("content_links")).toBe(true);
     expect(CRDT_TABLES.has("team_peers")).toBe(false);
   });
+
+  it("[HIGH-SEC] throws when pk is empty string", async () => {
+    const { applyChanges } = await import("../../src/sync/changeset.js");
+    const rows = [{ tbl: "contents", pk: "", cid: "title", val: "x", col_version: 1, db_version: 1, site_id: "aa", cl: 1, seq: 0 }];
+    expect(() => applyChanges({} as unknown as import("better-sqlite3").Database, rows)).toThrow(/invalid.*pk/i);
+  });
+
+  it("[HIGH-SEC] throws when pk serialized length exceeds 4096 characters", async () => {
+    const { applyChanges } = await import("../../src/sync/changeset.js");
+    const rows = [{ tbl: "contents", pk: "a".repeat(4097), cid: "title", val: "x", col_version: 1, db_version: 1, site_id: "aa", cl: 1, seq: 0 }];
+    expect(() => applyChanges({} as unknown as import("better-sqlite3").Database, rows)).toThrow(/invalid.*pk/i);
+  });
+
+  it("[HIGH-SEC] throws when col_version is negative", async () => {
+    const { applyChanges } = await import("../../src/sync/changeset.js");
+    const rows = [{ tbl: "contents", pk: "abc", cid: "title", val: "x", col_version: -1, db_version: 1, site_id: "aa", cl: 1, seq: 0 }];
+    expect(() => applyChanges({} as unknown as import("better-sqlite3").Database, rows)).toThrow(/invalid.*col_version/i);
+  });
+
+  it("[HIGH-SEC] throws when db_version is negative", async () => {
+    const { applyChanges } = await import("../../src/sync/changeset.js");
+    const rows = [{ tbl: "contents", pk: "abc", cid: "title", val: "x", col_version: 1, db_version: -1, site_id: "aa", cl: 1, seq: 0 }];
+    expect(() => applyChanges({} as unknown as import("better-sqlite3").Database, rows)).toThrow(/invalid.*db_version/i);
+  });
 });

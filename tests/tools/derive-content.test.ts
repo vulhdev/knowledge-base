@@ -16,9 +16,9 @@ function seed(db: Database.Database, workspace: string, feature: string): number
   return ft.id;
 }
 
-function insertContent(db: Database.Database, featureId: number, type: string, body: string): number {
+function insertContent(db: Database.Database, featureId: number, type: string, body: string): string {
   const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run(type, body);
-  const id = Number(lastInsertRowid);
+  const { id } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
   db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(id, featureId);
   return id;
 }
@@ -31,7 +31,7 @@ describe("deriveContent", () => {
   });
 
   it("throws Content not found when parent ID does not exist", async () => {
-    await expect(deriveContent(db, 99999, "spec", "body")).rejects.toThrow(/Content not found: id=99999/);
+    await expect(deriveContent(db, "nonexistent-id", "spec", "body")).rejects.toThrow(/Content not found/);
   });
 
   it("creates child content in parent's workspace and feature", async () => {
@@ -90,7 +90,7 @@ describe("deriveContent", () => {
 
     const result = await deriveContent(db, parentId, "spec", "body");
 
-    expect(result.id).toBeTypeOf("number");
+    expect(result.id).toBeTypeOf("string");
     expect(result.created_at).toBeTruthy();
   });
 });

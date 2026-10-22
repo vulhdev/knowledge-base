@@ -35,7 +35,8 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-server.server.registerCapabilities({ sampling: {} });
+// sampling was removed from ServerCapabilities in MCP SDK 1.20+; use type cast for compatibility.
+server.server.registerCapabilities({ sampling: {} } as Parameters<typeof server.server.registerCapabilities>[0]);
 
 async function requestSampling(prompt: string): Promise<string> {
   const result = await server.server.createMessage({
@@ -61,24 +62,24 @@ function errorContent(err: unknown) {
 
 const GUI_PORT = Number(process.env.KB_GUI_PORT ?? 57891);
 
-function contentUrl(id: number): string {
+function contentUrl(id: string): string {
   return `http://localhost:${GUI_PORT}/content/${id}`;
 }
 
 // OSC 8 hyperlink — shows `label` as clickable text in terminals that support it
-function osc8(id: number, label: string): string {
+function osc8(id: string, label: string): string {
   const url = contentUrl(id);
   return `\x1b]8;;${url}\x07${label}\x1b]8;;\x07`;
 }
 
 function formatSingle(item: object): string {
-  const { id, type } = item as { id: number; type: string };
-  const withUrl = { ...(item), gui_url: contentUrl(id) };
+  const { id, type } = item as { id: string; type: string };
+  const withUrl = { ...item, gui_url: contentUrl(id) };
   const json = JSON.stringify(withUrl, null, 2);
   return `${json}\n\n${osc8(id, `${type}#${id}`)}`;
 }
 
-type Linkable = { id: number; type: string; title?: string | null };
+type Linkable = { id: string; type: string; title?: string | null };
 
 function formatPage(page: object, items: Linkable[]): string {
   const resultsWithUrl = items.map(r => ({ ...r, gui_url: contentUrl(r.id) }));
@@ -116,7 +117,7 @@ server.tool(
   "attach_feature",
   "Adds a feature to an existing document. Creates the feature if it does not exist. No-op if already attached.",
   {
-    id: z.number().int().positive().describe("Document ID"),
+    id: z.string().min(1).describe("Document ID"),
     workspace: z.string().min(1).describe("Workspace the document belongs to"),
     feature: z.string().min(1).describe("Feature name to attach"),
   },
@@ -135,7 +136,7 @@ server.tool(
   "detach_feature",
   "Removes a feature from a document. Throws if it would be the last feature.",
   {
-    id: z.number().int().positive().describe("Document ID"),
+    id: z.string().min(1).describe("Document ID"),
     workspace: z.string().min(1).describe("Workspace the document belongs to"),
     feature: z.string().min(1).describe("Feature name to detach"),
   },
@@ -154,7 +155,7 @@ server.tool(
   "get_content",
   "Fetches a single document by its numeric ID.",
   {
-    id: z.number().int().positive().describe("Document ID returned by create_content or search_content"),
+    id: z.string().min(1).describe("Document ID returned by create_content or search_content"),
   },
   async ({ id }) => {
     try {
@@ -213,7 +214,7 @@ server.tool(
   "update_content",
   "Updates the body (and optionally the type and title) of an existing document by its numeric ID. Returns the full updated document including a conflicts array (same format as create_content) when the new body contradicts or shadows other documents in the workspace.",
   {
-    id: z.number().int().positive().describe("Document ID returned by create_content or search_content"),
+    id: z.string().min(1).describe("Document ID returned by create_content or search_content"),
     body: z.string().min(1).describe("New document body text (replaces existing body)"),
     type: contentTypeSchema.optional().describe("New document type (omit to keep existing type). Suggested: idea | spec | plan | digest | doc. Any non-empty string is accepted."),
     title: z.string().min(1).optional().describe("New title (omit to keep existing title)"),
@@ -233,7 +234,7 @@ server.tool(
   "patch_content",
   "Replaces a specific substring in a document body without re-sending the full body. Finds old_string in the current body and replaces it with new_string. Use replace_all=true if old_string appears multiple times. Fails clearly if old_string is not found or if multiple matches exist and replace_all is not set. Prefer this over update_content for small, targeted edits.",
   {
-    id: z.number().int().positive().describe("Document ID"),
+    id: z.string().min(1).describe("Document ID"),
     old_string: z.string().min(1).describe("Exact substring to find in the body"),
     new_string: z.string().describe("Replacement text (may be empty string to delete the substring)"),
     replace_all: z.boolean().optional().default(false).describe("Replace all occurrences (default: false — fails if multiple matches found)"),
@@ -253,7 +254,7 @@ server.tool(
   "append_content",
   "Appends text to the end of a document body without re-sending the full body. Adds a newline separator automatically if the body does not already end with one. Prefer this over update_content for adding log entries, notes, or new tasks.",
   {
-    id: z.number().int().positive().describe("Document ID"),
+    id: z.string().min(1).describe("Document ID"),
     text: z.string().min(1).describe("Text to append"),
   },
   async ({ id, text }) => {
@@ -271,7 +272,7 @@ server.tool(
   "delete_content",
   "Permanently deletes a document by its numeric ID. When cascade=true, deletes the entire version chain. When cascade=false (default), only the specified version is deleted; if it is the root of a chain, v2 is promoted to root. Returns the deleted document.",
   {
-    id: z.number().int().positive().describe("Document ID to delete"),
+    id: z.string().min(1).describe("Document ID to delete"),
     cascade: z.boolean().optional().default(false).describe("If true, delete the entire version chain; if false (default), delete only this version"),
   },
   async ({ id, cascade }) => {
@@ -289,8 +290,8 @@ server.tool(
   "link_content",
   "Links two existing documents as parent → child. Use after both documents exist. Emits a direction_warning if the type order is reversed (e.g. plan→idea) but does not block the operation.",
   {
-    child_id: z.number().int().positive().describe("ID of the child document"),
-    parent_id: z.number().int().positive().describe("ID of the parent document"),
+    child_id: z.string().min(1).describe("ID of the child document"),
+    parent_id: z.string().min(1).describe("ID of the parent document"),
   },
   async ({ child_id, parent_id }) => {
     try {
@@ -307,7 +308,7 @@ server.tool(
   "derive_content",
   "Creates a new document linked to a parent in a single step. Inherits the parent's workspace and feature. Returns the new document plus a parent_id field.",
   {
-    parent_id: z.number().int().positive().describe("ID of the parent document to derive from"),
+    parent_id: z.string().min(1).describe("ID of the parent document to derive from"),
     type: contentTypeSchema.describe("Type of the new document. Suggested: idea | spec | plan | digest | doc."),
     body: z.string().min(1).describe("Document body text"),
     title: z.string().min(1).optional().describe("Short label for the document (optional)"),
@@ -327,7 +328,7 @@ server.tool(
   "get_lineage",
   "Returns the full ancestry chain for a document: all ancestors (nearest→oldest) and all descendants (BFS order). Use to answer 'which idea caused this spec?' or 'what has this idea produced?'",
   {
-    content_id: z.number().int().positive().describe("ID of the document to get lineage for"),
+    content_id: z.string().min(1).describe("ID of the document to get lineage for"),
   },
   async ({ content_id }) => {
     try {
@@ -344,7 +345,7 @@ server.tool(
   "attach_code_ref",
   "Links a git commit to a knowledge-base document (primarily a plan) at task granularity. Call after each task commit so that resuming a plan in a new session shows which tasks already have commits.",
   {
-    content_id: z.number().int().positive().describe("ID of the plan (or any content) to attach the commit to"),
+    content_id: z.string().min(1).describe("ID of the plan (or any content) to attach the commit to"),
     commit_hash: z.string().min(1).describe("Full or short git commit hash"),
     file_paths: z
       .array(z.object({ path: z.string().min(1), start: z.number().int().optional(), end: z.number().int().optional() }))
@@ -366,7 +367,7 @@ server.tool(
   "get_code_refs",
   "Returns all git commits linked to a document, grouped by task. Use when resuming a plan to see which tasks already have commits and which don't.",
   {
-    content_id: z.number().int().positive().describe("ID of the document to fetch code refs for"),
+    content_id: z.string().min(1).describe("ID of the document to fetch code refs for"),
   },
   async ({ content_id }) => {
     try {
@@ -383,7 +384,7 @@ server.tool(
   "open_for_review",
   "Creates a review session for a document and returns a GUI URL where the user can add inline comments. The GUI server must be running: npx @vulhdev/knowledge-base gui",
   {
-    content_id: z.number().int().positive().describe("ID of the document to review"),
+    content_id: z.string().min(1).describe("ID of the document to review"),
     port: z.number().int().positive().default(57891).optional().describe("Port the GUI server is running on (default 57891)"),
   },
   async ({ content_id, port }) => {
@@ -401,7 +402,7 @@ server.tool(
   "wait_for_review",
   "Long-polls until the user commits a review for the given document, then returns all comments. Throws with instructions if the timeout is reached.",
   {
-    content_id: z.number().int().positive().describe("ID of the document being reviewed"),
+    content_id: z.string().min(1).describe("ID of the document being reviewed"),
     timeout_seconds: z.number().int().positive().default(300).optional().describe("Max seconds to wait before timing out (default 300)"),
   },
   async ({ content_id, timeout_seconds }) => {
@@ -421,7 +422,7 @@ server.tool(
   "get_pending_review",
   "Returns the most recent committed review and its comments for a document. Use in the /knowledge-base-review skill fallback after a wait_for_review timeout.",
   {
-    content_id: z.number().int().positive().describe("ID of the document to fetch the committed review for"),
+    content_id: z.string().min(1).describe("ID of the document to fetch the committed review for"),
   },
   async ({ content_id }) => {
     try {
@@ -483,7 +484,7 @@ server.tool(
   "create_version",
   "Creates a new version of an existing document. The new version is a copy of the source with version_number incremented. The previous latest version becomes non-latest. Callable with any version id in the chain. Returns the new version with previous_version_id.",
   {
-    id: z.number().int().positive().describe("ID of any version in the chain to base the new version on"),
+    id: z.string().min(1).describe("ID of any version in the chain to base the new version on"),
   },
   async ({ id }) => {
     try {
@@ -500,7 +501,7 @@ server.tool(
   "list_versions",
   "Returns all versions in a document's version chain, sorted by version_number ascending. Callable with any version id in the chain.",
   {
-    id: z.number().int().positive().describe("ID of any version in the chain"),
+    id: z.string().min(1).describe("ID of any version in the chain"),
   },
   async ({ id }) => {
     try {

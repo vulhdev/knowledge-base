@@ -6,7 +6,7 @@ import { decodeChangeset, encodeChangeset, getChanges, applyChanges, MAX_CHANGES
 import type { ChangesetRow } from "./changeset.js";
 import type { ActivityLogger } from "./activity.js";
 import { rebuildFts } from "./rebuild.js";
-import { loadSettings, writeSettings } from "../config.js";
+import { getTeamByName, updateLastSynced } from "../db/team.js";
 import { acquireSyncLock } from "./lock.js";
 
 const MAX_HANDSHAKE_BYTES = 4 * 1024;   // generous for {"v":1,"dbVersion":9999999}
@@ -26,17 +26,54 @@ type JoinCallbacks = {
   onJoinResult?: (githubUsername: string, accepted: boolean, reason?: string) => void;
 };
 
-export function recordSyncTimestamp(workspaceName: string): void {
-  const s = loadSettings();
-  if (s.workspaces?.[workspaceName]?.team) {
-    s.workspaces[workspaceName].team.last_synced_at = new Date().toISOString();
-    writeSettings(s);
-  }
+export function recordSyncTimestamp(db: Database.Database, workspaceName: string): void {
+  const team = getTeamByName(db, workspaceName);
+  if (team) updateLastSynced(db, team.workspace_id, new Date().toISOString());
 }
 
 type HandshakeMsg = { v: number; dbVersion: number };
+type BootstrapFrame = { type: "bootstrap"; features: { id: string; name: string }[] };
 
 const PROTOCOL_VERSION = 1;
+
+function getBootstrapFeatures(db: Database.Database, workspaceName: string): { id: string; name: string }[] {
+  try {
+    return db
+      .prepare("SELECT f.id, f.name FROM features f JOIN workspaces w ON w.id = f.workspace_id WHERE w.name = ?")
+      .all(workspaceName) as { id: string; name: string }[];
+  } catch {
+    return [];
+  }
+}
+
+const BOOTSTRAP_MAX_FEATURES = 5_000;
+const BOOTSTRAP_MAX_NAME_LEN = 500;
+const BOOTSTRAP_MAX_ID_LEN = 128;
+
+function applyBootstrapFeatures(db: Database.Database, workspaceName: string, features: { id: string; name: string }[]): void {
+  // Validate input to prevent a malicious host from flooding rows or injecting long strings.
+  if (features.length > BOOTSTRAP_MAX_FEATURES) return;
+  for (const f of features) {
+    if (typeof f.id !== "string" || f.id.length === 0 || f.id.length > BOOTSTRAP_MAX_ID_LEN) return;
+    if (typeof f.name !== "string" || f.name.length === 0 || f.name.length > BOOTSTRAP_MAX_NAME_LEN) return;
+  }
+
+  const ws = db.prepare("SELECT id FROM workspaces WHERE name = ?").get(workspaceName) as { id: number } | undefined;
+  if (!ws) return;
+  const insert = db.prepare("INSERT OR IGNORE INTO features (id, workspace_id, name) VALUES (?, ?, ?)");
+  db.transaction(() => {
+    for (const f of features) {
+      insert.run(f.id, ws.id, f.name);
+    }
+  })();
+}
+
+function encodeFrame(obj: unknown): Buffer {
+  const encoded = Buffer.from(JSON.stringify(obj), "utf8");
+  const header = Buffer.allocUnsafe(4);
+  header.writeUInt32BE(encoded.length, 0);
+  return Buffer.concat([header, encoded]);
+}
 
 export function handleSyncConnection(
   db: Database.Database,
@@ -57,6 +94,8 @@ export function handleSyncConnection(
   const handshake: HandshakeMsg = { v: PROTOCOL_VERSION, dbVersion: localDbVersion };
   let buf = Buffer.alloc(0);
   let peerVersion: number | null = null;
+  // When this peer is fresh (localDbVersion=0), the first frame from the remote may be a bootstrap.
+  let awaitingBootstrap = localDbVersion === 0;
 
   (socket as NodeJS.WritableStream).write(JSON.stringify(handshake) + "\n");
 
@@ -75,6 +114,12 @@ export function handleSyncConnection(
       try {
         const msg = JSON.parse(line) as HandshakeMsg;
         peerVersion = msg.dbVersion;
+        // When peer is fresh, send bootstrap features before the changeset so the peer can
+        // build the features table before applying content_features CRDT rows.
+        if (peerVersion === 0) {
+          const features = getBootstrapFeatures(db, workspaceName);
+          (socket as NodeJS.WritableStream).write(encodeFrame({ type: "bootstrap", features } satisfies BootstrapFrame));
+        }
         const changes = getChanges(db, peerVersion);
         const encoded = encodeChangeset(changes);
         const header = Buffer.allocUnsafe(4);
@@ -90,11 +135,24 @@ export function handleSyncConnection(
         if (size === 0) { buf = buf.slice(4); continue; }
         if (size > MAX_CHANGESET_BYTES) { (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy(); return; }
         if (buf.length < 4 + size) break;
+        if (awaitingBootstrap) {
+          awaitingBootstrap = false;
+          try {
+            const frame = JSON.parse(buf.slice(4, 4 + size).toString("utf8")) as Record<string, unknown>;
+            if (frame.type === "bootstrap" && Array.isArray(frame.features)) {
+              applyBootstrapFeatures(db, workspaceName, frame.features as { id: string; name: string }[]);
+              buf = buf.slice(4 + size);
+              continue;
+            }
+          } catch {
+            // not a bootstrap frame — fall through to changeset handling
+          }
+        }
         try {
           const rows = decodeChangeset(buf.slice(4, 4 + size));
           applyChanges(db, rows);
           rebuildFts(db);
-          recordSyncTimestamp(workspaceName);
+          recordSyncTimestamp(db, workspaceName);
           if (rows.length > 0) callbacks?.onChangesReceived?.(rows);
         } catch {
           // ignore bad changeset
@@ -134,6 +192,7 @@ export function handleJoinConnection(
         githubToken: string;
         peerPublicKey: string;
         githubUsername?: string;
+        appVersion?: string;
       };
       if (req.type !== "join_request") {
         (socket as NodeJS.WritableStream).write(
@@ -157,6 +216,7 @@ export function handleJoinConnection(
         githubToken: req.githubToken,
         peerPublicKey: req.peerPublicKey,
         githubUsername: req.githubUsername,
+        appVersion: req.appVersion,
       }).then((result) => {
         callbacks?.onJoinResult?.(claimedUsername, result.accepted, result.accepted ? undefined : (result as { reason: string }).reason);
         if ((socket as unknown as MockableSocket).writable !== false) {
@@ -199,8 +259,7 @@ export function startSync(
   const release = acquireSyncLock(workspaceName);
   if (!release) return null;
 
-  const settings = loadSettings();
-  const team = settings.workspaces?.[workspaceName]?.team;
+  const team = getTeamByName(db, workspaceName);
   if (!team) {
     release();
     throw new Error(`No team config for workspace "${workspaceName}"`);
@@ -225,11 +284,11 @@ export function startSync(
   let joinSwarm: InstanceType<typeof Hyperswarm> | null = null;
   if (team.role === "host") {
     const keyPair = {
-      publicKey: Buffer.from(team.noise_keypair.publicKey, "hex"),
-      secretKey: Buffer.from(team.noise_keypair.secretKey, "hex"),
+      publicKey: Buffer.from(team.noise_public_key, "hex"),
+      secretKey: Buffer.from(team.noise_secret_key, "hex"),
     };
     joinSwarm = new Hyperswarm({ keyPair });
-    joinSwarm.join(deriveJoinTopic(workspaceName, team.noise_keypair.publicKey));
+    joinSwarm.join(deriveJoinTopic(workspaceName, team.noise_public_key));
     joinSwarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer }) => {
       (socket as NodeJS.EventEmitter).on("error", () => { /* ECONNRESET and other connection errors are expected */ });
       handleJoinConnection(db, workspaceName, socket, info.publicKey, {

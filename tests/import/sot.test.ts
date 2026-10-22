@@ -36,7 +36,7 @@ function cards(ref?: string): PlanCard[] {
 function plan(ref?: string) {
   return buildLoadPlan(scanSources([join(repo.dir, "sot")], { ref }), "ws", "ws-sot");
 }
-const pointers = (id: number) =>
+const pointers = (id: string) =>
   db.prepare("SELECT id, chunk_key, start_line, end_line, source_path, source_commit, chunk_sha, embedding IS NOT NULL AS has FROM content_chunks WHERE content_id = ? AND kind = 'sot' ORDER BY ord").all(id) as
     { id: number; chunk_key: string; start_line: number; end_line: number; source_path: string; source_commit: string; chunk_sha: string; has: number }[];
 const changes = () => (db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
@@ -55,7 +55,7 @@ afterEach(() => repo.cleanup());
 describe("importSotCard", () => {
   it("creates one card with pointers whose git slices hash to chunk_sha (pointer-ok)", async () => {
     for (const c of cards()) await importSotCard(db, c);
-    const rows = db.prepare("SELECT id, source_key, type FROM contents ORDER BY id").all() as { id: number; source_key: string; type: string }[];
+    const rows = db.prepare("SELECT id, source_key, type FROM contents ORDER BY rowid").all() as { id: string; source_key: string; type: string }[];
     expect(rows.map((r) => r.source_key.replace(/^sot:ws-sot:[0-9a-f]{12}\//, ""))).toEqual(["sot/F-001-flow.md", "sot/registry.conf"]);
     for (const r of rows) {
       const ps = pointers(r.id);
@@ -105,9 +105,9 @@ describe("importSotCard", () => {
     for (const c of cards()) expect((await importSotCard(db, c)).status).toBe("unchanged");
     expect(changes()).toBe(before);
 
-    const confId = (db.prepare("SELECT id FROM contents WHERE source_key LIKE '%registry.conf'").get() as { id: number }).id;
+    const confId = (db.prepare("SELECT id FROM contents WHERE source_key LIKE '%registry.conf'").get() as { id: string }).id;
     const confPointers = pointers(confId).map((p) => p.id);
-    const f1Id = (db.prepare("SELECT id FROM contents WHERE source_key LIKE '%F-001%'").get() as { id: number }).id;
+    const f1Id = (db.prepare("SELECT id FROM contents WHERE source_key LIKE '%F-001%'").get() as { id: string }).id;
     const oldIds = pointers(f1Id).map((p) => p.id);
 
     repo.write("sot/F-001-flow.md", F1 + "## 追加\n" + "新しい節の本文である。".repeat(8) + "\n");

@@ -17,7 +17,7 @@ describe("createContent", () => {
 
   it("creates a document and returns id + metadata", async () => {
     const result = await createContent(db, "my-project", ["auth"], "idea", "some idea");
-    expect(result.id).toBeTypeOf("number");
+    expect(result.id).toBeTypeOf("string");
     expect(result.workspace).toBe("my-project");
     expect(result.features).toEqual(["auth"]);
     expect(result.type).toBe("idea");
@@ -202,7 +202,7 @@ describe("createContent", () => {
     const result = await createContent(db, "ws", ["ft"], "spec", "payment flow redesign spec");
     expect(result.suggested_parents.length).toBeGreaterThan(0);
     expect(result.suggested_parents[0].type).toBe("idea");
-    expect(typeof result.suggested_parents[0].id).toBe("number");
+    expect(typeof result.suggested_parents[0].id).toBe("string");
     expect(typeof result.suggested_parents[0].score).toBe("number");
   });
 

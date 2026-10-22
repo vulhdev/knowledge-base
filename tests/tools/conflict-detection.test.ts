@@ -22,7 +22,7 @@ function insertDocWithEmbedding(
   type: string,
   body: string,
   embedding: Buffer,
-): number {
+): string {
   db.prepare("INSERT OR IGNORE INTO workspaces (name) VALUES (?)").run(workspace);
   const ws = db.prepare("SELECT id FROM workspaces WHERE name = ?").get(workspace) as { id: number };
   db.prepare("INSERT OR IGNORE INTO features (workspace_id, name) VALUES (?, ?)").run(ws.id, feature);
@@ -30,7 +30,7 @@ function insertDocWithEmbedding(
   const { lastInsertRowid } = db
     .prepare("INSERT INTO contents (type, body) VALUES (?, ?)")
     .run(type, body);
-  const id = Number(lastInsertRowid);
+  const { id } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
   db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(id, ft.id);
   db.prepare("UPDATE contents SET embedding = ? WHERE id = ?").run(embedding, id);
   return id;
@@ -44,7 +44,7 @@ describe("findSimilarInWorkspace", () => {
   });
 
   it("returns empty array when no docs exist", () => {
-    const result = findSimilarInWorkspace(db, 999, "ws", DUMMY_EMBEDDING);
+    const result = findSimilarInWorkspace(db, "nonexistent-id", "ws", DUMMY_EMBEDDING);
     expect(result).toEqual([]);
   });
 
@@ -65,11 +65,11 @@ describe("findSimilarInWorkspace", () => {
 describe("buildPrompt", () => {
   it("includes new doc and all candidates", () => {
     const prompt = buildPrompt("proj", ["api"], "spec", "new body", [
-      { id: 1, features: ["auth"], type: "spec", body: "old body" },
+      { id: "abc123", features: ["auth"], type: "spec", body: "old body" },
     ]);
     expect(prompt).toContain("new body");
     expect(prompt).toContain("old body");
-    expect(prompt).toContain('id=1, features="auth"');
+    expect(prompt).toContain('id=abc123, features="auth"');
     expect(prompt).toContain("semantic_contradiction");
     expect(prompt).toContain("risk_shadow");
   });
@@ -77,26 +77,26 @@ describe("buildPrompt", () => {
 
 describe("parseConflicts", () => {
   const candidates = [
-    { id: 17, features: ["auth"], type: "spec", body: "..." },
-    { id: 23, features: ["transport"], type: "plan", body: "..." },
+    { id: "id-17", features: ["auth"], type: "spec", body: "..." },
+    { id: "id-23", features: ["transport"], type: "plan", body: "..." },
   ];
 
   it("parses valid JSON array", () => {
     const raw = JSON.stringify([
-      { content_id: 17, features: ["auth"], type: "semantic_contradiction", reason: "REST vs GraphQL" },
+      { content_id: "id-17", features: ["auth"], type: "semantic_contradiction", reason: "REST vs GraphQL" },
     ]);
     const result = parseConflicts(raw, candidates);
     expect(result).toHaveLength(1);
-    expect(result[0].content_id).toBe(17);
+    expect(result[0].content_id).toBe("id-17");
     expect(result[0].type).toBe("semantic_contradiction");
     expect(result[0].features).toEqual(["auth"]);
   });
 
   it("extracts JSON from surrounding text", () => {
-    const raw = `Here are the conflicts:\n[\n  { "content_id": 23, "features": ["transport"], "type": "risk_shadow", "reason": "risk mentioned" }\n]\nEnd.`;
+    const raw = `Here are the conflicts:\n[\n  { "content_id": "id-23", "features": ["transport"], "type": "risk_shadow", "reason": "risk mentioned" }\n]\nEnd.`;
     const result = parseConflicts(raw, candidates);
     expect(result).toHaveLength(1);
-    expect(result[0].content_id).toBe(23);
+    expect(result[0].content_id).toBe("id-23");
   });
 
   it("returns empty array for invalid JSON", () => {
@@ -106,14 +106,14 @@ describe("parseConflicts", () => {
 
   it("filters out content_id not in candidates", () => {
     const raw = JSON.stringify([
-      { content_id: 999, features: ["other"], type: "semantic_contradiction", reason: "..." },
+      { content_id: "id-999", features: ["other"], type: "semantic_contradiction", reason: "..." },
     ]);
     expect(parseConflicts(raw, candidates)).toEqual([]);
   });
 
   it("filters out invalid conflict type", () => {
     const raw = JSON.stringify([
-      { content_id: 17, features: ["auth"], type: "made_up_type", reason: "..." },
+      { content_id: "id-17", features: ["auth"], type: "made_up_type", reason: "..." },
     ]);
     expect(parseConflicts(raw, candidates)).toEqual([]);
   });
@@ -124,7 +124,7 @@ describe("parseConflicts", () => {
 
   it("uses candidate features (ignores model-returned features)", () => {
     const raw = JSON.stringify([
-      { content_id: 17, features: ["wrong-feature"], type: "semantic_contradiction", reason: "contradiction" },
+      { content_id: "id-17", features: ["wrong-feature"], type: "semantic_contradiction", reason: "contradiction" },
     ]);
     const result = parseConflicts(raw, candidates);
     expect(result).toHaveLength(1);
@@ -141,7 +141,7 @@ describe("detectConflicts", () => {
 
   it("returns empty array when no similar docs", async () => {
     const requestSampling = vi.fn();
-    const result = await detectConflicts(db, 1, "ws", ["ft"], "spec", "body", DUMMY_EMBEDDING, requestSampling);
+    const result = await detectConflicts(db, "nonexistent-id", "ws", ["ft"], "spec", "body", DUMMY_EMBEDDING, requestSampling);
     expect(result).toEqual([]);
     expect(requestSampling).not.toHaveBeenCalled();
   });

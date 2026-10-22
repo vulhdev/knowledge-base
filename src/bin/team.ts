@@ -1,17 +1,25 @@
 #!/usr/bin/env node
+import type Database from "better-sqlite3";
 import * as p from "@clack/prompts";
 import Hyperswarm from "hyperswarm";
 import { loadSettings, writeSettings } from "../config.js";
 import { openDb } from "../db/client.js";
+import { getTeamByName, insertTeam, listTeamWorkspaces } from "../db/team.js";
+import { createWorkspace } from "../db/workspaces.js";
+import { writeWorkspaceToClaude } from "../sync/claude-md.js";
 import { generateNoiseKeypair } from "../team/generate.js";
 import { generateInvite, normalizeGithubUsername, parseInviteCode } from "../team/invite.js";
 import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
-import { kickPeer, listPeers, findPeerByUsername } from "../team/kick.js";
+import { kickPeer, listPeers, findPeerByUsername, deletePeer } from "../team/kick.js";
 import { deriveJoinTopic } from "../sync/join.js";
+import { HOST_VERSION } from "../sync/version.js";
 import type { Duplex } from "node:stream";
 import { startSync, type SyncHandle } from "../sync/index.js";
 import { makeConsoleLogger } from "../sync/activity.js";
 import { deriveTopicBuffer } from "../sync/peer.js";
+import { performInitialSync } from "../sync/initial.js";
+import { mergeWorkspace } from "../sync/merge.js";
+import { listWorkspaces } from "../db/workspaces.js";
 
 const [, , , subcommand, ...args] = process.argv;
 
@@ -23,6 +31,8 @@ if (subcommand === "invite") {
   await runList(args);
 } else if (subcommand === "kick") {
   await runKick(args);
+} else if (subcommand === "delete") {
+  await runDelete(args);
 } else if (subcommand === "server") {
   await runServer(args);
 } else {
@@ -32,6 +42,7 @@ if (subcommand === "invite") {
   console.error("  knowledge-base team join <invite-code>");
   console.error("  knowledge-base team list --workspace <name>");
   console.error("  knowledge-base team kick @<github-username> --workspace <name>");
+  console.error("  knowledge-base team delete @<github-username> --workspace <name>");
   console.error("  knowledge-base team server [--workspace <name>]");
   process.exit(1);
 }
@@ -57,18 +68,8 @@ async function runInvite(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const settings = loadSettings();
-  const team = settings.workspaces?.[workspaceName]?.team;
-  if (!team) {
-    console.error(`Error: No team config found for workspace "${workspaceName}". Run "knowledge-base init" first.`);
-    process.exit(1);
-  }
-  if (team.role !== "host") {
-    console.error(`Error: Only the host can invite peers (your role is "${team.role}").`);
-    process.exit(1);
-  }
-
-  const code = generateInvite(workspaceName, githubUsername);
+  const db = openDb();
+  const code = generateInvite(db, workspaceName, githubUsername);
   p.log.success(`Invite created for @${githubUsername}`);
   p.log.info(`Share this invite code:`);
   console.log(`\n  ${code}\n`);
@@ -145,15 +146,19 @@ async function runJoin(args: string[]): Promise<void> {
 
   spinner.stop("Joined successfully");
 
-  const fresh = loadSettings();
-  fresh.workspaces ??= {};
-  fresh.workspaces[workspaceName] ??= {};
-  fresh.workspaces[workspaceName].team = {
+  const db = openDb();
+  const ws = createWorkspace(db, workspaceName);
+  insertTeam(db, ws.id, {
     role: "peer",
     secret: result.secret,
-    noise_keypair: kp,
+    noise_public_key: kp.publicKey,
+    noise_secret_key: kp.secretKey,
     host_public_key: hostPublicKey,
-  };
+    last_synced_at: null,
+  });
+  writeWorkspaceToClaude(workspaceName);
+
+  const fresh = loadSettings();
   fresh.identity = {
     ...(fresh.identity ?? { name: githubUsername, email: "" }),
     github_username: githubUsername,
@@ -161,6 +166,47 @@ async function runJoin(args: string[]): Promise<void> {
   writeSettings(fresh);
 
   p.outro(`Joined workspace "${workspaceName}" as @${githubUsername}`);
+
+  const syncSpinner = p.spinner();
+  syncSpinner.start("Syncing data from host… do not close terminal");
+  const syncResult = await performInitialSync(db, workspaceName);
+  if (syncResult.ok) {
+    syncSpinner.stop(`Sync complete — ${syncResult.rowsReceived} rows received`);
+  } else {
+    syncSpinner.stop(`Sync skipped (${syncResult.reason})`);
+  }
+
+  await promptMerge(db, workspaceName);
+}
+
+export async function promptMerge(
+  db: Database.Database,
+  teamWorkspaceName: string,
+): Promise<void> {
+  const allWorkspaces = listWorkspaces(db);
+  const teamNames = new Set(listTeamWorkspaces(db).map((w) => w.name));
+  const candidates = allWorkspaces.filter((w) => !teamNames.has(w.name));
+  if (candidates.length === 0) return;
+
+  const choice = await p.select({
+    message: "Merge an existing local workspace into the team workspace? (optional)",
+    options: [
+      { label: "Skip", value: null },
+      ...candidates.map((w) => ({ label: w.name, value: w.name })),
+    ],
+  });
+  if (p.isCancel(choice) || choice === null) return;
+
+  const confirmed = await p.confirm({
+    message: `Merge all docs from "${choice}" into "${teamWorkspaceName}"?`,
+  });
+  if (p.isCancel(confirmed) || !confirmed) return;
+
+  const result = mergeWorkspace(db, choice, teamWorkspaceName);
+  p.log.success(
+    `Merged: ${result.featuresMoved} feature(s) moved` +
+    (result.featuresRenamed.length > 0 ? `, ${result.featuresRenamed.length} renamed` : ""),
+  );
 }
 
 export async function attemptJoin(
@@ -187,6 +233,7 @@ export async function attemptJoin(
         githubToken,
         peerPublicKey,
         githubUsername,
+        appVersion: HOST_VERSION,
       });
       (socket as NodeJS.WritableStream).write(msg + "\n");
 
@@ -227,8 +274,8 @@ async function runList(args: string[]): Promise<void> {
   }
   const workspaceName = args[wsIdx + 1];
 
-  const settings = loadSettings();
-  const team = settings.workspaces?.[workspaceName]?.team;
+  const db = openDb();
+  const team = getTeamByName(db, workspaceName);
   if (!team) {
     console.error(`Error: No team config found for workspace "${workspaceName}"`);
     process.exit(1);
@@ -237,8 +284,6 @@ async function runList(args: string[]): Promise<void> {
     console.error("Error: Only the host can list team members");
     process.exit(1);
   }
-
-  const db = openDb();
   const peers = listPeers(db);
 
   if (peers.length === 0) {
@@ -277,8 +322,8 @@ async function runKick(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const settings = loadSettings();
-  const team = settings.workspaces?.[workspaceName]?.team;
+  const db = openDb();
+  const team = getTeamByName(db, workspaceName);
   if (!team) {
     console.error(`Error: No team config found for workspace "${workspaceName}"`);
     process.exit(1);
@@ -287,8 +332,6 @@ async function runKick(args: string[]): Promise<void> {
     console.error("Error: Only the host can kick team members");
     process.exit(1);
   }
-
-  const db = openDb();
   const peer = findPeerByUsername(db, githubUsername);
   if (!peer) {
     console.error(`Error: Member not found: @${githubUsername}`);
@@ -303,37 +346,81 @@ async function runKick(args: string[]): Promise<void> {
   console.log(`✓ Removed @${githubUsername} from team`);
 }
 
+async function runDelete(args: string[]): Promise<void> {
+  const wsIdx = args.indexOf("--workspace");
+  if (wsIdx === -1 || !args[wsIdx + 1]) {
+    console.error("Error: --workspace <name> is required");
+    process.exit(1);
+  }
+  const workspaceName = args[wsIdx + 1];
+  const usernameRaw = args.find((a) => !a.startsWith("--") && a !== args[wsIdx + 1]);
+  if (!usernameRaw) {
+    console.error("Error: GitHub username is required (e.g. @alice)");
+    process.exit(1);
+  }
+
+  let githubUsername: string;
+  try {
+    githubUsername = normalizeGithubUsername(usernameRaw);
+  } catch (err) {
+    console.error(String(err));
+    process.exit(1);
+  }
+
+  const db = openDb();
+  const team = getTeamByName(db, workspaceName);
+  if (!team) {
+    console.error(`Error: No team config found for workspace "${workspaceName}"`);
+    process.exit(1);
+  }
+  if (team.role !== "host") {
+    console.error("Error: Only the host can delete team members");
+    process.exit(1);
+  }
+
+  const peer = findPeerByUsername(db, githubUsername);
+  if (!peer) {
+    console.error(`Error: Member not found: @${githubUsername}`);
+    process.exit(1);
+  }
+
+  try {
+    deletePeer(db, peer.public_key);
+  } catch (err) {
+    console.error(`Error: ${String(err).replace("Error: ", "")}`);
+    process.exit(1);
+  }
+
+  console.log(`✓ @${githubUsername} has been removed. You can now re-invite them.`);
+}
+
 async function runServer(args: string[]): Promise<void> {
   const wsIdx = args.indexOf("--workspace");
   const targetWorkspace: string | null = wsIdx !== -1 ? (args[wsIdx + 1] ?? null) : null;
 
-  const settings = loadSettings();
-  const allWorkspaces = settings.workspaces ?? {};
+  const db = openDb();
 
   let workspaceNames: string[];
   if (targetWorkspace !== null) {
-    if (!allWorkspaces[targetWorkspace]?.team) {
+    if (!getTeamByName(db, targetWorkspace)) {
       console.error(`Error: No team config found for workspace "${targetWorkspace}"`);
       process.exit(1);
     }
     workspaceNames = [targetWorkspace];
   } else {
-    workspaceNames = Object.entries(allWorkspaces)
-      .filter(([, ws]) => ws.team !== undefined)
-      .map(([name]) => name);
+    workspaceNames = listTeamWorkspaces(db).map((ws) => ws.name);
     if (workspaceNames.length === 0) {
       console.error("Error: No team workspaces configured.");
       process.exit(1);
     }
   }
 
-  const db = openDb();
   const logger = makeConsoleLogger();
   const handles: SyncHandle[] = [];
 
   console.log(`Sync server started — watching ${workspaceNames.length} workspace(s)\n`);
   for (const name of workspaceNames) {
-    const team = allWorkspaces[name].team!;
+    const team = getTeamByName(db, name)!;
     const topic = deriveTopicBuffer(name, team.secret).toString("hex");
     const handle = startSync(db, name, logger);
     if (!handle) {

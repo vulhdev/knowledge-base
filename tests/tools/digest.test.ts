@@ -20,7 +20,7 @@ describe("digest type", () => {
   it("create_content with type='digest' succeeds", async () => {
     const result = await createContent(db, "ws", ["ft"], "digest", "## TL;DR\nSummary");
     expect(result.type).toBe("digest");
-    expect(result.id).toBeTypeOf("number");
+    expect(result.id).toBeTypeOf("string");
   });
 
   it("creating a second digest for the same feature throws unique constraint error", async () => {

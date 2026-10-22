@@ -1,12 +1,16 @@
 import { createHash } from "node:crypto";
-import { loadSettings, writeSettings } from "../config.js";
+import { getTeamByName, listInvites, removeInvite } from "../db/team.js";
 import { getGitHubUsername } from "../team/github.js";
+import { HOST_VERSION, parseMajorMinor } from "./version.js";
 import type Database from "better-sqlite3";
+
+const HEX64 = /^[0-9a-f]{64}$/;
 
 export type JoinRequest = {
   githubToken: string;
   peerPublicKey: string;
   githubUsername?: string;
+  appVersion?: string;
 };
 
 export type JoinResult =
@@ -19,6 +23,8 @@ export function deriveJoinTopic(workspaceName: string, hostPublicKey: string): B
 
 const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
 
+// Composite key: workspaceName + ":" + username — prevents a username in one workspace
+// from blocking the same username joining a different workspace simultaneously.
 const inFlight = new Set<string>();
 
 export async function handleJoinRequest(
@@ -26,15 +32,28 @@ export async function handleJoinRequest(
   workspaceName: string,
   req: JoinRequest,
 ): Promise<JoinResult> {
-  const settings = loadSettings();
-  const team = settings.workspaces?.[workspaceName]?.team;
+  if (!req.appVersion) {
+    return { accepted: false, reason: "appVersion required — upgrade to latest knowledge-base" };
+  }
+  if (parseMajorMinor(req.appVersion) !== parseMajorMinor(HOST_VERSION)) {
+    return {
+      accepted: false,
+      reason: `version mismatch: peer is ${parseMajorMinor(req.appVersion)}.x, host requires ${parseMajorMinor(HOST_VERSION)}.x`,
+    };
+  }
+
+  const team = getTeamByName(db, workspaceName);
   if (!team) return { accepted: false, reason: "workspace not found" };
 
-  const pendingInvites = team.pending_invites;
-  const pendingUsernames = team.pending_github_usernames ?? [];
-
-  if ((pendingInvites?.length ?? 0) === 0 && pendingUsernames.length === 0) {
+  // Use the workspace_id from the already-verified team row — no redundant createWorkspace call.
+  const workspaceId = team.workspace_id;
+  const pendingInvites = listInvites(db, workspaceId);
+  if (pendingInvites.length === 0) {
     return { accepted: false, reason: "no pending invites" };
+  }
+
+  if (!HEX64.test(req.peerPublicKey)) {
+    return { accepted: false, reason: "invalid public key: must be 64 lowercase hex characters" };
   }
 
   if (!req.githubToken || req.githubToken.length > 255) {
@@ -52,33 +71,25 @@ export async function handleJoinRequest(
     return { accepted: false, reason: `username mismatch: claimed @${req.githubUsername} but token resolves to @${username}` };
   }
 
-  if (inFlight.has(username)) {
+  const inFlightKey = `${workspaceName}:${username}`;
+  if (inFlight.has(inFlightKey)) {
     return { accepted: false, reason: "join already in progress" };
   }
-  inFlight.add(username);
+  inFlight.add(inFlightKey);
 
   try {
-    // Re-read settings after the async gap — stale pendingInvites from before
+    // Re-read from DB after the async gap — stale invites from before
     // the await cannot be trusted when two connections race for the same invite.
-    const freshSettings = loadSettings();
-    const freshTeam = freshSettings.workspaces?.[workspaceName]?.team;
+    const freshTeam = getTeamByName(db, workspaceName);
     if (!freshTeam) return { accepted: false, reason: "workspace not found" };
 
-    const freshPendingInvites = freshTeam.pending_invites;
-    const freshPendingUsernames = freshTeam.pending_github_usernames ?? [];
-
-    let foundViaInvite = false;
-    if (freshPendingInvites !== undefined && freshPendingInvites.length > 0) {
-      const invite = freshPendingInvites.find((i) => i.username === username);
-      if (invite) {
-        if (Date.now() - new Date(invite.invited_at).getTime() > INVITE_TTL_MS) {
-          return { accepted: false, reason: `invite for @${username} has expired` };
-        }
-        foundViaInvite = true;
-      }
-    }
-    if (!foundViaInvite && !freshPendingUsernames.includes(username)) {
+    const freshInvites = listInvites(db, workspaceId);
+    const invite = freshInvites.find((i) => i.github_username === username);
+    if (!invite) {
       return { accepted: false, reason: `@${username} is not invited` };
+    }
+    if (Date.now() - new Date(invite.invited_at).getTime() > INVITE_TTL_MS) {
+      return { accepted: false, reason: `invite for @${username} has expired` };
     }
 
     const kicked = db
@@ -92,18 +103,10 @@ export async function handleJoinRequest(
       "INSERT OR IGNORE INTO team_peers (public_key, display_name, github_username) VALUES (?, ?, ?)",
     ).run(req.peerPublicKey, `@${username}`, username);
 
-    const updated = loadSettings();
-    if (updated.workspaces?.[workspaceName]?.team) {
-      const t = updated.workspaces[workspaceName].team;
-      t.pending_github_usernames = (t.pending_github_usernames ?? []).filter((u) => u !== username);
-      if (t.pending_invites) {
-        t.pending_invites = t.pending_invites.filter((i) => i.username !== username);
-      }
-      writeSettings(updated);
-    }
+    removeInvite(db, workspaceId, username);
 
     return { accepted: true, secret: freshTeam.secret };
   } finally {
-    inFlight.delete(username);
+    inFlight.delete(inFlightKey);
   }
 }

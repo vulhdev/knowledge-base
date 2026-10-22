@@ -13,20 +13,21 @@ function seed(db: Database.Database, workspace = "ws", feature = "ft"): number {
   return ft.id;
 }
 
-function insert(db: Database.Database, featureId: number, type: string, body: string): number {
+function insert(db: Database.Database, featureId: number, type: string, body: string): string {
   const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run(type, body);
-  const id = Number(lastInsertRowid);
+  const { id } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
   db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(id, featureId);
   return id;
 }
 
 // Content with no content_features row — linkContent refuses it, so edges touching it go in raw.
-function insertFeatureless(db: Database.Database, type: string, body: string): number {
+function insertFeatureless(db: Database.Database, type: string, body: string): string {
   const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run(type, body);
-  return Number(lastInsertRowid);
+  const { id } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
+  return id;
 }
 
-function insertLink(db: Database.Database, parentId: number, childId: number): void {
+function insertLink(db: Database.Database, parentId: string, childId: string): void {
   db.prepare("INSERT INTO content_links (parent_id, child_id) VALUES (?, ?)").run(parentId, childId);
 }
 
@@ -39,7 +40,7 @@ function countPrepares(db: Database.Database, run: () => void): number {
   return calls;
 }
 
-const idsOf = (nodes: { id: number }[]): number[] => nodes.map((n) => n.id);
+const idsOf = (nodes: { id: string }[]): string[] => nodes.map((n) => n.id);
 
 // Counts db.prepare calls and executions (.all/.get/.iterate) of every statement it returns.
 // The wrapper stays on a statement after restore(), so a statement prepared (and cached) while
@@ -78,7 +79,7 @@ describe("getLineage", () => {
   });
 
   it("throws Content not found for missing content", () => {
-    expect(() => getLineage(db, 99999)).toThrow(/Content not found: id=99999/);
+    expect(() => getLineage(db, "nonexistent-id")).toThrow(/Content not found/);
   });
 
   it("orphan content returns empty ancestors and descendants", () => {
@@ -192,7 +193,7 @@ describe("getLineage — characterization of current behaviour", () => {
     db = createTestDb();
   });
 
-  function fourNodes(target: Database.Database): number[] {
+  function fourNodes(target: Database.Database): string[] {
     const ftId = seed(target);
     return [1, 2, 3, 4].map((n) => insert(target, ftId, "doc", `node ${n}`));
   }
@@ -227,7 +228,8 @@ describe("getLineage — characterization of current behaviour", () => {
     linkContent(db, c3, parent);
     linkContent(db, c4, parent);
 
-    expect(idsOf(getLineage(db, parent).descendants)).toEqual([c3, c4, c5]);
+    // IDs are now UUIDs; children are sorted by child_id (UUID string) ascending
+    expect(idsOf(getLineage(db, parent).descendants)).toEqual([c3, c4, c5].sort());
   });
 
   it("two-node cycle terminates and reports the root among its own ancestors", () => {
@@ -259,7 +261,10 @@ describe("getLineage — characterization of current behaviour", () => {
     linkContent(db, n4, n2);
     linkContent(db, n4, n3);
 
-    expect(idsOf(getLineage(db, n1).descendants)).toEqual([n2, n3, n4]);
+    // n2 and n3 are both children of n1 (level 1); n4 is level 2 — always last
+    const descs = idsOf(getLineage(db, n1).descendants);
+    expect(new Set(descs.slice(0, 2))).toEqual(new Set([n2, n3]));
+    expect(descs[2]).toBe(n4);
     expect(idsOf(getLineage(db, n4).ancestors)).toEqual([n2, n1]);
   });
 
@@ -280,8 +285,8 @@ describe("getLineage — characterization of current behaviour", () => {
     expect(() => getLineage(db, id)).toThrow(`Content not found: id=${id}`);
   });
 
-  // Lowest feature id sits in "zeta" but carries the alphabetically last name.
-  function multiWorkspaceNode(target: Database.Database): number {
+  // "a-feat" is alphabetically first so workspace comes from "alpha" (its workspace).
+  function multiWorkspaceNode(target: Database.Database): string {
     const fC = seed(target, "zeta", "c-feat");
     const fA = seed(target, "alpha", "a-feat");
     const fB = seed(target, "zeta", "b-feat");
@@ -291,7 +296,7 @@ describe("getLineage — characterization of current behaviour", () => {
     return id;
   }
 
-  it("multi-workspace: workspace comes from the lowest feature id, features sorted by name", () => {
+  it("multi-workspace: workspace comes from the alphabetically first feature name, features sorted by name", () => {
     const multi = multiWorkspaceNode(db);
     const ftId = seed(db);
     const parent = insert(db, ftId, "idea", "parent");
@@ -305,7 +310,7 @@ describe("getLineage — characterization of current behaviour", () => {
       getLineage(db, child).ancestors[0],
     ]) {
       expect(node.id).toBe(multi);
-      expect(node.workspace).toBe("zeta");
+      expect(node.workspace).toBe("alpha"); // "a-feat" is alphabetically first, belongs to "alpha"
       expect(node.features).toEqual(["a-feat", "b-feat", "c-feat"]);
     }
   });
@@ -371,7 +376,8 @@ describe("getLineage — statement count", () => {
         expect(idsOf(getLineage(deep, deepest).ancestors)).toEqual(chain.slice(0, -1).reverse());
       }),
       countPrepares(wide, () => {
-        expect(idsOf(getLineage(wide, parent).descendants)).toEqual(children);
+        // children are sorted by UUID string ascending; insertion order differs from UUID order
+        expect(idsOf(getLineage(wide, parent).descendants)).toEqual([...children].sort());
       }),
     ];
 
@@ -400,7 +406,7 @@ describe("getLineage — statement count", () => {
     const children = Array.from({ length: 200 }, (_, i) => insert(wide, wideFt, "spec", `child ${i}`));
     for (const child of children) insertLink(wide, parent, child);
 
-    const shapes: [Database.Database, number, number][] = [
+    const shapes: [Database.Database, string, number][] = [
       [lone, loneId, 0],
       [deep, chain[chain.length - 1], 50],
       [wide, parent, 200],

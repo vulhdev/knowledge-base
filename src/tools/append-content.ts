@@ -8,7 +8,7 @@ type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: num
 
 export async function appendContent(
   db: Database.Database,
-  id: number,
+  id: string,
   text: string,
 ): Promise<Content> {
   if (!text.trim()) {

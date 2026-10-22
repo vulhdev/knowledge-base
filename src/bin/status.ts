@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import * as p from "@clack/prompts";
-import { loadSettings } from "../config.js";
 import { openDb } from "../db/client.js";
+import { listTeamWorkspaces, getTeamByName } from "../db/team.js";
 import { createSwarm } from "../sync/peer.js";
+import type Database from "better-sqlite3";
 
 const PROBE_TIMEOUT_MS = 10_000;
 
@@ -24,11 +25,8 @@ function formatTimeAgo(iso: string): string {
 
 export { resolveWorkspace as resolveWorkspaceForTest };
 
-async function resolveWorkspace(): Promise<string | null> {
-  const settings = loadSettings();
-  const teamWorkspaces = Object.entries(settings.workspaces ?? {})
-    .filter(([, cfg]) => cfg.team)
-    .map(([name]) => name);
+async function resolveWorkspace(db: Database.Database): Promise<string | null> {
+  const teamWorkspaces = listTeamWorkspaces(db).map((ws) => ws.name);
 
   const arg = process.argv[3];
   if (arg) {
@@ -62,17 +60,16 @@ async function resolveWorkspace(): Promise<string | null> {
 }
 
 async function main(): Promise<void> {
-  const workspaceName = await resolveWorkspace();
+  const db = openDb();
+  const workspaceName = await resolveWorkspace(db);
   if (!workspaceName) {
     process.exit(0);
   }
 
-  const settings = loadSettings();
-  const team = settings.workspaces![workspaceName].team!;
+  const team = getTeamByName(db, workspaceName)!;
 
   console.log(`\nWorkspace : ${workspaceName}  (role: ${team.role})`);
 
-  const db = openDb();
   const { swarm, destroy } = createSwarm(db, workspaceName);
 
   const connectedKeys = new Set<string>();

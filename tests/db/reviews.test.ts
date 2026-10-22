@@ -11,20 +11,20 @@ import {
   resolveReview,
 } from "../../src/db/reviews.js";
 
-async function seedContent(db: Database.Database): Promise<number> {
+async function seedContent(db: Database.Database): Promise<string> {
   db.exec("INSERT OR IGNORE INTO workspaces (name) VALUES ('ws')");
   const { id: wsId } = db.prepare("SELECT id FROM workspaces WHERE name = 'ws'").get() as { id: number };
   db.exec(`INSERT OR IGNORE INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
   const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
   const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, title, body) VALUES ('spec', 'My Spec', 'body text')").run();
-  const id = Number(lastInsertRowid);
+  const { id } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
   db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(id, ftId);
   return id;
 }
 
 describe("createReview", () => {
   let db: Database.Database;
-  let contentId: number;
+  let contentId: string;
 
   beforeEach(async () => {
     db = createTestDb();
@@ -40,7 +40,7 @@ describe("createReview", () => {
   });
 
   it("throws when content_id does not exist", () => {
-    expect(() => createReview(db, 9999)).toThrow(/Content not found/);
+    expect(() => createReview(db, "nonexistent-id")).toThrow(/Content not found/);
   });
 
   it("allows multiple reviews for the same content", () => {
@@ -110,7 +110,7 @@ describe("commitReview", () => {
 
 describe("getPendingReview", () => {
   let db: Database.Database;
-  let contentId: number;
+  let contentId: string;
 
   beforeEach(async () => {
     db = createTestDb();

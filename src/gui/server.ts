@@ -2,8 +2,8 @@ import express from "express";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
-import { loadSettings } from "../config.js";
 import { listWorkspaces } from "../db/workspaces.js";
+import { getTeamByName } from "../db/team.js";
 import { listFeatures, listWorkspaceSummaries, listRecentContents, listReviewComments } from "./db.js";
 import { listContents } from "../tools/list-contents.js";
 import { getContent } from "../tools/get-content.js";
@@ -25,7 +25,7 @@ import {
   buildExportBody,
   esc,
 } from "./render.js";
-import { listPeers, findPeerByUsername, kickPeer } from "../team/kick.js";
+import { listPeers, findPeerByUsername, kickPeer, deletePeer } from "../team/kick.js";
 import { addComment, commitReview } from "../db/reviews.js";
 import { listErrorLogs } from "../db/error-log.js";
 
@@ -55,14 +55,14 @@ export function createApp(db: Database.Database, port?: number) {
         return;
       }
     }
-    const team = loadSettings().workspaces?.[workspace]?.team;
+    const team = getTeamByName(db, workspace);
     const hasTeam = team?.role === "host";
     res.send(renderFeatureList(workspace, features, hasTeam));
   });
 
   app.get("/ws/:workspace/team", (req, res) => {
     const { workspace } = req.params;
-    const team = loadSettings().workspaces?.[workspace]?.team;
+    const team = getTeamByName(db, workspace);
     if (!team || team.role !== "host") {
       res.status(403).send("<p>Forbidden: only the host can view the team page.</p>");
       return;
@@ -92,7 +92,7 @@ export function createApp(db: Database.Database, port?: number) {
     }
 
     const { workspace } = req.params;
-    const team = loadSettings().workspaces?.[workspace]?.team;
+    const team = getTeamByName(db, workspace);
     if (!team || team.role !== "host") {
       res.status(403).send("<p>Forbidden</p>");
       return;
@@ -115,6 +115,51 @@ export function createApp(db: Database.Database, port?: number) {
     res.redirect(`/ws/${encodeURIComponent(workspace)}/team`);
   });
 
+  app.post("/ws/:workspace/team/delete", (req, res) => {
+    const origin = req.headers.origin ?? "";
+    let originOk = false;
+    try {
+      const u = new URL(origin);
+      const isLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+      if (isLocal) {
+        if (port !== undefined) {
+          const originPort = u.port ? Number(u.port) : (u.protocol === "https:" ? 443 : 80);
+          originOk = originPort === port;
+        } else {
+          originOk = true;
+        }
+      }
+    } catch { /* bad origin */ }
+    if (!originOk) {
+      res.status(403).send("<p>Forbidden</p>");
+      return;
+    }
+
+    const { workspace } = req.params;
+    const team = getTeamByName(db, workspace);
+    if (!team || team.role !== "host") {
+      res.status(403).send("<p>Forbidden</p>");
+      return;
+    }
+    const { github_username } = req.body as { github_username?: string };
+    if (!github_username) {
+      res.status(400).send("<p>github_username is required</p>");
+      return;
+    }
+    const peer = findPeerByUsername(db, github_username);
+    if (!peer) {
+      res.status(400).send(`<p>Member not found: @${esc(github_username)}</p>`);
+      return;
+    }
+    try {
+      deletePeer(db, peer.public_key);
+    } catch (err) {
+      res.status(400).send(`<p>${esc(String(err).replace("Error: ", ""))}</p>`);
+      return;
+    }
+    res.redirect(`/ws/${encodeURIComponent(workspace)}/team`);
+  });
+
   app.get("/ws/:workspace/:feature", (req, res) => {
     const { workspace, feature } = req.params;
     const features = listFeatures(db, workspace);
@@ -128,8 +173,8 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/ws/:workspace/:feature/:id", (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
+    const id = req.params.id;
+    if (!id) {
       res.status(404).send("<p>Not found</p>");
       return;
     }
@@ -149,8 +194,8 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/content/:id", (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
+    const id = req.params.id;
+    if (!id) {
       res.status(404).send("<p>Not found</p>");
       return;
     }
@@ -163,9 +208,9 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/ws/:workspace/:feature/:id/review", (req, res) => {
-    const id = Number(req.params.id);
+    const id = req.params.id;
     const reviewId = Number(req.query.review_id);
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!id) {
       res.status(404).send("<p>Not found</p>");
       return;
     }
@@ -208,8 +253,8 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/ws/:workspace/:feature/:id/export", (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
+    const id = req.params.id;
+    if (!id) {
       res.status(404).send("<p>Not found</p>");
       return;
     }
@@ -226,8 +271,8 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/ws/:workspace/:feature/:id/diff", (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
+    const id = req.params.id;
+    if (!id) {
       res.status(404).send("<p>Not found</p>");
       return;
     }
@@ -251,8 +296,8 @@ export function createApp(db: Database.Database, port?: number) {
       const latest = allVersions.versions.find((v) => v.is_latest) ?? allVersions.versions[allVersions.versions.length - 1];
       const secondLatest = allVersions.versions[allVersions.versions.indexOf(latest) - 1] ?? allVersions.versions[0];
 
-      const fromId = req.query.from ? Number(req.query.from) : secondLatest.id;
-      const toId = req.query.to ? Number(req.query.to) : latest.id;
+      const fromId = typeof req.query.from === "string" ? req.query.from : secondLatest.id;
+      const toId = typeof req.query.to === "string" ? req.query.to : latest.id;
 
       if (fromId === toId) {
         res.redirect(contentUrl);

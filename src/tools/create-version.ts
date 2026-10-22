@@ -4,7 +4,7 @@ import { fetchFeatures } from "./_helpers.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number; version_count: number };
 
-export function createVersion(db: Database.Database, id: number): CreateVersionResult {
+export function createVersion(db: Database.Database, id: string): CreateVersionResult {
   const row = db
     .prepare(
       `SELECT c.id, c.root_id, c.version_number, c.type, c.title, c.body, c.created_at, c.updated_at, c.embedding,
@@ -36,7 +36,7 @@ export function createVersion(db: Database.Database, id: number): CreateVersionR
 
     const prevLatest = db
       .prepare(`SELECT id FROM contents WHERE (id = ? OR root_id = ?) AND is_latest = 1`)
-      .get(chainRoot, chainRoot) as { id: number } | undefined;
+      .get(chainRoot, chainRoot) as { id: string } | undefined;
 
     if (prevLatest) {
       db.prepare("UPDATE contents SET is_latest = 0 WHERE id = ?").run(prevLatest.id);
@@ -49,7 +49,7 @@ export function createVersion(db: Database.Database, id: number): CreateVersionR
       )
       .run(row.type, row.title, row.body, row.embedding, chainRoot, max_version + 1);
 
-    const newId = Number(lastInsertRowid);
+    const { id: newId } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
 
     // Same body, same sections: copy the doc sections (with their embeddings) so section search
     // covers the new version immediately instead of waiting for the next backfill

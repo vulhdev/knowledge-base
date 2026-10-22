@@ -1,13 +1,13 @@
 export type ContentType = string;
 
 export type Content = {
-  id: number;
+  id: string;
   workspace: string;
   features: string[];
   type: ContentType;
   title: string | null;
   body: string;
-  root_id: number | null;
+  root_id: string | null;
   version_number: number;
   created_at: string;
   updated_at: string;
@@ -47,14 +47,14 @@ export type ListPage = {
 export type ConflictType = "semantic_contradiction" | "risk_shadow";
 
 export type ConflictResult = {
-  content_id: number;
+  content_id: string;
   features: string[];
   type: ConflictType;
   reason: string;
 };
 
 export type LinkedContent = {
-  id: number;
+  id: string;
   workspace: string;
   features: string[];
   type: ContentType;
@@ -68,21 +68,21 @@ export type LineageResult = {
 };
 
 export type SuggestedParent = {
-  id: number;
+  id: string;
   type: ContentType;
   title: string | null;
   score: number;
 };
 
 export type LinkResult = {
-  parent_id: number;
-  child_id: number;
+  parent_id: string;
+  child_id: string;
   created_at: string;
   direction_warning?: string;
 };
 
 export type CreateContentResult = {
-  id: number;
+  id: string;
   workspace: string;
   features: string[];
   type: ContentType;
@@ -104,7 +104,7 @@ export type CodeRefFile = {
 
 export type AttachCodeRefResult = {
   id: number;
-  content_id: number;
+  content_id: string;
   task_ref: string | null;
   commit_hash: string;
   file_paths: CodeRefFile[];
@@ -112,12 +112,12 @@ export type AttachCodeRefResult = {
 };
 
 export type GetCodeRefsResult = {
-  content_id: number;
+  content_id: string;
   refs: AttachCodeRefResult[];
 };
 
 export type VersionSummary = {
-  id: number;
+  id: string;
   version_number: number;
   is_latest: boolean;
   title: string | null;
@@ -126,11 +126,11 @@ export type VersionSummary = {
 };
 
 export type ListVersionsResult = {
-  root_id: number;
+  root_id: string;
   versions: VersionSummary[];
 };
 
 export type CreateVersionResult = {
   content: Content;
-  previous_version_id: number;
+  previous_version_id: string;
 };

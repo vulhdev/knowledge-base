@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 
 const DEFAULT_LOCK_DIR = join(homedir(), ".claude", "knowledge-base");
@@ -30,6 +30,7 @@ export function acquireSyncLock(workspaceName: string, dir?: string): (() => voi
     }
   }
 
+  mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${process.pid}\n`, "utf8");
 
   let released = false;

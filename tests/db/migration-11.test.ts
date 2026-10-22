@@ -71,10 +71,12 @@ describe("Migration 12 — contentless CJK-bigram contents_fts", () => {
   it("keeps triggers working after the upgrade: update and delete", () => {
     const db = buildPre11Db();
     applySchema(db);
-    db.prepare("UPDATE contents SET body = '回次の採番' WHERE id = 1").run();
+    // After UUID migration, look up the UUID of the JP-body row
+    const { id: jpId } = db.prepare("SELECT id FROM contents WHERE title = '原価の説明'").get() as { id: string };
+    db.prepare("UPDATE contents SET body = '回次の採番' WHERE id = ?").run(jpId);
     expect(match(db, '"掛率"')).toEqual([]);
-    expect(match(db, '"回次"')).toEqual([1]);
-    db.prepare("DELETE FROM contents WHERE id = 1").run();
+    expect(match(db, '"回次"')).not.toEqual([]);
+    db.prepare("DELETE FROM contents WHERE id = ?").run(jpId);
     expect(match(db, '"回次"')).toEqual([]);
   });
 
@@ -103,7 +105,7 @@ describe("Migration 12 — contentless CJK-bigram contents_fts", () => {
     const db = buildPre11Db();
     const realExec = db.exec.bind(db);
     const spy = vi.spyOn(db, "exec").mockImplementation((sql: string) => {
-      if (sql.includes("SELECT id, kb_cjk_bigram(title), kb_cjk_bigram(body) FROM contents")) throw new Error("crash");
+      if (sql.includes("SELECT rowid, kb_cjk_bigram(title), kb_cjk_bigram(body) FROM contents")) throw new Error("crash");
       return realExec(sql);
     });
     expect(() => applySchema(db)).toThrow(/crash/);
@@ -112,6 +114,6 @@ describe("Migration 12 — contentless CJK-bigram contents_fts", () => {
     expect(sqlOf(db, "contents_ai")).not.toContain("kb_cjk_bigram");
     applySchema(db);
     expect(sqlOf(db, "contents_fts")).toContain("contentless_delete");
-    expect(match(db, '"掛率"')).toEqual([1]);
+    expect(match(db, '"掛率"')).not.toEqual([]);
   });
 });

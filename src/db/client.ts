@@ -3,10 +3,12 @@ import { load as loadSqliteVec } from "sqlite-vec";
 import { loadCrsqlite } from "../team/crsqlite.js";
 import { homedir } from "node:os";
 import { join, dirname, basename, resolve } from "node:path";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, chmodSync } from "node:fs";
 import { applySchema } from "./schema.js";
 import { startBackfill } from "../embedding/backfill.js";
-import { loadSettings } from "../config.js";
+import { loadSettings, writeSettings } from "../config.js";
+import { insertTeam, getTeamByName, addInvite } from "./team.js";
+import { createWorkspace } from "./workspaces.js";
 
 let instance: Database.Database | null = null;
 
@@ -17,6 +19,12 @@ export function openDb(): Database.Database {
 
   try {
     instance = new Database(dbPath);
+    // Restrict DB file to owner-only (0600) so noise_secret_key stored inside
+    // is not world-readable. This is a best-effort guard; OS keychain integration
+    // is tracked as a follow-up improvement.
+    if (dbPath !== ":memory:") {
+      try { chmodSync(dbPath, 0o600); } catch { /* non-fatal — e.g. read-only filesystem */ }
+    }
     loadSqliteVec(instance);
     try { loadCrsqlite(instance); } catch { /* extension not downloaded — team sync disabled */ }
   } catch (err) {
@@ -31,8 +39,42 @@ export function openDb(): Database.Database {
   }
 
   applySchema(instance);
+  migrateSettingsToDb(instance);
   startBackfill(instance);
   return instance;
+}
+
+export function migrateSettingsToDb(db: Database.Database): void {
+  const settings = loadSettings();
+  if (!settings.workspaces) return;
+  let migrated = false;
+  for (const [name, ws] of Object.entries(settings.workspaces)) {
+    const team = ws.team;
+    if (!team) continue;
+    if (getTeamByName(db, name)) continue; // already migrated
+    const row = createWorkspace(db, name);
+    insertTeam(db, row.id, {
+      role: team.role,
+      secret: team.secret,
+      noise_public_key: team.noise_keypair.publicKey,
+      noise_secret_key: team.noise_keypair.secretKey,
+      host_public_key: team.host_public_key ?? null,
+      last_synced_at: team.last_synced_at ?? null,
+    });
+    const usernames: string[] = [
+      ...(team.pending_github_usernames ?? []),
+      ...(team.pending_invites ?? []).map((i) => i.username),
+    ];
+    for (const username of [...new Set(usernames)]) {
+      addInvite(db, row.id, username);
+    }
+    migrated = true;
+  }
+  if (migrated) {
+    const cleaned = { ...settings };
+    delete cleaned.workspaces;
+    writeSettings(cleaned);
+  }
 }
 
 /** Resolve symlinks of a path that may not exist yet (resolves the nearest existing parent). */

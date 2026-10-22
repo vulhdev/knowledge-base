@@ -1,142 +1,79 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createTestDb } from "../setup.js";
+import type Database from "better-sqlite3";
+import { insertTeam, listInvites } from "../../src/db/team.js";
+import { createWorkspace } from "../../src/db/workspaces.js";
+import { generateInvite } from "../../src/team/invite.js";
 
-vi.mock("node:os", () => ({ homedir: vi.fn().mockReturnValue("/test/home") }));
-vi.mock("node:fs", () => ({
-  existsSync: vi.fn(),
-  mkdirSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  chmodSync: vi.fn(),
-  renameSync: vi.fn(),
-  copyFileSync: vi.fn(),
-  unlinkSync: vi.fn(),
-}));
+const HOST_PK = "a".repeat(64);
 
-const MOCK_HOST_CONFIG = {
-  role: "host" as const,
-  secret: "a".repeat(64),
-  noise_keypair: { publicKey: "a".repeat(64), secretKey: "b".repeat(64) },
-};
+let db: Database.Database;
+let wsId: number;
+
+beforeEach(() => {
+  db = createTestDb();
+  const ws = createWorkspace(db, "myws");
+  wsId = ws.id;
+  insertTeam(db, wsId, {
+    role: "host",
+    secret: "a".repeat(64),
+    noise_public_key: HOST_PK,
+    noise_secret_key: "b".repeat(64),
+    host_public_key: null,
+    last_synced_at: null,
+  });
+});
 
 describe("generateInvite", () => {
-  beforeEach(() => {
-    vi.resetModules();
-    vi.clearAllMocks();
+  it("returns invite code in <hostPublicKey>:<workspaceName> format", () => {
+    const code = generateInvite(db, "myws", "vulhdev");
+    expect(code).toBe(`${HOST_PK}:myws`);
   });
 
-  it("returns invite code in <hostPublicKey>:<workspaceName> format", async () => {
-    const { existsSync, readFileSync } = await import("node:fs");
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
-      JSON.stringify({
-        db_path: "/db",
-        model_cache_dir: "/m",
-        workspaces: { myws: { team: MOCK_HOST_CONFIG } },
-      }),
-    );
-    const { generateInvite } = await import("../../src/team/invite.js");
-    const code = generateInvite("myws", "vulhdev");
-    expect(code).toBe("a".repeat(64) + ":myws");
-  });
+  it("SUGG-2: saves pending_invites entry with invited_at as SQLite datetime string", () => {
+    generateInvite(db, "myws", "vulhdev");
 
-  it("SUGG-2: saves pending_invites entry with invited_at ISO timestamp", async () => {
-    const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
-      JSON.stringify({
-        db_path: "/db",
-        model_cache_dir: "/m",
-        workspaces: { myws: { team: MOCK_HOST_CONFIG } },
-      }),
-    );
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-20T10:00:00.000Z"));
-    const { generateInvite } = await import("../../src/team/invite.js");
-    generateInvite("myws", "vulhdev");
-
-    const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
-    const invites = written.workspaces.myws.team.pending_invites as Array<{ username: string; invited_at: string }>;
+    const invites = listInvites(db, wsId);
     expect(invites).toHaveLength(1);
-    expect(invites[0].username).toBe("vulhdev");
-    expect(invites[0].invited_at).toBe("2026-10-20T10:00:00.000Z");
-    vi.useRealTimers();
+    expect(invites[0].github_username).toBe("vulhdev");
+    // SQLite datetime('now') → "YYYY-MM-DD HH:MM:SS"
+    expect(invites[0].invited_at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   });
 
-  it("saves github username to pending_github_usernames in settings.json", async () => {
-    const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
-      JSON.stringify({
-        db_path: "/db",
-        model_cache_dir: "/m",
-        workspaces: { myws: { team: MOCK_HOST_CONFIG } },
-      }),
-    );
-    const { generateInvite } = await import("../../src/team/invite.js");
-    generateInvite("myws", "vulhdev");
+  it("saves github username to workspace_invites table", () => {
+    generateInvite(db, "myws", "vulhdev");
 
-    const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
-    expect(written.workspaces.myws.team.pending_github_usernames).toContain("vulhdev");
+    const usernames = listInvites(db, wsId).map((i) => i.github_username);
+    expect(usernames).toContain("vulhdev");
   });
 
-  it("throws when workspace has no team config", async () => {
-    const { existsSync, readFileSync } = await import("node:fs");
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
-      JSON.stringify({ db_path: "/db", model_cache_dir: "/m" }),
-    );
-    const { generateInvite } = await import("../../src/team/invite.js");
-    expect(() => generateInvite("myws", "vulhdev")).toThrow(/no team config/i);
+  it("throws when workspace has no team config", () => {
+    const freshDb = createTestDb();
+    createWorkspace(freshDb, "myws");
+
+    expect(() => generateInvite(freshDb, "myws", "vulhdev")).toThrow(/no team config/i);
   });
 
-  it("re-inviting same user replaces the existing entry (no duplicate)", async () => {
-    const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
-    vi.mocked(existsSync).mockReturnValue(true);
-    const FIRST_INVITE_ISO = "2026-10-18T00:00:00.000Z";
-    vi.mocked(readFileSync).mockReturnValue(
-      JSON.stringify({
-        db_path: "/db",
-        model_cache_dir: "/m",
-        workspaces: {
-          myws: {
-            team: {
-              ...MOCK_HOST_CONFIG,
-              pending_github_usernames: ["vulhdev"],
-              pending_invites: [{ username: "vulhdev", invited_at: FIRST_INVITE_ISO }],
-            },
-          },
-        },
-      }),
-    );
-    const { generateInvite } = await import("../../src/team/invite.js");
-    generateInvite("myws", "vulhdev");
+  it("re-inviting same user replaces the existing entry (no duplicate)", () => {
+    generateInvite(db, "myws", "vulhdev");
+    generateInvite(db, "myws", "vulhdev");
 
-    const written = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
-    const invites = written.workspaces.myws.team.pending_invites as Array<{ username: string; invited_at: string }>;
-    const usernames = written.workspaces.myws.team.pending_github_usernames as string[];
-
-    // Exactly one entry for vulhdev (no duplicate)
-    expect(invites.filter((i) => i.username === "vulhdev")).toHaveLength(1);
-    expect(usernames.filter((u) => u === "vulhdev")).toHaveLength(1);
-
-    // The surviving entry should be the NEW one (not the old FIRST_INVITE_ISO)
-    const entry = invites.find((i) => i.username === "vulhdev")!;
-    expect(entry.invited_at).not.toBe(FIRST_INVITE_ISO);
+    const invites = listInvites(db, wsId).filter((i) => i.github_username === "vulhdev");
+    expect(invites).toHaveLength(1);
   });
 
-  it("throws when caller is not the host", async () => {
-    const { existsSync, readFileSync } = await import("node:fs");
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
-      JSON.stringify({
-        db_path: "/db",
-        model_cache_dir: "/m",
-        workspaces: {
-          myws: { team: { ...MOCK_HOST_CONFIG, role: "peer" } },
-        },
-      }),
-    );
-    const { generateInvite } = await import("../../src/team/invite.js");
-    expect(() => generateInvite("myws", "vulhdev")).toThrow(/only the host/i);
+  it("throws when caller is not the host", () => {
+    const peerDb = createTestDb();
+    const peerWs = createWorkspace(peerDb, "myws");
+    insertTeam(peerDb, peerWs.id, {
+      role: "peer",
+      secret: "a".repeat(64),
+      noise_public_key: HOST_PK,
+      noise_secret_key: "b".repeat(64),
+      host_public_key: "h".repeat(64),
+      last_synced_at: null,
+    });
+
+    expect(() => generateInvite(peerDb, "myws", "vulhdev")).toThrow(/only the host/i);
   });
 });

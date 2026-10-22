@@ -1,11 +1,11 @@
 import type Database from "better-sqlite3";
 import { fetchFeatures } from "./_helpers.js";
 
-export type AttachFeatureResult = { content_id: number; features: string[] };
+export type AttachFeatureResult = { content_id: string; features: string[] };
 
 export function attachFeature(
   db: Database.Database,
-  contentId: number,
+  contentId: string,
   workspace: string,
   featureName: string,
 ): AttachFeatureResult {
@@ -18,7 +18,7 @@ export function attachFeature(
        WHERE c.id = ? AND w.name = ?
        LIMIT 1`,
     )
-    .get(contentId, workspace) as { id: number; type: string } | undefined;
+    .get(contentId, workspace) as { id: string; type: string } | undefined;
 
   if (!content) {
     throw new Error(`Content not found: id=${contentId} in workspace=${workspace}`);

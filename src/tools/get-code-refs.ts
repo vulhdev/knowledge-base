@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import type { AttachCodeRefResult, CodeRefFile, GetCodeRefsResult } from "../types.js";
 
-export function getCodeRefs(db: Database.Database, contentId: number): GetCodeRefsResult {
+export function getCodeRefs(db: Database.Database, contentId: string): GetCodeRefsResult {
   const rows = db
     .prepare(
       `SELECT id, content_id, task_ref, commit_hash, file_paths, created_at
@@ -11,7 +11,7 @@ export function getCodeRefs(db: Database.Database, contentId: number): GetCodeRe
     )
     .all(contentId) as Array<{
     id: number;
-    content_id: number;
+    content_id: string;
     task_ref: string | null;
     commit_hash: string;
     file_paths: string;

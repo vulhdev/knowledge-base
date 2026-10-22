@@ -2,9 +2,10 @@ import { describe, it, expect } from "vitest";
 import { createTestDb } from "../setup.js";
 import { applySchema } from "../../src/db/schema.js";
 
-function seedDoc(db: ReturnType<typeof createTestDb>): number {
+function seedDoc(db: ReturnType<typeof createTestDb>): string {
   db.exec("INSERT INTO workspaces (name) VALUES ('ws'); INSERT INTO features (workspace_id, name) VALUES (1, 'ft');");
-  const id = Number(db.prepare("INSERT INTO contents (type, title, body) VALUES ('doc', 't', 'b')").run().lastInsertRowid);
+  const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, title, body) VALUES ('doc', 't', 'b')").run();
+  const { id } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
   db.prepare("INSERT INTO content_features VALUES (?, 1)").run(id);
   return id;
 }

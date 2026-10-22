@@ -24,7 +24,7 @@ function hasSourceKeyColumn(db: Database.Database): boolean {
 }
 
 /** SOT cards (source_key 'sot:…') get pointers from the importer, never doc sections. */
-export function isSotCard(db: Database.Database, contentId: number): boolean {
+export function isSotCard(db: Database.Database, contentId: string): boolean {
   if (!hasSourceKeyColumn(db)) return false;
   const row = db.prepare("SELECT source_key FROM contents WHERE id = ?").get(contentId) as { source_key: string | null } | undefined;
   return !!row?.source_key?.startsWith("sot:");
@@ -35,7 +35,7 @@ export function isSotCard(db: Database.Database, contentId: number): boolean {
  * the body. A row whose key, hash and heading path are unchanged keeps its embedding (its offsets
  * are refreshed) unless the title changed; everything else is deleted and re-inserted unembedded.
  */
-export function writeDocSections(db: Database.Database, contentId: number, sections: Section[], titleChanged = false): void {
+export function writeDocSections(db: Database.Database, contentId: string, sections: Section[], titleChanged = false): void {
   if (isSotCard(db, contentId)) return;
   const existing = db
     .prepare("SELECT id, chunk_key, chunk_sha, heading_path FROM content_chunks WHERE content_id = ? AND kind = 'doc'")
@@ -77,7 +77,7 @@ function overlapFor(body: string, rows: PendingRow[], row: PendingRow): string {
 }
 
 /** Embed the doc sections of one content row that have no embedding yet. Never throws. */
-export async function embedDocSections(db: Database.Database, contentId: number): Promise<void> {
+export async function embedDocSections(db: Database.Database, contentId: string): Promise<void> {
   if (!isModelReady()) return;
   const doc = db.prepare("SELECT title, body FROM contents WHERE id = ?").get(contentId) as { title: string | null; body: string } | undefined;
   if (!doc) return;
@@ -118,7 +118,7 @@ export async function embedPendingDocSections(db: Database.Database): Promise<nu
          ${sotFilter}`,
       )
       .all() as { id: number }[]
-  ).map((r) => r.id);
+  ).map((r) => (r as unknown as { id: string }).id);
   for (const id of ids) {
     try {
       const { body } = db.prepare("SELECT body FROM contents WHERE id = ?").get(id) as { body: string };

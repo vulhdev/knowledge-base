@@ -6,11 +6,11 @@ import { fetchFeatures } from "./_helpers.js";
 
 export async function deriveContent(
   db: Database.Database,
-  parentId: number,
+  parentId: string,
   type: string,
   body: string,
   title?: string,
-): Promise<CreateContentResult & { parent_id: number }> {
+): Promise<CreateContentResult & { parent_id: string }> {
   const parent = db
     .prepare(
       `SELECT c.id, w.name AS workspace
@@ -21,7 +21,7 @@ export async function deriveContent(
        WHERE c.id = ?
        LIMIT 1`,
     )
-    .get(parentId) as { id: number; workspace: string } | undefined;
+    .get(parentId) as { id: string; workspace: string } | undefined;
 
   if (!parent) throw new Error(`Content not found: id=${parentId}`);
 
