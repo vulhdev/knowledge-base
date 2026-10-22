@@ -1,10 +1,13 @@
 import type Database from "better-sqlite3";
 import type { Content } from "../types.js";
 import { fetchFeatures } from "./_helpers.js";
+import { logInfo } from "../log/logger.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs">;
 
 export function deleteContent(db: Database.Database, id: string, cascade = false): Content {
+  const t0 = Date.now();
+  logInfo("delete_content", { event: "start", id, cascade });
   const row = db
     .prepare(
       `SELECT c.id, w.name AS workspace, c.type, c.body, c.title, c.root_id, c.version_number,
@@ -24,13 +27,18 @@ export function deleteContent(db: Database.Database, id: string, cascade = false
 
   const features = fetchFeatures(db, id);
 
+  const done = (result: Content) => {
+    logInfo("delete_content", { event: "done", ms: String(Date.now() - t0), id });
+    return result;
+  };
+
   if (cascade) {
     // Path 4: delete entire version chain
     const chainRoot = row.root_id ?? row.id;
     db.transaction(() => {
       db.prepare("DELETE FROM contents WHERE id = ? OR root_id = ?").run(chainRoot, chainRoot);
     })();
-    return { ...row, features, has_code_refs: false };
+    return done({ ...row, features, has_code_refs: false });
   }
 
   const chainRoot = row.root_id ?? row.id;
@@ -42,7 +50,7 @@ export function deleteContent(db: Database.Database, id: string, cascade = false
   if (!hasOtherVersions) {
     // Path 1: sole version — existing behavior
     db.prepare("DELETE FROM contents WHERE id = ?").run(id);
-    return { ...row, features, has_code_refs: false };
+    return done({ ...row, features, has_code_refs: false });
   }
 
   if (row.root_id !== null) {
@@ -63,7 +71,7 @@ export function deleteContent(db: Database.Database, id: string, cascade = false
         }
       }
     })();
-    return { ...row, features, has_code_refs: false };
+    return done({ ...row, features, has_code_refs: false });
   }
 
   // Path 3: root version with children — promote v2 to root
@@ -85,5 +93,5 @@ export function deleteContent(db: Database.Database, id: string, cascade = false
     db.prepare("DELETE FROM contents WHERE id = ?").run(id);
   })();
 
-  return { ...row, features, has_code_refs: false };
+  return done({ ...row, features, has_code_refs: false });
 }

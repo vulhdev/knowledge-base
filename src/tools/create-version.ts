@@ -1,10 +1,13 @@
 import type Database from "better-sqlite3";
 import type { Content, CreateVersionResult } from "../types.js";
 import { fetchFeatures } from "./_helpers.js";
+import { logInfo } from "../log/logger.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number; version_count: number };
 
 export function createVersion(db: Database.Database, id: string): CreateVersionResult {
+  const t0 = Date.now();
+  logInfo("create_version", { event: "start", id });
   const row = db
     .prepare(
       `SELECT c.id, c.root_id, c.version_number, c.type, c.title, c.body, c.created_at, c.updated_at, c.embedding,
@@ -104,5 +107,6 @@ export function createVersion(db: Database.Database, id: string): CreateVersionR
     has_code_refs: newRow.has_code_refs === 1,
   };
 
+  logInfo("create_version", { event: "done", ms: String(Date.now() - t0), new_id: content.id, version: content.version_number });
   return { content, previous_version_id: id };
 }

@@ -3,6 +3,7 @@ import type { CreateContentResult } from "../types.js";
 import { createContent } from "./create-content.js";
 import { linkContent } from "./link-content.js";
 import { fetchFeatures } from "./_helpers.js";
+import { logInfo } from "../log/logger.js";
 
 export async function deriveContent(
   db: Database.Database,
@@ -11,6 +12,8 @@ export async function deriveContent(
   body: string,
   title?: string,
 ): Promise<CreateContentResult & { parent_id: string }> {
+  const t0 = Date.now();
+  logInfo("derive_content", { event: "start", parent_id: parentId, type });
   const parent = db
     .prepare(
       `SELECT c.id, w.name AS workspace
@@ -30,5 +33,6 @@ export async function deriveContent(
 
   linkContent(db, created.id, parentId);
 
+  logInfo("derive_content", { event: "done", ms: String(Date.now() - t0), content_id: created.id });
   return { ...created, parent_id: parentId };
 }
