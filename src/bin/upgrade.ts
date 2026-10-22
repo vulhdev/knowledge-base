@@ -13,8 +13,8 @@ const AGENTS_SRC = join(PACKAGE_ROOT, "agents");
 const VERSION = (JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")) as { version: string }).version;
 const VERSION_MARKER = ".knowledge-base-version";
 
-async function fetchLatestVersion(): Promise<string> {
-  const res = await fetch(`https://registry.npmjs.org/${PACKAGE_NAME}/latest`);
+async function fetchLatestVersion(tag: "latest" | "beta"): Promise<string> {
+  const res = await fetch(`https://registry.npmjs.org/${PACKAGE_NAME}/${tag}`);
   if (!res.ok) throw new Error(`Registry responded with ${res.status}`);
   const data = await res.json() as { version: string };
   return data.version;
@@ -89,8 +89,10 @@ function syncLocalAssets(): boolean {
 async function main(): Promise<void> {
   // Internal flag: re-invoked after npm install to sync with new binary's files
   const syncOnly = process.env.KB_UPGRADE_SYNC === "1";
+  const useBeta = process.argv.includes("--beta") || process.env.KB_UPGRADE_TAG === "beta";
+  const tag = useBeta ? "beta" : "latest";
 
-  p.intro("knowledge-base upgrade");
+  p.intro(useBeta ? "knowledge-base upgrade [beta channel]" : "knowledge-base upgrade");
 
   if (syncOnly) {
     syncLocalAssets();
@@ -99,12 +101,12 @@ async function main(): Promise<void> {
   }
 
   const spinner = p.spinner();
-  spinner.start("Checking npm registry…");
+  spinner.start(`Checking npm registry (${tag})…`);
 
   let latestVersion: string;
   try {
-    latestVersion = await fetchLatestVersion();
-    spinner.stop(`Current: ${VERSION}  •  Latest: ${latestVersion}`);
+    latestVersion = await fetchLatestVersion(tag);
+    spinner.stop(`Current: ${VERSION}  •  Latest ${tag}: ${latestVersion}`);
   } catch {
     spinner.stop("Could not reach npm registry — syncing local files.");
     syncLocalAssets();
@@ -113,7 +115,7 @@ async function main(): Promise<void> {
   }
 
   if (latestVersion === VERSION) {
-    p.log.info(`Already on latest (${VERSION})`);
+    p.log.info(`Already on latest ${tag} (${VERSION})`);
     syncLocalAssets();
     p.outro("Done.");
     return;
@@ -122,9 +124,9 @@ async function main(): Promise<void> {
   p.log.info(`Upgrading ${VERSION} → ${latestVersion}`);
 
   const installSpinner = p.spinner();
-  installSpinner.start(`npm install -g ${PACKAGE_NAME}@latest`);
+  installSpinner.start(`npm install -g ${PACKAGE_NAME}@${tag}`);
   try {
-    execSync(`npm install -g ${PACKAGE_NAME}@latest`, { stdio: "pipe" });
+    execSync(`npm install -g ${PACKAGE_NAME}@${tag}`, { stdio: "pipe" });
     installSpinner.stop(`Installed ${latestVersion}`);
   } catch (err) {
     installSpinner.stop("npm install failed");
@@ -135,7 +137,7 @@ async function main(): Promise<void> {
   // Re-exec the newly installed binary to sync skills/agents from the new version's files
   const result = spawnSync("knowledge-base", ["upgrade"], {
     stdio: "inherit",
-    env: { ...process.env, KB_UPGRADE_SYNC: "1" },
+    env: { ...process.env, KB_UPGRADE_SYNC: "1", ...(useBeta ? { KB_UPGRADE_TAG: "beta" } : {}) },
   });
 
   if (result.error) {
