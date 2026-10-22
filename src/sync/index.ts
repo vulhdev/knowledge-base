@@ -103,12 +103,16 @@ export function handleSyncConnection(
     buf = Buffer.concat([buf, chunk]);
 
     if (peerVersion === null) {
-      if (buf.length > MAX_HANDSHAKE_BYTES) {
-        (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy();
+      const newline = buf.indexOf(0x0a);
+      if (newline === -1) {
+        // Guard against a peer sending a huge blob with no newline (no valid handshake).
+        // Check only pre-newline bytes so a large changeset arriving in the same segment
+        // does not trigger this limit on loopback/high-MTU interfaces.
+        if (buf.length > MAX_HANDSHAKE_BYTES) {
+          (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy();
+        }
         return;
       }
-      const newline = buf.indexOf(0x0a);
-      if (newline === -1) return;
       const line = buf.slice(0, newline).toString("utf8");
       buf = buf.slice(newline + 1);
       try {
@@ -129,36 +133,39 @@ export function handleSyncConnection(
       } catch {
         return;
       }
-    } else {
-      while (buf.length >= 4) {
-        const size = buf.readUInt32BE(0);
-        if (size === 0) { buf = buf.slice(4); continue; }
-        if (size > MAX_CHANGESET_BYTES) { (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy(); return; }
-        if (buf.length < 4 + size) break;
-        if (awaitingBootstrap) {
-          awaitingBootstrap = false;
-          try {
-            const frame = JSON.parse(buf.slice(4, 4 + size).toString("utf8")) as Record<string, unknown>;
-            if (frame.type === "bootstrap" && Array.isArray(frame.features)) {
-              applyBootstrapFeatures(db, workspaceName, frame.features as { id: string; name: string }[]);
-              buf = buf.slice(4 + size);
-              continue;
-            }
-          } catch {
-            // not a bootstrap frame — fall through to changeset handling
-          }
-        }
+      // Fall through: if the remote sent bootstrap+changeset frames in the same segment
+      // as the handshake (common on loopback), process them now instead of waiting for
+      // the next data event that may never arrive.
+    }
+
+    while (buf.length >= 4) {
+      const size = buf.readUInt32BE(0);
+      if (size === 0) { buf = buf.slice(4); continue; }
+      if (size > MAX_CHANGESET_BYTES) { (socket as NodeJS.ReadWriteStream & { destroy(): void }).destroy(); return; }
+      if (buf.length < 4 + size) break;
+      if (awaitingBootstrap) {
+        awaitingBootstrap = false;
         try {
-          const rows = decodeChangeset(buf.slice(4, 4 + size));
-          applyChanges(db, rows);
-          rebuildFts(db);
-          recordSyncTimestamp(db, workspaceName);
-          if (rows.length > 0) callbacks?.onChangesReceived?.(rows);
+          const frame = JSON.parse(buf.slice(4, 4 + size).toString("utf8")) as Record<string, unknown>;
+          if (frame.type === "bootstrap" && Array.isArray(frame.features)) {
+            applyBootstrapFeatures(db, workspaceName, frame.features as { id: string; name: string }[]);
+            buf = buf.slice(4 + size);
+            continue;
+          }
         } catch {
-          // ignore bad changeset
+          // not a bootstrap frame — fall through to changeset handling
         }
-        buf = buf.slice(4 + size);
       }
+      try {
+        const rows = decodeChangeset(buf.slice(4, 4 + size));
+        applyChanges(db, rows);
+        rebuildFts(db);
+        recordSyncTimestamp(db, workspaceName);
+        if (rows.length > 0) callbacks?.onChangesReceived?.(rows);
+      } catch {
+        // ignore bad changeset
+      }
+      buf = buf.slice(4 + size);
     }
   });
 }
