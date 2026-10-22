@@ -79,7 +79,7 @@ export function handleSyncConnection(
   workspaceName: string,
   socket: NodeJS.ReadWriteStream,
   callbacks?: SyncCallbacks,
-): void {
+): { pushDelta: () => void } {
   let localDbVersion: number;
   try {
     const row = db
@@ -87,7 +87,7 @@ export function handleSyncConnection(
       .get() as { v: number | null } | undefined;
     localDbVersion = row?.v ?? 0;
   } catch {
-    return; // crsql_changes not available
+    return { pushDelta: () => undefined };
   }
 
   const handshake: HandshakeMsg = { v: PROTOCOL_VERSION, dbVersion: localDbVersion };
@@ -95,6 +95,7 @@ export function handleSyncConnection(
   let peerVersion: number | null = null;
   // When this peer is fresh (localDbVersion=0), the first frame from the remote may be a bootstrap.
   let awaitingBootstrap = localDbVersion === 0;
+  let lastSentDbVersion = localDbVersion;
 
   (socket as NodeJS.WritableStream).write(JSON.stringify(handshake) + "\n");
 
@@ -128,7 +129,12 @@ export function handleSyncConnection(
         const header = Buffer.allocUnsafe(4);
         header.writeUInt32BE(encoded.length, 0);
         (socket as NodeJS.WritableStream).write(Buffer.concat([header, encoded]));
-        if (changes.length > 0) callbacks?.onChangesSent?.(changes.length);
+        if (changes.length > 0) {
+          callbacks?.onChangesSent?.(changes.length);
+          if (changes.length > 0) {
+            lastSentDbVersion = Math.max(lastSentDbVersion, ...changes.map(r => r.db_version));
+          }
+        }
       } catch {
         return;
       }
@@ -167,6 +173,19 @@ export function handleSyncConnection(
       buf = buf.slice(4 + size);
     }
   });
+
+  return {
+    pushDelta() {
+      if ((socket as { writable?: boolean }).writable === false) return;
+      const changes = getChanges(db, lastSentDbVersion);
+      if (changes.length === 0) return;
+      const encoded = encodeChangeset(changes);
+      const header = Buffer.allocUnsafe(4);
+      header.writeUInt32BE(encoded.length, 0);
+      (socket as NodeJS.WritableStream).write(Buffer.concat([header, encoded]));
+      lastSentDbVersion = Math.max(lastSentDbVersion, ...changes.map(r => r.db_version));
+    },
+  };
 }
 
 export function handleJoinConnection(

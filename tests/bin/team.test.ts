@@ -35,9 +35,11 @@ function makeMockSocket() {
   const socket = new EventEmitter() as EventEmitter & {
     write: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
+    pause: ReturnType<typeof vi.fn>;
   };
   socket.write = vi.fn();
   socket.destroy = vi.fn();
+  socket.pause = vi.fn();
   return socket;
 }
 
