@@ -414,6 +414,88 @@ describe("deriveJoinTopic", () => {
   });
 });
 
+describe("handleJoinRequest — KB_E2E_NO_GITHUB_AUTH bypass", () => {
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW_ISO));
+    vi.resetModules();
+    vi.clearAllMocks();
+    seedJoinSetup(db);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env.KB_E2E_NO_GITHUB_AUTH;
+  });
+
+  it("accepts without calling GitHub API when env is set and token is no-github-auth-token", async () => {
+    process.env.KB_E2E_NO_GITHUB_AUTH = "1";
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "no-github-auth-token",
+      peerPublicKey: "e".repeat(64),
+      githubUsername: "vulhdev",
+      appVersion: "1.17.0",
+    });
+
+    expect(result.accepted).toBe(true);
+    expect(vi.mocked(getGitHubUsername)).not.toHaveBeenCalled();
+  });
+
+  it("inserts peer with the claimed githubUsername (not API-resolved) when bypassing", async () => {
+    process.env.KB_E2E_NO_GITHUB_AUTH = "1";
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    await handleJoinRequest(db, "myws", {
+      githubToken: "no-github-auth-token",
+      peerPublicKey: "e".repeat(64),
+      githubUsername: "vulhdev",
+      appVersion: "1.17.0",
+    });
+
+    const row = db
+      .prepare("SELECT github_username FROM team_peers WHERE public_key = ?")
+      .get("e".repeat(64)) as { github_username: string } | undefined;
+    expect(row?.github_username).toBe("vulhdev");
+  });
+
+  it("does NOT bypass when env var is not set — falls through to normal GitHub API path", async () => {
+    // No env var set — magic token should NOT bypass; getGitHubUsername will be called
+    const { getGitHubUsername } = await import("../../src/team/github.js");
+    vi.mocked(getGitHubUsername).mockRejectedValue(new Error("GitHub API error: 401"));
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "no-github-auth-token",
+      peerPublicKey: "e".repeat(64),
+      githubUsername: "vulhdev",
+      appVersion: "1.17.0",
+    });
+
+    expect(result.accepted).toBe(false);
+    expect(vi.mocked(getGitHubUsername)).toHaveBeenCalled();
+  });
+
+  it("rejects when githubUsername is missing even with env set", async () => {
+    process.env.KB_E2E_NO_GITHUB_AUTH = "1";
+    const { handleJoinRequest } = await import("../../src/sync/join.js");
+
+    const result = await handleJoinRequest(db, "myws", {
+      githubToken: "no-github-auth-token",
+      peerPublicKey: "e".repeat(64),
+      // githubUsername intentionally omitted
+      appVersion: "1.17.0",
+    });
+
+    expect(result.accepted).toBe(false);
+  });
+});
+
 describe("handleJoinRequest — re-invite after delete", () => {
   let db: Database.Database;
 

@@ -60,15 +60,25 @@ export async function handleJoinRequest(
     return { accepted: false, reason: "invalid github token" };
   }
 
-  let username: string;
-  try {
-    username = await getGitHubUsername(req.githubToken);
-  } catch {
-    return { accepted: false, reason: "GitHub token verification failed" };
-  }
+  const noAuthBypass =
+    process.env.KB_E2E_NO_GITHUB_AUTH === "1" &&
+    req.githubToken === "no-github-auth-token";
 
-  if (req.githubUsername !== undefined && req.githubUsername !== username) {
-    return { accepted: false, reason: `username mismatch: claimed @${req.githubUsername} but token resolves to @${username}` };
+  let username: string;
+  if (noAuthBypass) {
+    if (!req.githubUsername) {
+      return { accepted: false, reason: "KB_E2E_NO_GITHUB_AUTH: githubUsername required when bypassing auth" };
+    }
+    username = req.githubUsername;
+  } else {
+    try {
+      username = await getGitHubUsername(req.githubToken);
+    } catch {
+      return { accepted: false, reason: "GitHub token verification failed" };
+    }
+    if (req.githubUsername !== undefined && req.githubUsername !== username) {
+      return { accepted: false, reason: `username mismatch: claimed @${req.githubUsername} but token resolves to @${username}` };
+    }
   }
 
   const inFlightKey = `${workspaceName}:${username}`;
