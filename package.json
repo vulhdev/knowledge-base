@@ -35,6 +35,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "tsc --noEmit && eslint src",
+    "test:e2e": "node e2e/run.mjs",
     "prepublishOnly": "npm run lint && npm test && npm run build"
   },
   "dependencies": {
