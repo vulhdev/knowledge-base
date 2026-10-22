@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { logInfo } from "../log/logger.js";
 
 export interface Review {
   id: number;
@@ -95,6 +96,8 @@ export function getPendingReview(db: Database.Database, contentId: string): Comm
 }
 
 export function resolveComment(db: Database.Database, commentId: number): ReviewComment {
+  const t0 = Date.now();
+  logInfo("resolve_comment", { event: "start", comment_id: commentId });
   const comment = db
     .prepare(
       `UPDATE review_comments SET resolved_at = datetime('now')
@@ -104,10 +107,13 @@ export function resolveComment(db: Database.Database, commentId: number): Review
     .get(commentId) as ReviewComment | undefined;
 
   if (!comment) throw new Error(`Review comment not found: id=${commentId}`);
+  logInfo("resolve_comment", { event: "done", ms: String(Date.now() - t0), comment_id: commentId });
   return comment;
 }
 
 export function resolveReview(db: Database.Database, reviewId: number): Review {
+  const t0 = Date.now();
+  logInfo("resolve_review", { event: "start", review_id: reviewId });
   const review = db
     .prepare(
       `UPDATE reviews SET status = 'resolved'
@@ -117,11 +123,14 @@ export function resolveReview(db: Database.Database, reviewId: number): Review {
     .get(reviewId) as Review | undefined;
 
   if (!review) throw new Error(`Review not found or not in committed state: id=${reviewId}`);
+  logInfo("resolve_review", { event: "done", ms: String(Date.now() - t0), review_id: reviewId });
   return review;
 }
 
 export function listContentsWithPendingReview(db: Database.Database): ContentWithReview[] {
-  return db
+  const t0 = Date.now();
+  logInfo("list_contents_with_pending_review", { event: "start" });
+  const results = db
     .prepare(
       `SELECT c.id, c.title, c.type, w.name AS workspace, MIN(f.name) AS feature
        FROM contents c
@@ -134,4 +143,6 @@ export function listContentsWithPendingReview(db: Database.Database): ContentWit
        ORDER BY MAX(r.committed_at) DESC`,
     )
     .all() as ContentWithReview[];
+  logInfo("list_contents_with_pending_review", { event: "done", ms: String(Date.now() - t0), count: results.length });
+  return results;
 }

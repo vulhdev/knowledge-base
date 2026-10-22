@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { fetchFeatures } from "./_helpers.js";
+import { logInfo } from "../log/logger.js";
 
 export type AttachFeatureResult = { content_id: string; features: string[] };
 
@@ -9,6 +10,8 @@ export function attachFeature(
   workspace: string,
   featureName: string,
 ): AttachFeatureResult {
+  const t0 = Date.now();
+  logInfo("attach_feature", { event: "start", id: contentId, workspace, feature: featureName });
   const content = db
     .prepare(
       `SELECT c.id, c.type FROM contents c
@@ -50,5 +53,7 @@ export function attachFeature(
     feat.id,
   );
 
-  return { content_id: contentId, features: fetchFeatures(db, contentId) };
+  const result = { content_id: contentId, features: fetchFeatures(db, contentId) };
+  logInfo("attach_feature", { event: "done", ms: String(Date.now() - t0), id: contentId });
+  return result;
 }

@@ -7,6 +7,7 @@ import { typesAfter } from "./_type-order.js";
 import { loadSettings } from "../config.js";
 import { buildFtsQuery } from "../text/cjk-bigram.js";
 import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
+import { logInfo } from "../log/logger.js";
 
 const SUGGEST_LIMIT = 3;
 const SCORE_THRESHOLD = 0.25;
@@ -100,6 +101,8 @@ export async function createContent(
   createdBy?: string,
   provenance?: Provenance,
 ): Promise<CreateContentResult> {
+  const t0 = Date.now();
+  logInfo("create_content", { event: "start", workspace, type, features: Array.isArray(features) ? features.join(",") : String(features) });
   if (!body.trim()) {
     throw new Error("body must not be empty");
   }
@@ -139,6 +142,7 @@ export async function createContent(
 
   // Sections are computed before the transaction (the token counter is async); the row, its
   // features and its sections are then written atomically.
+  logInfo("create_content", { event: "sections_prepare" });
   const sections = await prepareSections(body);
 
   const contentId = db.transaction(() => {
@@ -159,19 +163,27 @@ export async function createContent(
     writeDocSections(db, id, sections);
     return id;
   })();
+  logInfo("create_content", { event: "db_insert", id: contentId });
 
   let embeddingBlob: Buffer | null = null;
+  const modelReady = isModelReady();
 
-  if (isModelReady()) {
+  if (modelReady) {
+    let embedOk = false;
     try {
       const embedding = await getEmbedding(body);
       embeddingBlob = Buffer.from(embedding.buffer);
       db.prepare("UPDATE contents SET embedding = ? WHERE id = ?").run(embeddingBlob, contentId);
+      embedOk = true;
     } catch {
       // embedding failure must not prevent content creation
     }
+    logInfo("create_content", { event: "embed", model_ready: true, ok: embedOk });
+  } else {
+    logInfo("create_content", { event: "embed", model_ready: false });
   }
 
+  logInfo("create_content", { event: "embed_sections" });
   await embedDocSections(db, contentId);
 
   const featureNamesSorted = fetchFeatures(db, contentId);
@@ -184,6 +196,7 @@ export async function createContent(
       // conflict detection failure must not prevent content creation
     }
   }
+  logInfo("create_content", { event: "conflict_check", found: conflicts.length });
 
   const row = db
     .prepare("SELECT id, title, created_at FROM contents WHERE id = ?")
@@ -191,5 +204,6 @@ export async function createContent(
 
   const suggested_parents = await suggestParents(db, workspace, contentId, type, body, embeddingBlob);
 
+  logInfo("create_content", { event: "done", ms: String(Date.now() - t0), id: contentId });
   return { id: row.id, workspace, features: featureNamesSorted, type, title: row.title, created_at: row.created_at, conflicts, suggested_parents };
 }

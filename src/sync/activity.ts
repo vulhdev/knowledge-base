@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { ChangesetRow } from "./changeset.js";
+import { logInfo, logWarn } from "../log/logger.js";
 
 export type ActivityLogger = {
   onPeerConnect: (workspace: string, username: string | null, publicKey: string) => void;
@@ -87,6 +88,54 @@ export function describeChangeset(rows: ChangesetRow[], db: Database.Database): 
   }
 
   return result;
+}
+
+export function makeFileLogger(): ActivityLogger {
+  return {
+    onPeerConnect(workspace, username, publicKey) {
+      logInfo("sync", { event: "peer_connect", workspace, username: username ?? "(unknown)", key: publicKey });
+    },
+
+    onPeerDisconnect(workspace, username, publicKey) {
+      logInfo("sync", { event: "peer_disconnect", workspace, username: username ?? "(unknown)", key: publicKey });
+    },
+
+    onChangesetReceived(workspace, username, rows, db) {
+      const actions = describeChangeset(rows, db);
+      logInfo("sync", {
+        event: "changeset_received",
+        workspace,
+        username: username ?? "(unknown)",
+        changes: String(rows.length),
+        docs: String(actions.length),
+      });
+    },
+
+    onChangesetSent(workspace, username, count) {
+      logInfo("sync", {
+        event: "changeset_sent",
+        workspace,
+        username: username ?? "(unknown)",
+        changes: String(count),
+      });
+    },
+
+    onJoinConnect(workspace, publicKey) {
+      logInfo("sync", { event: "join_connect", workspace, key: publicKey });
+    },
+
+    onJoinAttempt(workspace, githubUsername) {
+      logInfo("sync", { event: "join_attempt", workspace, github: githubUsername });
+    },
+
+    onJoinResult(workspace, githubUsername, accepted, reason) {
+      if (accepted) {
+        logInfo("sync", { event: "join_result", workspace, github: githubUsername, accepted: "true" });
+      } else {
+        logWarn("sync", { event: "join_result", workspace, github: githubUsername, accepted: "false", reason: reason ?? "unknown" });
+      }
+    },
+  };
 }
 
 export function makeConsoleLogger(): ActivityLogger {

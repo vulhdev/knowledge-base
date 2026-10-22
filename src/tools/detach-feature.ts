@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { fetchFeatures } from "./_helpers.js";
+import { logInfo } from "../log/logger.js";
 
 export type DetachFeatureResult = { content_id: string; features: string[] };
 
@@ -9,6 +10,8 @@ export function detachFeature(
   workspace: string,
   featureName: string,
 ): DetachFeatureResult {
+  const t0 = Date.now();
+  logInfo("detach_feature", { event: "start", id: contentId, workspace, feature: featureName });
   const content = db
     .prepare(
       `SELECT c.id FROM contents c
@@ -56,5 +59,7 @@ export function detachFeature(
 
   db.prepare(`DELETE FROM content_features WHERE content_id = ? AND feature_id = ?`).run(contentId, feat.id);
 
-  return { content_id: contentId, features: fetchFeatures(db, contentId) };
+  const result = { content_id: contentId, features: fetchFeatures(db, contentId) };
+  logInfo("detach_feature", { event: "done", ms: String(Date.now() - t0), id: contentId });
+  return result;
 }

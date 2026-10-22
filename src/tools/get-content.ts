@@ -1,8 +1,11 @@
 import type Database from "better-sqlite3";
 import type { Content } from "../types.js";
 import { fetchFeatures } from "./_helpers.js";
+import { logInfo } from "../log/logger.js";
 
 export function getContent(db: Database.Database, id: string): Content & { version_count: number } {
+  const t0 = Date.now();
+  logInfo("get_content", { event: "start", id });
   type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number; version_count: number };
   const row = db
     .prepare(
@@ -25,5 +28,7 @@ export function getContent(db: Database.Database, id: string): Content & { versi
     throw new Error(`Content not found: id=${id}`);
   }
 
-  return { ...row, features: fetchFeatures(db, id), has_code_refs: row.has_code_refs === 1 };
+  const result = { ...row, features: fetchFeatures(db, id), has_code_refs: row.has_code_refs === 1 };
+  logInfo("get_content", { event: "done", ms: String(Date.now() - t0), found: "true" });
+  return result;
 }

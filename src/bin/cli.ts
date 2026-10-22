@@ -31,12 +31,15 @@ switch (command) {
   case "workspace":
     await import("./workspace.js");
     break;
+  case "log":
+    await import("./log.js");
+    break;
   case undefined:
     // No subcommand — start the MCP server (stdio transport, called by Claude Code)
     await import("../index.js");
     break;
   default:
     console.error(`Unknown command: ${command}`);
-    console.error("Usage: knowledge-base [init|gui|update|upgrade|status|team|workspace|link-code|import-sources]");
+    console.error("Usage: knowledge-base [init|gui|update|upgrade|status|team|workspace|link-code|import-sources|log]");
     process.exit(1);
 }

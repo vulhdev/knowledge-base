@@ -13,6 +13,7 @@ import { generateSecret, generateNoiseKeypair } from "../team/generate.js";
 import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
 import { loadSettings, writeSettings } from "../config.js";
 import { writeWorkspaceToClaude } from "../sync/claude-md.js";
+import { logInfo, logWarn, logError } from "../log/logger.js";
 
 const CREATE_NEW = "__new__";
 const SKIP = "__skip__";
@@ -79,9 +80,12 @@ async function runGitHubAuth(): Promise<string> {
 }
 
 export async function main(): Promise<void> {
+  const t0 = Date.now();
+  logInfo("init", { event: "start" });
   p.intro("knowledge-base init");
 
   const db = openDb();
+  logInfo("init", { event: "db_init" });
   const workspaces = listWorkspaces(db);
 
   const selected = await p.select<string>({
@@ -216,14 +220,18 @@ export async function main(): Promise<void> {
   }
 
   if (isModelReady()) {
+    logInfo("init", { event: "model_check", ready: "true" });
     p.log.info("Embedding model already cached — skipping download.");
   } else {
+    logInfo("init", { event: "model_check", ready: "false" });
     const modelSpinner = p.spinner();
     modelSpinner.start("Downloading embedding model (~120 MB, first time only)…");
     try {
       await getEmbedding("warm-up");
       modelSpinner.stop("Embedding model downloaded.");
     } catch (err) {
+      logError("init", err instanceof Error ? err : new Error(String(err)));
+      logWarn("init", { event: "model_download_failed", reason: String(err) });
       modelSpinner.stop("Model download failed. Run `npx @vulhdev/knowledge-base init` again to retry.");
       p.log.warn(String(err));
     }
@@ -299,6 +307,7 @@ export async function main(): Promise<void> {
     }
   }
 
+  logInfo("init", { event: "done", ms: String(Date.now() - t0) });
   p.outro("Done. Restart Claude Code to pick up the new skills and agents.");
 }
 

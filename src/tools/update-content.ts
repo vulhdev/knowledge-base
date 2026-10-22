@@ -6,6 +6,7 @@ import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
 import { loadSettings } from "../config.js";
 import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
+import { logInfo } from "../log/logger.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
 
@@ -19,6 +20,8 @@ export async function updateContent(
   updatedBy?: string,
   provenance?: Provenance,
 ): Promise<UpdateContentResult> {
+  const t0 = Date.now();
+  logInfo("update_content", { event: "start", id, ...(type ? { type } : {}) });
   if (!body.trim()) {
     throw new Error("body must not be empty");
   }
@@ -54,6 +57,7 @@ export async function updateContent(
 
     writeDocSections(db, id, sections, title !== undefined && title !== before.title);
   })();
+  logInfo("update_content", { event: "db_update", id });
 
   let embeddingBlob: Buffer | null = null;
 
@@ -68,6 +72,7 @@ export async function updateContent(
   }
 
   await embedDocSections(db, id);
+  logInfo("update_content", { event: "embed", model_ready: String(isModelReady()), ok: String(embeddingBlob !== null) });
 
   const row = db
     .prepare(
@@ -93,6 +98,8 @@ export async function updateContent(
       // conflict detection failure must not prevent content update
     }
   }
+  logInfo("update_content", { event: "conflict_check", found: conflicts.length });
 
+  logInfo("update_content", { event: "done", ms: String(Date.now() - t0), id });
   return { ...row, features, has_code_refs: row.has_code_refs === 1, conflicts };
 }
