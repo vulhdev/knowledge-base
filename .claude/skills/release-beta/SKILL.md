@@ -58,10 +58,11 @@ git commit -m "chore: bump version to <version>"
 ### 5. Tag and push
 
 ```bash
-git tag v<version>
-git push origin dev
-git push origin v<version>
+git tag -a v<version> -m "v<version>"
+git push origin dev --follow-tags
 ```
+
+Use `-a` (annotated tag) so that `--follow-tags` includes the tag in the same push as the branch. This sends one atomic push event to GitHub, preventing duplicate workflow runs.
 
 ### 6. Wait for CI
 
