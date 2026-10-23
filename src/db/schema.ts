@@ -139,15 +139,6 @@ export function applySchema(db: Database.Database): void {
   // does not silently remove them.
   db.exec(VEC_TABLE_AND_TRIGGERS);
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS error_logs (
-      id        INTEGER PRIMARY KEY,
-      timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-      tool_name TEXT NOT NULL,
-      message   TEXT NOT NULL,
-      severity  TEXT NOT NULL DEFAULT 'error'
-    );
-  `);
 }
 
 // Migration 19: convert contents.id from INTEGER to TEXT UUID so each peer's rows never
@@ -670,6 +661,9 @@ function runMigrations(db: Database.Database): void {
   if (featuresIdType.toUpperCase() !== "TEXT") {
     migrateFeaturesIdToUuid(db);
   }
+
+  // Migration 21: drop error_logs table (replaced by file-based logging)
+  db.exec("DROP TABLE IF EXISTS error_logs");
 }
 
 // Migration 20: convert features.id from INTEGER to TEXT UUID so bootstrap payloads
