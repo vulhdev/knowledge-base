@@ -8,6 +8,7 @@ import { rebuildFts } from "./rebuild.js";
 import { getTeamByName, updateLastSynced } from "../db/team.js";
 import { acquireSyncLock } from "./lock.js";
 import { registerPusher } from "./push.js";
+import { logWarn } from "../log/logger.js";
 
 const MAX_HANDSHAKE_BYTES = 4 * 1024;   // generous for {"v":1,"dbVersion":9999999}
 const MAX_JOIN_REQUEST_BYTES = 8 * 1024; // generous for a join_request JSON
@@ -180,8 +181,8 @@ export function handleSyncConnection(
         rebuildFts(db);
         recordSyncTimestamp(db, workspaceName);
         if (rows.length > 0) callbacks?.onChangesReceived?.(rows);
-      } catch {
-        // ignore bad changeset
+      } catch (err) {
+        logWarn("sync_changeset", { event: "apply_error", workspace: workspaceName, error: String(err) });
       }
       buf = buf.slice(4 + size);
     }

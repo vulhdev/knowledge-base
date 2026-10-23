@@ -37,10 +37,18 @@ export function decodeChangeset(data: Buffer): ChangesetRow[] {
 }
 
 export function getChanges(db: Database.Database, sinceVersion: number): ChangesetRow[] {
+  // Filter out stale pre-migration entries whose pk is encoded as a single INTEGER
+  // (first two bytes 0x01 0x09 in cr-sqlite's canonical pack format). These are left
+  // behind when a table's PK was converted from INTEGER to TEXT UUID (migrations 19 & 20):
+  // cr-sqlite does not purge old crsql_changes rows when the table is dropped and
+  // recreated, so the INTEGER-pk sentinels accumulate. After the UUID migrations, all
+  // CRDT-tracked tables (contents, content_features, content_links) use TEXT UUID PKs,
+  // so any remaining INTEGER-pk entry is stale and must not be sent to peers — applying
+  // them would create ghost rows on the peer for pks that do not exist on the host.
   return db
     .prepare(
       'SELECT "table" AS tbl, pk, cid, val, col_version, db_version, site_id, cl, seq ' +
-      "FROM crsql_changes WHERE db_version > ?",
+      "FROM crsql_changes WHERE db_version > ? AND pk IS NOT NULL AND substr(pk, 1, 2) != X'0109'",
     )
     .all(sinceVersion) as ChangesetRow[];
 }
@@ -108,9 +116,17 @@ export function applyChanges(db: Database.Database, rows: ChangesetRow[]): void 
     'INSERT INTO crsql_changes ("table", pk, cid, val, col_version, db_version, site_id, cl, seq) ' +
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
+  // Per-row try-catch: a stale pre-migration row (e.g. INTEGER-pk sentinel from before
+  // the INTEGER→UUID migration) causes cr-sqlite to throw on INSERT. Without the catch,
+  // that throw propagates out of the transaction callback → full rollback → all rows lost.
+  // We skip the bad row and continue so valid rows are still applied.
   db.transaction(() => {
     for (const row of rows) {
-      stmt.run(row.tbl, toBlob(row.pk), row.cid, toSqliteVal(row.val), row.col_version, row.db_version, toBlob(row.site_id), row.cl, row.seq);
+      try {
+        stmt.run(row.tbl, toBlob(row.pk), row.cid, toSqliteVal(row.val), row.col_version, row.db_version, toBlob(row.site_id), row.cl, row.seq);
+      } catch {
+        // stale or incompatible row — skip without aborting the batch
+      }
     }
   })();
 }

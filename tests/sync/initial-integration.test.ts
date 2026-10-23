@@ -365,6 +365,130 @@ describe.skipIf(!isCrsqliteReady())(
     // but < the db_version of a later body edit, the peer would receive the body-only update
     // and never see the type/title — leaving type='' and title=NULL on the peer.
     // Fix: performInitialSync always sends dbVersion=0 (fullSync) to request ALL host data.
+    // Bug: rows=0 after fullSync when host crsql_changes contains stale pre-migration-19
+    // INTEGER-pk sentinel rows. These rows are ordered first (low db_version) in the
+    // changeset. The first stmt.run() for a stale row throws inside db.transaction(),
+    // which causes the whole transaction to roll back — all rows lost, applyChanges throws,
+    // outer catch swallows it, onChangesReceived never fires → rows=0.
+    // Fix: applyChanges wraps each stmt.run() in its own try-catch so stale rows are
+    // skipped individually without aborting the whole batch.
+    it("peer receives contents from host even when host crsql_changes has stale pre-migration INTEGER-pk entries (fullSync rows=0 bug)", async () => {
+      const WS = "legacy-migration-ws";
+
+      // Build a host db that mirrors the production state after migration 19 ran:
+      // crsql_changes has OLD INTEGER-pk sentinel rows (db_version=low) from before the
+      // migration, plus NEW UUID-pk rows (db_version=high) for the actual current data.
+      const hostDb = new Database(":memory:");
+      loadSqliteVec(hostDb);
+      loadCrsqlite(hostDb);
+
+      // Pre-migration schema: INTEGER pk on contents
+      hostDb.exec(`
+        PRAGMA journal_mode = WAL;
+        CREATE TABLE workspaces (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL);
+        CREATE TABLE features (
+          id INTEGER PRIMARY KEY, workspace_id INTEGER NOT NULL, name TEXT NOT NULL,
+          UNIQUE(workspace_id, name)
+        );
+        CREATE TABLE contents (
+          id INTEGER NOT NULL PRIMARY KEY,
+          type TEXT NOT NULL DEFAULT '',
+          title TEXT,
+          body TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE content_features (
+          content_id INTEGER NOT NULL DEFAULT 0,
+          feature_id INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (content_id, feature_id)
+        );
+        CREATE TABLE content_links (
+          parent_id INTEGER NOT NULL DEFAULT 0,
+          child_id  INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (parent_id, child_id)
+        );
+      `);
+
+      // Register CRDT with INTEGER pks — creates INTEGER-pk entries in crsql_changes.
+      hostDb.exec("SELECT crsql_as_crr('contents')");
+      hostDb.exec("SELECT crsql_as_crr('content_features')");
+      hostDb.exec("SELECT crsql_as_crr('content_links')");
+
+      // Insert workspace and content in the INTEGER-pk era.
+      hostDb.prepare("INSERT INTO workspaces (id, name) VALUES (?, ?)").run(1, WS);
+      hostDb.prepare("INSERT INTO contents (id, type, title, body) VALUES (?, ?, ?, ?)").run(1, "spec", "Doc 1", "Body 1");
+      hostDb.prepare("INSERT INTO contents (id, type, title, body) VALUES (?, ?, ?, ?)").run(2, "plan", "Doc 2", "Body 2");
+
+      // Simulate migration 19: drop INTEGER-pk contents, recreate with UUID pk.
+      // Crucially, the old INTEGER-pk crsql_changes entries are LEFT INTACT.
+      hostDb.exec("PRAGMA foreign_keys = OFF");
+      hostDb.exec(`
+        BEGIN;
+        CREATE TABLE _uuid_map (old_id INTEGER PRIMARY KEY, new_id TEXT NOT NULL);
+        INSERT INTO _uuid_map (old_id, new_id) SELECT id, lower(hex(randomblob(16))) FROM contents;
+        CREATE TABLE _contents_uuid (
+          id TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+          type TEXT NOT NULL DEFAULT '',
+          title TEXT,
+          body TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO _contents_uuid (id, type, title, body, created_at, updated_at)
+          SELECT m.new_id, c.type, c.title, c.body, c.created_at, c.updated_at
+          FROM contents c JOIN _uuid_map m ON m.old_id = c.id;
+        DROP TABLE contents;
+        ALTER TABLE _contents_uuid RENAME TO contents;
+        DROP TABLE IF EXISTS _uuid_map;
+        COMMIT;
+      `);
+      hostDb.exec("PRAGMA foreign_keys = ON");
+
+      // Re-register CRDT for the UUID-pk contents — adds new UUID-pk entries in crsql_changes.
+      hostDb.exec("SELECT crsql_as_crr('contents')");
+      hostDb.exec("SELECT crsql_as_crr('content_features')");
+      hostDb.exec("SELECT crsql_as_crr('content_links')");
+
+      // Verify the mixed state: both INTEGER-pk (low db_version) and UUID-pk (high db_version).
+      const allVersions = (
+        hostDb.prepare('SELECT db_version FROM crsql_changes WHERE "table" = ?').all("contents") as { db_version: number }[]
+      ).map((r) => r.db_version);
+      expect(Math.min(...allVersions)).toBeLessThan(Math.max(...allVersions));
+
+      // Fresh peer db with current schema (all migrations run including 19, UUID pks).
+      const peerDb = createCrsqlDb();
+      // Insert the workspace so bootstrap features land correctly.
+      peerDb.prepare("INSERT INTO workspaces (id, name) VALUES (?, ?)").run(1, WS);
+
+      const { clientSocket, serverSocket } = await makeTcpPair();
+
+      // Host sends ALL changes (including stale INTEGER-pk rows at the start of the changeset).
+      handleSyncConnection(hostDb, WS, serverSocket as unknown as NodeJS.ReadWriteStream);
+      // Peer uses fullSync=true → advertises dbVersion=0 → gets ALL rows from host.
+      handleSyncConnection(peerDb, WS, clientSocket as unknown as NodeJS.ReadWriteStream, undefined, { fullSync: true });
+
+      await new Promise((r) => setTimeout(r, 300));
+      serverSocket.end();
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Before fix: INTEGER-pk stale rows sent to peer → ghost rows created OR transaction
+      // aborts → contents missing → count=0 (FAIL).
+      // After fix: getChanges filters out INTEGER-pk rows at source → peer only receives
+      // valid UUID-pk rows → count=2 (PASS).
+      const count = (peerDb.prepare("SELECT count(*) AS n FROM contents").get() as { n: number }).n;
+      expect(count).toBe(2);
+
+      const docs = peerDb
+        .prepare("SELECT type, title, body FROM contents ORDER BY type")
+        .all() as { type: string; title: string | null; body: string }[];
+      expect(docs.find((d) => d.type === "spec")).toMatchObject({ title: "Doc 1", body: "Body 1" });
+      expect(docs.find((d) => d.type === "plan")).toMatchObject({ title: "Doc 2", body: "Body 2" });
+
+      clientSocket.destroy();
+      serverSocket.destroy();
+    });
+
     it("peer receives correct type and title even when peer dbVersion > doc's initial db_version (split-version doc)", async () => {
       const WS = "split-version-ws";
 
