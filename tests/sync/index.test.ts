@@ -497,7 +497,10 @@ describe("handleSyncConnection — bootstrap protocol", () => {
     expect(first.features?.map((f) => f.name).sort()).toEqual(["api", "auth"]);
   });
 
-  it("does NOT send bootstrap frame when peer dbVersion > 0", async () => {
+  it("sends bootstrap frame even when peer dbVersion > 0 (re-joining peer still needs features)", async () => {
+    // Bug fix: features are not CRDT-tracked, so bootstrap is the only delivery mechanism.
+    // Previously bootstrap was skipped for re-joining peers (dbVersion > 0), leaving their
+    // features table empty.
     const { handleSyncConnection } = await import("../../src/sync/index.js");
     const db = createBootstrapTestDb();
     db.exec("INSERT INTO workspaces (name) VALUES ('ws')");
@@ -508,9 +511,9 @@ describe("handleSyncConnection — bootstrap protocol", () => {
     handleSyncConnection(db, "ws", socket as unknown as NodeJS.ReadWriteStream);
     socket.emit("data", Buffer.from(JSON.stringify({ v: 1, dbVersion: 5 }) + "\n"));
 
-    const first = parseFirstFrameAfterHandshake(Buffer.concat(socket.writes)) as { type?: string };
-    expect(first.type).toBeUndefined(); // changeset is an array, not a bootstrap object
-    expect(Array.isArray(first)).toBe(true);
+    const first = parseFirstFrameAfterHandshake(Buffer.concat(socket.writes)) as { type?: string; features?: { name: string }[] };
+    expect(first.type).toBe("bootstrap"); // bootstrap must always be sent
+    expect(first.features?.map((f) => f.name)).toContain("auth");
   });
 
   it("bootstrap frame contains only features for the given workspace", async () => {

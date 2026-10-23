@@ -171,12 +171,135 @@ describe.skipIf(!isCrsqliteReady())(
 
       const result = await syncPromise;
 
-      expect(result).toEqual({ ok: true, rowsReceived: 0 });
+      expect(result).toEqual({ ok: true, rowsReceived: 0, featuresBootstrapped: 0 });
 
       const count = (
         peerDb.prepare("SELECT count(*) AS n FROM contents").get() as { n: number }
       ).n;
       expect(count).toBe(0);
+
+      clientSocket.destroy();
+      serverSocket.destroy();
+    });
+
+    // Bug: host only sent bootstrap when peerVersion === 0, so re-joining peers
+    // (with CRDT data from a prior partial sync) never received features.
+    it("peer receives features from host bootstrap even when peer already has CRDT data (non-zero dbVersion)", async () => {
+      const WS = "feat-rejoin-ws";
+
+      const hostDb = createCrsqlDb();
+      createWorkspace(hostDb, WS);
+      hostDb.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("spec", "host doc");
+      const wsId = (hostDb.prepare("SELECT id FROM workspaces WHERE name = ?").get(WS) as { id: number }).id;
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "alpha");
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "beta");
+
+      // Peer has prior CRDT data — simulates a previous partial join attempt.
+      const peerDb = createCrsqlDb();
+      seedPeerTeam(peerDb, WS);
+      // Insert a content row so peerDb has non-zero localDbVersion in crsql_changes.
+      peerDb.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("idea", "pre-existing");
+      const { v: peerDbVersion } = peerDb
+        .prepare("SELECT MAX(db_version) AS v FROM crsql_changes")
+        .get() as { v: number | null };
+      expect(peerDbVersion).toBeGreaterThan(0); // confirm peer is in "re-join" state
+
+      const { performInitialSync } = await import("../../src/sync/initial.js");
+      const syncPromise = performInitialSync(peerDb, WS, 5_000);
+
+      await new Promise((r) => setTimeout(r, 20));
+      expect(connectionHandler).not.toBeNull();
+
+      const { clientSocket, serverSocket } = await makeTcpPair();
+      handleSyncConnection(hostDb, WS, serverSocket as unknown as NodeJS.ReadWriteStream);
+      connectionHandler!(clientSocket as unknown as NodeJS.ReadWriteStream);
+
+      await new Promise((r) => setTimeout(r, 200));
+      serverSocket.end();
+      await syncPromise;
+
+      // Bug manifests here: features table is empty on the peer because bootstrap was never sent.
+      const peerWsId = (peerDb.prepare("SELECT id FROM workspaces WHERE name = ?").get(WS) as { id: number }).id;
+      const peerFeatures = peerDb
+        .prepare("SELECT name FROM features WHERE workspace_id = ?")
+        .all(peerWsId) as { name: string }[];
+      const featureNames = peerFeatures.map((f) => f.name);
+      expect(featureNames).toContain("alpha");
+      expect(featureNames).toContain("beta");
+
+      clientSocket.destroy();
+      serverSocket.destroy();
+    });
+
+    it("features bootstrap is idempotent — re-syncing does not duplicate features on peer", async () => {
+      const WS = "feat-idem-ws";
+
+      const hostDb = createCrsqlDb();
+      createWorkspace(hostDb, WS);
+      const wsId = (hostDb.prepare("SELECT id FROM workspaces WHERE name = ?").get(WS) as { id: number }).id;
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "gamma");
+
+      const peerDb = createCrsqlDb();
+      seedPeerTeam(peerDb, WS);
+
+      const { performInitialSync } = await import("../../src/sync/initial.js");
+
+      const runSync = async () => {
+        const syncPromise = performInitialSync(peerDb, WS, 5_000);
+        await new Promise((r) => setTimeout(r, 20));
+        const { clientSocket, serverSocket } = await makeTcpPair();
+        handleSyncConnection(hostDb, WS, serverSocket as unknown as NodeJS.ReadWriteStream);
+        connectionHandler!(clientSocket as unknown as NodeJS.ReadWriteStream);
+        await new Promise((r) => setTimeout(r, 200));
+        serverSocket.end();
+        const result = await syncPromise;
+        clientSocket.destroy();
+        serverSocket.destroy();
+        connectionHandler = null;
+        vi.clearAllMocks();
+        return result;
+      };
+
+      await runSync();
+      await runSync(); // second sync — must not duplicate features
+
+      const peerWsId = (peerDb.prepare("SELECT id FROM workspaces WHERE name = ?").get(WS) as { id: number }).id;
+      const count = (
+        peerDb.prepare("SELECT count(*) AS n FROM features WHERE workspace_id = ?").get(peerWsId) as { n: number }
+      ).n;
+      expect(count).toBe(1); // exactly one, not two
+    });
+
+    it("featuresBootstrapped count is reported in sync result", async () => {
+      const WS = "feat-count-ws";
+
+      const hostDb = createCrsqlDb();
+      createWorkspace(hostDb, WS);
+      const wsId = (hostDb.prepare("SELECT id FROM workspaces WHERE name = ?").get(WS) as { id: number }).id;
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "f1");
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "f2");
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "f3");
+
+      const peerDb = createCrsqlDb();
+      seedPeerTeam(peerDb, WS);
+
+      const { performInitialSync } = await import("../../src/sync/initial.js");
+      const syncPromise = performInitialSync(peerDb, WS, 5_000);
+
+      await new Promise((r) => setTimeout(r, 20));
+      const { clientSocket, serverSocket } = await makeTcpPair();
+      handleSyncConnection(hostDb, WS, serverSocket as unknown as NodeJS.ReadWriteStream);
+      connectionHandler!(clientSocket as unknown as NodeJS.ReadWriteStream);
+      await new Promise((r) => setTimeout(r, 200));
+      serverSocket.end();
+
+      const result = await syncPromise;
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // featuresBootstrapped tracks how many feature names arrived via the bootstrap frame.
+        expect(result.featuresBootstrapped).toBe(3);
+      }
 
       clientSocket.destroy();
       serverSocket.destroy();
@@ -235,6 +358,81 @@ describe.skipIf(!isCrsqliteReady())(
         peerDb.prepare("SELECT count(*) AS n FROM contents").get() as { n: number }
       ).n;
       expect(countAfterSecond).toBe(1);
+    });
+
+    // Bug: peer's local db_version (own clock) is unrelated to the host's db_version.
+    // If peer's localDbVersion >= host's db_version for a doc's initial columns (type/title),
+    // but < the db_version of a later body edit, the peer would receive the body-only update
+    // and never see the type/title — leaving type='' and title=NULL on the peer.
+    // Fix: performInitialSync always sends dbVersion=0 (fullSync) to request ALL host data.
+    it("peer receives correct type and title even when peer dbVersion > doc's initial db_version (split-version doc)", async () => {
+      const WS = "split-version-ws";
+
+      const hostDb = createCrsqlDb();
+      createWorkspace(hostDb, WS);
+
+      // Create a doc at a low db_version, then update its body at a higher db_version.
+      // On the host: type+title land at db_version=N, body lands at db_version=N+K.
+      hostDb.prepare("INSERT INTO contents (id, type, title, body) VALUES (?, ?, ?, ?)").run(
+        "aabbccddeeff00112233445566778899",
+        "spec",
+        "The Real Title",
+        "initial body",
+      );
+      const docVersion = (
+        hostDb.prepare("SELECT MAX(db_version) AS v FROM crsql_changes").get() as { v: number }
+      ).v;
+
+      // Peer starts with its own CRDT data so that localDbVersion > docVersion.
+      // This simulates the re-join scenario where a previous join landed some content.
+      const peerDb = createCrsqlDb();
+      seedPeerTeam(peerDb, WS);
+      // Write content to the PEER db to bump its own localDbVersion above the host's docVersion.
+      for (let i = 0; i <= docVersion; i++) {
+        peerDb.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("idea", "peer local doc " + i);
+      }
+      const peerDbVersion = (
+        peerDb.prepare("SELECT MAX(db_version) AS v FROM crsql_changes").get() as { v: number }
+      ).v;
+      expect(peerDbVersion).toBeGreaterThan(docVersion); // confirm peer clock is ahead
+
+      // Now update only body on the host — type/title stay at the OLD db_version.
+      hostDb.prepare("UPDATE contents SET body = ? WHERE id = ?").run("updated body text", "aabbccddeeff00112233445566778899");
+      const bodyVersion = (
+        hostDb.prepare("SELECT MAX(db_version) AS v FROM crsql_changes").get() as { v: number }
+      ).v;
+      expect(bodyVersion).toBeGreaterThan(docVersion); // body is at a newer version than type/title
+
+      // Without the fix (fullSync=false): host sends only db_version > peerDbVersion.
+      // Since peerDbVersion > docVersion >= typeVersion, type+title would be skipped.
+      // With the fix (fullSync=true): host sends ALL changes from db_version=0.
+
+      const { performInitialSync } = await import("../../src/sync/initial.js");
+      const syncPromise = performInitialSync(peerDb, WS, 5_000);
+
+      await new Promise((r) => setTimeout(r, 20));
+      expect(connectionHandler).not.toBeNull();
+
+      const { clientSocket, serverSocket } = await makeTcpPair();
+      handleSyncConnection(hostDb, WS, serverSocket as unknown as NodeJS.ReadWriteStream);
+      connectionHandler!(clientSocket as unknown as NodeJS.ReadWriteStream);
+
+      await new Promise((r) => setTimeout(r, 300));
+      serverSocket.end();
+      await syncPromise;
+
+      // The peer should have received the host's doc with correct type and title.
+      const synced = peerDb
+        .prepare("SELECT type, title, body FROM contents WHERE id = ?")
+        .get("aabbccddeeff00112233445566778899") as { type: string | null; title: string | null; body: string } | undefined;
+
+      expect(synced).toBeDefined();
+      expect(synced?.type).toBe("spec");       // must NOT be null/empty
+      expect(synced?.title).toBe("The Real Title"); // must NOT be null
+      expect(synced?.body).toBe("updated body text");
+
+      clientSocket.destroy();
+      serverSocket.destroy();
     });
   },
 );

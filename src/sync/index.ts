@@ -19,6 +19,7 @@ export type SyncHandle = {
 type SyncCallbacks = {
   onChangesReceived?: (rows: ChangesetRow[]) => void;
   onChangesSent?: (count: number) => void;
+  onFeaturesBootstrapped?: (count: number) => void;
 };
 
 type JoinCallbacks = {
@@ -81,6 +82,7 @@ export function handleSyncConnection(
   workspaceName: string,
   socket: NodeJS.ReadWriteStream,
   callbacks?: SyncCallbacks,
+  options?: { fullSync?: boolean },
 ): { pushDelta: () => void } {
   let localDbVersion: number;
   try {
@@ -92,11 +94,18 @@ export function handleSyncConnection(
     return { pushDelta: () => undefined };
   }
 
-  const handshake: HandshakeMsg = { v: PROTOCOL_VERSION, dbVersion: localDbVersion };
+  // fullSync=true forces dbVersion=0 in the handshake so the host sends ALL its changes,
+  // not just those newer than the peer's local clock. Required for initial join: peer's
+  // own clock is independent from the host's clock, so using localDbVersion as a cursor
+  // into host's crsql_changes would skip content the peer has never actually received.
+  const advertisedDbVersion = options?.fullSync ? 0 : localDbVersion;
+  const handshake: HandshakeMsg = { v: PROTOCOL_VERSION, dbVersion: advertisedDbVersion };
   let buf = Buffer.alloc(0);
   let peerVersion: number | null = null;
-  // When this peer is fresh (localDbVersion=0), the first frame from the remote may be a bootstrap.
-  let awaitingBootstrap = localDbVersion === 0;
+  // Always expect a bootstrap frame first — features are not CRDT-tracked so the only way
+  // they reach a peer is via bootstrap. A peer that already has CRDT data (non-zero
+  // localDbVersion from a prior partial join) still needs features from the host.
+  let awaitingBootstrap = true;
   let lastSentDbVersion = localDbVersion;
 
   (socket as NodeJS.WritableStream).write(JSON.stringify(handshake) + "\n");
@@ -120,12 +129,12 @@ export function handleSyncConnection(
       try {
         const msg = JSON.parse(line) as HandshakeMsg;
         peerVersion = msg.dbVersion;
-        // When peer is fresh, send bootstrap features before the changeset so the peer can
-        // build the features table before applying content_features CRDT rows.
-        if (peerVersion === 0) {
-          const features = getBootstrapFeatures(db, workspaceName);
-          (socket as NodeJS.WritableStream).write(encodeFrame({ type: "bootstrap", features } satisfies BootstrapFrame));
-        }
+        // Always send bootstrap features before the changeset so the peer can populate
+        // its features table. Features are not CRDT-tracked, so bootstrap is the only
+        // delivery mechanism — skipping it for re-joining peers (peerVersion > 0) left
+        // their features table permanently empty after partial or repeated joins.
+        const features = getBootstrapFeatures(db, workspaceName);
+        (socket as NodeJS.WritableStream).write(encodeFrame({ type: "bootstrap", features } satisfies BootstrapFrame));
         const changes = getChanges(db, peerVersion);
         const encoded = encodeChangeset(changes);
         const header = Buffer.allocUnsafe(4);
@@ -155,7 +164,9 @@ export function handleSyncConnection(
         try {
           const frame = JSON.parse(buf.slice(4, 4 + size).toString("utf8")) as Record<string, unknown>;
           if (frame.type === "bootstrap" && Array.isArray(frame.features)) {
-            applyBootstrapFeatures(db, workspaceName, frame.features as { id: string; name: string }[]);
+            const bootstrapFeatures = frame.features as { id: string; name: string }[];
+            applyBootstrapFeatures(db, workspaceName, bootstrapFeatures);
+            callbacks?.onFeaturesBootstrapped?.(bootstrapFeatures.length);
             buf = buf.slice(4 + size);
             continue;
           }

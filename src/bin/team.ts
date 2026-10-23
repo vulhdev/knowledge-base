@@ -245,8 +245,15 @@ async function runJoin(args: string[]): Promise<void> {
   const syncResult = await performInitialSyncOnSocket(db, workspaceName, result.socket, result.remainder);
   await swarm.destroy().catch(() => undefined);
   if (syncResult.ok) {
-    logInfo("team_join", { event: "initial_sync_done", workspace: workspaceName, rows: String(syncResult.rowsReceived) });
-    syncSpinner.stop(`Sync complete — ${syncResult.rowsReceived} rows received`);
+    logInfo("team_join", {
+      event: "initial_sync_done",
+      workspace: workspaceName,
+      rows: String(syncResult.rowsReceived),
+      features: String(syncResult.featuresBootstrapped),
+    });
+    syncSpinner.stop(
+      `Sync complete — ${syncResult.rowsReceived} rows received, ${syncResult.featuresBootstrapped} features`,
+    );
   } else {
     logWarn("team_join", { event: "initial_sync_skipped", workspace: workspaceName, reason: syncResult.reason });
     syncSpinner.stop(`Sync skipped (${syncResult.reason})`);
