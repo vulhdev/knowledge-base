@@ -4,22 +4,30 @@ import type { Content, ContentType, ConflictResult, UpdateContentResult, Provena
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
+import { loadSettings } from "../config.js";
 import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
+import { logInfo } from "../log/logger.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
 
 export async function updateContent(
   db: Database.Database,
-  id: number,
+  id: string,
   body: string,
   type?: ContentType,
   title?: string,
   requestSampling?: RequestSampling,
+  updatedBy?: string,
   provenance?: Provenance,
 ): Promise<UpdateContentResult> {
+  const t0 = Date.now();
+  logInfo("update_content", { event: "start", id, ...(type ? { type } : {}) });
   if (!body.trim()) {
     throw new Error("body must not be empty");
   }
+
+  const identity = loadSettings().identity;
+  const resolvedUpdatedBy = updatedBy ?? (identity ? `${identity.name} <${identity.email}>` : null);
 
   const sections = await prepareSections(body);
 
@@ -30,17 +38,18 @@ export async function updateContent(
           .prepare(
             `UPDATE contents
              SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title), updated_at = datetime('now'),
-                 source_key = ?, source_sha = ?
+                 updated_by = COALESCE(?, updated_by), source_key = ?, source_sha = ?
              WHERE id = ?`,
           )
-          .run(body, type ?? null, title ?? null, provenance.source_key, provenance.source_sha, id)
+          .run(body, type ?? null, title ?? null, resolvedUpdatedBy, provenance.source_key, provenance.source_sha, id)
       : db
           .prepare(
             `UPDATE contents
-             SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title), updated_at = datetime('now')
+             SET body = ?, type = COALESCE(?, type), title = COALESCE(?, title), updated_at = datetime('now'),
+                 updated_by = COALESCE(?, updated_by)
              WHERE id = ?`,
           )
-          .run(body, type ?? null, title ?? null, id);
+          .run(body, type ?? null, title ?? null, resolvedUpdatedBy, id);
 
     if (changes === 0 || !before) {
       throw new Error(`Content not found: id=${id}`);
@@ -48,6 +57,7 @@ export async function updateContent(
 
     writeDocSections(db, id, sections, title !== undefined && title !== before.title);
   })();
+  logInfo("update_content", { event: "db_update", id });
 
   let embeddingBlob: Buffer | null = null;
 
@@ -62,6 +72,7 @@ export async function updateContent(
   }
 
   await embedDocSections(db, id);
+  logInfo("update_content", { event: "embed", model_ready: String(isModelReady()), ok: String(embeddingBlob !== null) });
 
   const row = db
     .prepare(
@@ -87,6 +98,8 @@ export async function updateContent(
       // conflict detection failure must not prevent content update
     }
   }
+  logInfo("update_content", { event: "conflict_check", found: conflicts.length });
 
+  logInfo("update_content", { event: "done", ms: String(Date.now() - t0), id });
   return { ...row, features, has_code_refs: row.has_code_refs === 1, conflicts };
 }

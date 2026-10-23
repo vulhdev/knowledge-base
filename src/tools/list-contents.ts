@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import type { Content, ContentType, ListPage } from "../types.js";
 import { fetchFeaturesBatch } from "./_helpers.js";
+import { logInfo } from "../log/logger.js";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -13,6 +14,8 @@ export function listContents(
   limit = DEFAULT_LIMIT,
   offset = 0,
 ): ListPage {
+  const t0 = Date.now();
+  logInfo("list_contents", { event: "start", workspace, ...(feature ? { feature } : {}), ...(type ? { type } : {}) });
   if (!workspace.trim()) {
     throw new Error("workspace must not be empty");
   }
@@ -87,11 +90,13 @@ export function listContents(
   const featureMap = fetchFeaturesBatch(db, rows.map((r) => r.id));
   const results = rows.map((row) => ({ ...row, features: featureMap.get(row.id) ?? [], has_code_refs: false })) as Content[];
 
-  return {
+  const page = {
     results,
     has_more: clampedOffset + clampedLimit < total,
     total,
     offset: clampedOffset,
     limit: clampedLimit,
   };
+  logInfo("list_contents", { event: "done", ms: String(Date.now() - t0), count: results.length });
+  return page;
 }

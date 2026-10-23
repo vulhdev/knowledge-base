@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { loadGolden, GROUPS, GoldenHashMismatch, type GoldenQuestion, type Freeze } from "./golden.js";
+import { loadGolden, GROUPS, GoldenHashMismatch, type Freeze } from "./golden.js";
 import { aggregate, noAnswerRatio, percentile, rankOf, resolveKey, sectionHit, versionHit, type GroupMetrics, type QuestionOutcome } from "./metrics.js";
 import { loadKb, openWith } from "./kb-src.js";
 import { sotWindows, scanDb, sotHeadings } from "./sc005.js";
@@ -99,7 +99,7 @@ export async function runHarness(a: Args): Promise<{ code: number; result?: RunR
   const sotText = new Map<string, string>();
   const chunkSha = after && hasTable("content_chunks") ? db.prepare("SELECT chunk_sha FROM content_chunks WHERE content_id = ? AND kind = 'sot' AND chunk_key = ?") : null;
 
-  for (const q of golden.questions as GoldenQuestion[]) {
+  for (const q of golden.questions) {
     const t0 = performance.now();
     const page = await kb.searchSemantic(db, q.query, q.workspace ?? undefined, undefined, 10, 0);
     const ms = performance.now() - t0;
@@ -186,7 +186,7 @@ export async function runHarness(a: Args): Promise<{ code: number; result?: RunR
   const ms = outcomes.map((o) => o.ms);
   let sotCommit: string | null = null;
   try { sotCommit = golden.header?.sot_ref ? String(golden.header.sot_ref) : null; } catch { /* none */ }
-  let kbCommit = "unknown";
+  let kbCommit: string;
   try { kbCommit = git(resolve(a.kbSrc), ["rev-parse", "HEAD"]).trim(); } catch { kbCommit = a.label === "baseline" ? "14ce2fc (git archive)" : "unknown"; }
   db.close();
   const importJson = a.importJson && existsSync(a.importJson) ? (JSON.parse(readFileSync(a.importJson, "utf8")) as { elapsed_ms?: number; import_ms?: number }) : null;

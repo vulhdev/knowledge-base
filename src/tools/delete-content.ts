@@ -1,10 +1,13 @@
 import type Database from "better-sqlite3";
 import type { Content } from "../types.js";
 import { fetchFeatures } from "./_helpers.js";
+import { logInfo } from "../log/logger.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs">;
 
-export function deleteContent(db: Database.Database, id: number, cascade = false): Content {
+export function deleteContent(db: Database.Database, id: string, cascade = false): Content {
+  const t0 = Date.now();
+  logInfo("delete_content", { event: "start", id, cascade });
   const row = db
     .prepare(
       `SELECT c.id, w.name AS workspace, c.type, c.body, c.title, c.root_id, c.version_number,
@@ -24,13 +27,18 @@ export function deleteContent(db: Database.Database, id: number, cascade = false
 
   const features = fetchFeatures(db, id);
 
+  const done = (result: Content) => {
+    logInfo("delete_content", { event: "done", ms: String(Date.now() - t0), id });
+    return result;
+  };
+
   if (cascade) {
     // Path 4: delete entire version chain
     const chainRoot = row.root_id ?? row.id;
     db.transaction(() => {
       db.prepare("DELETE FROM contents WHERE id = ? OR root_id = ?").run(chainRoot, chainRoot);
     })();
-    return { ...row, features, has_code_refs: false };
+    return done({ ...row, features, has_code_refs: false });
   }
 
   const chainRoot = row.root_id ?? row.id;
@@ -42,7 +50,7 @@ export function deleteContent(db: Database.Database, id: number, cascade = false
   if (!hasOtherVersions) {
     // Path 1: sole version — existing behavior
     db.prepare("DELETE FROM contents WHERE id = ?").run(id);
-    return { ...row, features, has_code_refs: false };
+    return done({ ...row, features, has_code_refs: false });
   }
 
   if (row.root_id !== null) {
@@ -57,20 +65,20 @@ export function deleteContent(db: Database.Database, id: number, cascade = false
       if (row.is_latest === 1) {
         const newLatest = db
           .prepare("SELECT id FROM contents WHERE (id = ? OR root_id = ?) ORDER BY version_number DESC LIMIT 1")
-          .get(chainRoot, chainRoot) as { id: number } | undefined;
+          .get(chainRoot, chainRoot) as { id: string } | undefined;
         if (newLatest) {
           db.prepare("UPDATE contents SET is_latest = 1 WHERE id = ?").run(newLatest.id);
         }
       }
     })();
-    return { ...row, features, has_code_refs: false };
+    return done({ ...row, features, has_code_refs: false });
   }
 
   // Path 3: root version with children — promote v2 to root
   db.transaction(() => {
     const newRoot = db
       .prepare("SELECT id FROM contents WHERE root_id = ? ORDER BY version_number ASC LIMIT 1")
-      .get(id) as { id: number };
+      .get(id) as { id: string };
 
     // All other children get root_id updated to new root
     db.prepare("UPDATE contents SET root_id = ? WHERE root_id = ? AND id != ?").run(newRoot.id, id, newRoot.id);
@@ -85,5 +93,5 @@ export function deleteContent(db: Database.Database, id: number, cascade = false
     db.prepare("DELETE FROM contents WHERE id = ?").run(id);
   })();
 
-  return { ...row, features, has_code_refs: false };
+  return done({ ...row, features, has_code_refs: false });
 }

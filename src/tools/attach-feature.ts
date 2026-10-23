@@ -1,14 +1,17 @@
 import type Database from "better-sqlite3";
 import { fetchFeatures } from "./_helpers.js";
+import { logInfo } from "../log/logger.js";
 
-export type AttachFeatureResult = { content_id: number; features: string[] };
+export type AttachFeatureResult = { content_id: string; features: string[] };
 
 export function attachFeature(
   db: Database.Database,
-  contentId: number,
+  contentId: string,
   workspace: string,
   featureName: string,
 ): AttachFeatureResult {
+  const t0 = Date.now();
+  logInfo("attach_feature", { event: "start", id: contentId, workspace, feature: featureName });
   const content = db
     .prepare(
       `SELECT c.id, c.type FROM contents c
@@ -18,7 +21,7 @@ export function attachFeature(
        WHERE c.id = ? AND w.name = ?
        LIMIT 1`,
     )
-    .get(contentId, workspace) as { id: number; type: string } | undefined;
+    .get(contentId, workspace) as { id: string; type: string } | undefined;
 
   if (!content) {
     throw new Error(`Content not found: id=${contentId} in workspace=${workspace}`);
@@ -50,5 +53,7 @@ export function attachFeature(
     feat.id,
   );
 
-  return { content_id: contentId, features: fetchFeatures(db, contentId) };
+  const result = { content_id: contentId, features: fetchFeatures(db, contentId) };
+  logInfo("attach_feature", { event: "done", ms: String(Date.now() - t0), id: contentId });
+  return result;
 }

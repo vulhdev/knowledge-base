@@ -1,0 +1,5 @@
+services:
+  host:
+    command: ["/e2e/host-continuous-entrypoint.sh"]
+  peer:
+    command: ["/e2e/peer-continuous-entrypoint.sh"]

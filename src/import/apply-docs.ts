@@ -28,17 +28,17 @@ export type ApplyResult = {
 const totalChanges = (db: Database.Database) => (db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
 
 export async function applyDocs(db: Database.Database, plan: LoadPlan, r: ApplyResult): Promise<void> {
-  const idOf = new Map<string, number>();
+  const idOf = new Map<string, string>();
   for (const item of plan.items.filter((i): i is PlanDoc => i.kind !== "card")) {
     try {
       const prov = { source_key: item.source_key, source_sha: item.source_sha };
-      const existing = db.prepare("SELECT id, source_sha FROM contents WHERE source_key = ?").get(item.source_key) as { id: number; source_sha: string } | undefined;
+      const existing = db.prepare("SELECT id, source_sha FROM contents WHERE source_key = ?").get(item.source_key) as { id: string; source_sha: string } | undefined;
       if (!existing) {
         // no requestSampling: a CLI run has no MCP client, so conflict detection is skipped (FR-A9)
-        idOf.set(item.source_key, (await createContent(db, item.workspace, item.features, item.type, item.body, item.title, undefined, prov)).id);
+        idOf.set(item.source_key, (await createContent(db, item.workspace, item.features, item.type, item.body, item.title, undefined, undefined, prov)).id);
         r.docs.created++;
       } else if (existing.source_sha !== item.source_sha) {
-        await updateContent(db, existing.id, item.body, item.type, item.title, undefined, prov);
+        await updateContent(db, existing.id, item.body, item.type, item.title, undefined, undefined, prov);
         idOf.set(item.source_key, existing.id);
         r.docs.updated++;
       } else {

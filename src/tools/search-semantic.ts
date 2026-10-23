@@ -3,6 +3,7 @@ import type { ContentType, SearchResult, SearchPage, MatchedSection } from "../t
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { fetchFeaturesBatch } from "./_helpers.js";
 import { buildFtsQuery } from "../text/cjk-bigram.js";
+import { logInfo } from "../log/logger.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -40,11 +41,16 @@ export async function searchSemantic(
   limit = DEFAULT_LIMIT,
   offset = 0,
 ): Promise<SearchPage> {
+  const t0 = Date.now();
+  logInfo("search_semantic", { event: "start", query, ...(workspace ? { workspace } : {}), ...(type ? { type } : {}) });
+
   if (!isModelReady()) {
     throw new Error(
       "Semantic search is not available. Run: npx @vulhdev/knowledge-base init",
     );
   }
+
+  logInfo("search_semantic", { event: "model_check", ready: true });
 
   const clampedLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
   const clampedOffset = Math.max(0, offset);
@@ -52,6 +58,7 @@ export async function searchSemantic(
   const internalK = Math.min((clampedOffset + clampedLimit) * 5, 200);
 
   try {
+    logInfo("search_semantic", { event: "embed_query" });
     const queryEmbedding = await getEmbedding(query);
     const blob = Buffer.from(queryEmbedding.buffer);
 
@@ -77,10 +84,11 @@ export async function searchSemantic(
     const vecRows = db.prepare(`
       SELECT DISTINCT ${CONTENT_COLUMNS}, v.distance AS distance
       FROM vec_contents v
-      JOIN contents c ON v.rowid = c.id ${joins}
+      JOIN contents c ON v.rowid = c.rowid ${joins}
       WHERE v.embedding MATCH ? AND k = ?${filterSql}
       ORDER BY v.distance
     `).all(blob, internalK, ...filterParams) as (RawRow & { distance: number })[];
+    logInfo("search_semantic", { event: "vec_search_docs", hits: vecRows.length });
 
     // --- Vector search (ANN) over section vectors, folded back onto their doc ---
     const sectionK = Math.min(internalK * SECTION_K_FACTOR, SECTION_K_MAX);
@@ -91,17 +99,18 @@ export async function searchSemantic(
       JOIN contents c ON c.id = cc.content_id ${joins}
       WHERE v.embedding MATCH ? AND k = ?${filterSql}
       ORDER BY v.distance
-    `).all(blob, sectionK, ...filterParams) as { chunk_id: number; id: number; distance: number }[];
+    `).all(blob, sectionK, ...filterParams) as { chunk_id: number; id: string; distance: number }[];
+    logInfo("search_semantic", { event: "vec_search_sections", hits: sectionRows.length });
 
-    const docDistance = new Map<number, number>();
+    const docDistance = new Map<string, number>();
     for (const r of vecRows) docDistance.set(r.id, r.distance);
-    const sectionBest = new Map<number, { distance: number; hits: number }>();
+    const sectionBest = new Map<string, { distance: number; hits: number }>();
     for (const r of sectionRows) {
       const cur = sectionBest.get(r.id);
       if (!cur) sectionBest.set(r.id, { distance: r.distance, hits: 1 });
       else sectionBest.set(r.id, { distance: Math.min(cur.distance, r.distance), hits: cur.hits + 1 });
     }
-    const combined: [number, number][] = [];
+    const combined: [string, number][] = [];
     for (const id of new Set([...docDistance.keys(), ...sectionBest.keys()])) {
       const sec = sectionBest.get(id);
       const base = Math.min(docDistance.get(id) ?? Infinity, sec?.distance ?? Infinity);
@@ -113,12 +122,14 @@ export async function searchSemantic(
 
     // --- BM25 full-text search: docs (contents_fts) and SOT pointers (sot_chunks_fts) ---
     const ftsIds = runFtsSearch(db, query, filterConditions, filterParams, internalK);
+    logInfo("search_semantic", { event: "fts_search", hits: ftsIds.length });
     const sotFtsIds = runSotFtsSearch(db, query, filterConditions, filterParams, internalK);
+    logInfo("search_semantic", { event: "sot_fts_search", hits: sotFtsIds.length });
 
     // --- Reciprocal Rank Fusion ---
     const rankLists = [vecIds, ftsIds, sotFtsIds].map((ids) => new Map(ids.map((id, i) => [id, i + 1])));
 
-    const contentMap = new Map<number, RawRow>(vecRows.map(({ distance: _d, ...r }) => [r.id, r]));
+    const contentMap = new Map<string, RawRow>(vecRows.map(({ distance: _d, ...r }) => [r.id, r]));
     const missing = [...new Set([...vecIds, ...ftsIds, ...sotFtsIds])].filter((id) => !contentMap.has(id));
 
     if (missing.length > 0) {
@@ -153,11 +164,12 @@ export async function searchSemantic(
     }
 
     scored.sort((a, b) => b.score - a.score);
+    logInfo("search_semantic", { event: "rrf_fuse", candidates: scored.length });
     const sliced = scored.slice(clampedOffset, clampedOffset + clampedLimit);
     // Features and sections are looked up for the returned page only, one query each
     const featureMap = fetchFeaturesBatch(db, sliced.map((r) => r.id));
     const sectionMap = matchedSections(db, query, blob, sliced);
-    return {
+    const page = {
       results: sliced.map(({ score, ...rest }) => ({
         ...rest,
         features: featureMap.get(rest.id) ?? [],
@@ -169,6 +181,8 @@ export async function searchSemantic(
       offset: clampedOffset,
       limit: clampedLimit,
     };
+    logInfo("search_semantic", { event: "done", ms: String(Date.now() - t0), results: page.results.length });
+    return page;
   } catch (err) {
     if (err instanceof Error && err.message.includes("npx @vulhdev")) {
       throw err;
@@ -179,7 +193,7 @@ export async function searchSemantic(
 
 type SectionRow = {
   id: number;
-  content_id: number;
+  content_id: string;
   kind: string;
   chunk_key: string;
   heading_path: string;
@@ -215,9 +229,9 @@ function matchedSections(
   db: Database.Database,
   query: string,
   blob: Buffer,
-  page: { id: number; body: string }[],
-): Map<number, MatchedSection[]> {
-  const out = new Map<number, MatchedSection[]>();
+  page: { id: string; body: string }[],
+): Map<string, MatchedSection[]> {
+  const out = new Map<string, MatchedSection[]>();
   if (page.length === 0) return out;
   const placeholders = page.map(() => "?").join(",");
   const rows = db.prepare(`
@@ -230,7 +244,7 @@ function matchedSections(
   if (rows.length === 0) return out;
 
   const terms = queryTerms(query);
-  const bodyOf = new Map(page.map((p) => [p.id, p.body]));
+  const bodyOf = new Map<string, string>(page.map((p) => [p.id, p.body]));
   const textScore = new Map<number, number>();
   for (const r of rows) {
     if (r.kind !== "doc" || r.start_char === null || r.end_char === null) continue;
@@ -252,7 +266,7 @@ function matchedSections(
     }
   }
 
-  const byDoc = new Map<number, SectionRow[]>();
+  const byDoc = new Map<string, SectionRow[]>();
   for (const r of rows) {
     const bucket = byDoc.get(r.content_id);
     if (bucket) bucket.push(r);
@@ -290,7 +304,7 @@ export function runSotFtsSearch(
   conditions: string[],
   filterParams: (string | number)[],
   limit: number,
-): number[] {
+): string[] {
   const { tokens } = buildFtsQuery(query);
   if (tokens.length === 0) return [];
 
@@ -317,9 +331,9 @@ export function runSotFtsSearch(
   try {
     const stmt = db.prepare(sql);
     const andQuery = tokens.join(" AND ");
-    const andResults = (stmt.all(andQuery, ...filterParams) as { id: number }[]).map(r => r.id);
+    const andResults = (stmt.all(andQuery, ...filterParams) as { id: string }[]).map(r => r.id);
     if (andResults.length > 0 || tokens.length === 1) return andResults;
-    return (stmt.all(tokens.join(" OR "), ...filterParams) as { id: number }[]).map(r => r.id);
+    return (stmt.all(tokens.join(" OR "), ...filterParams) as { id: string }[]).map(r => r.id);
   } catch {
     return [];
   }
@@ -331,7 +345,7 @@ export function runFtsSearch(
   conditions: string[],
   filterParams: (string | number)[],
   limit: number,
-): number[] {
+): string[] {
   // CJK runs become bigram phrases, exactly as kb_cjk_bigram indexed them
   const { tokens } = buildFtsQuery(query);
 
@@ -342,7 +356,7 @@ export function runFtsSearch(
   let sql = `
     SELECT DISTINCT c.id
     FROM contents_fts fts
-    JOIN contents c ON fts.rowid = c.id
+    JOIN contents c ON fts.rowid = c.rowid
     JOIN content_features cf ON cf.content_id = c.id
     JOIN features f ON cf.feature_id = f.id
     JOIN workspaces w ON f.workspace_id = w.id
@@ -356,11 +370,11 @@ export function runFtsSearch(
 
   try {
     const stmt = db.prepare(sql);
-    const andResults = (stmt.all(andQuery, ...filterParams) as { id: number }[]).map(r => r.id);
+    const andResults = (stmt.all(andQuery, ...filterParams) as { id: string }[]).map(r => r.id);
     if (andResults.length > 0 || tokens.length === 1) return andResults;
     // AND returned nothing — fall back to OR to preserve recall
     const orQuery = tokens.join(" OR ");
-    return (stmt.all(orQuery, ...filterParams) as { id: number }[]).map(r => r.id);
+    return (stmt.all(orQuery, ...filterParams) as { id: string }[]).map(r => r.id);
   } catch {
     return [];
   }

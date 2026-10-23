@@ -1,0 +1,5 @@
+services:
+  host:
+    command: ["/e2e/host-bidirectional-entrypoint.sh"]
+  peer:
+    command: ["/e2e/peer-bidirectional-entrypoint.sh"]

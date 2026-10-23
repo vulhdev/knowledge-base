@@ -46,7 +46,7 @@ describe("startBackfill", () => {
     db.exec(`INSERT INTO features (workspace_id, name) VALUES (${wsId}, 'ft')`);
     const { id: ftId } = db.prepare("SELECT id FROM features WHERE name = 'ft'").get() as { id: number };
     const { lastInsertRowid } = db.prepare("INSERT INTO contents (type, body, embedding) VALUES ('idea', 'already embedded', ?)").run(fakeVec);
-    const contentId = Number(lastInsertRowid);
+    const { id: contentId } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
     db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(contentId, ftId);
 
     const { startBackfill } = await import("../../src/embedding/backfill.js");

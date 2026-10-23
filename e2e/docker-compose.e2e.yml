@@ -1,0 +1,68 @@
+networks:
+  e2e:
+    driver: bridge
+
+volumes:
+  shared:   # host writes invite code here; peer reads it
+
+services:
+  bootstrap:
+    build:
+      context: ..
+      dockerfile: e2e/Dockerfile.e2e
+    entrypoint: ["/bin/sh"]
+    command: ["/e2e/bootstrap-entrypoint.sh"]
+    volumes:
+      - ../e2e:/e2e:ro
+    networks:
+      - e2e
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/bootstrap-ready"]
+      interval: 2s
+      retries: 15
+      start_period: 2s
+
+  host:
+    build:
+      context: ..
+      dockerfile: e2e/Dockerfile.e2e
+    entrypoint: ["/bin/sh"]
+    command: ["/e2e/host-entrypoint.sh"]
+    depends_on:
+      bootstrap:
+        condition: service_healthy
+    environment:
+      KB_DHT_BOOTSTRAP: "bootstrap:49737"
+      KB_DHT_OPEN: "1"
+      KB_E2E_NO_GITHUB_AUTH: "1"
+      DB_PATH: /data/host.db
+    volumes:
+      - shared:/shared
+      - ../e2e:/e2e:ro
+    networks:
+      - e2e
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /shared/invite.txt"]
+      interval: 2s
+      retries: 20
+      start_period: 5s
+
+  peer:
+    build:
+      context: ..
+      dockerfile: e2e/Dockerfile.e2e
+    entrypoint: ["/bin/sh"]
+    command: ["/e2e/peer-entrypoint.sh"]
+    depends_on:
+      host:
+        condition: service_healthy
+    environment:
+      KB_DHT_BOOTSTRAP: "bootstrap:49737"
+      KB_DHT_OPEN: "1"
+      KB_E2E_NO_GITHUB_AUTH: "1"
+      DB_PATH: /data/peer.db
+    volumes:
+      - shared:/shared
+      - ../e2e:/e2e:ro
+    networks:
+      - e2e

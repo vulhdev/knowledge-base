@@ -1,12 +1,15 @@
 import type Database from "better-sqlite3";
 import type { LinkResult } from "../types.js";
 import { reverseDirectionReason } from "./_type-order.js";
+import { logInfo } from "../log/logger.js";
 
 export function linkContent(
   db: Database.Database,
-  childId: number,
-  parentId: number,
+  childId: string,
+  parentId: string,
 ): LinkResult {
+  const t0 = Date.now();
+  logInfo("link_content", { event: "start", child_id: childId, parent_id: parentId });
   const parent = db
     .prepare(
       `SELECT c.id, c.type, w.name AS workspace
@@ -17,7 +20,7 @@ export function linkContent(
        WHERE c.id = ?
        LIMIT 1`,
     )
-    .get(parentId) as { id: number; type: string; workspace: string } | undefined;
+    .get(parentId) as { id: string; type: string; workspace: string } | undefined;
 
   if (!parent) throw new Error(`Content not found: id=${parentId}`);
 
@@ -31,7 +34,7 @@ export function linkContent(
        WHERE c.id = ?
        LIMIT 1`,
     )
-    .get(childId) as { id: number; type: string; workspace: string } | undefined;
+    .get(childId) as { id: string; type: string; workspace: string } | undefined;
 
   if (!child) throw new Error(`Content not found: id=${childId}`);
 
@@ -56,5 +59,6 @@ export function linkContent(
     result.direction_warning = `Parent (workspace: ${parent.workspace}) and child (workspace: ${child.workspace}) are in different workspaces`;
   }
 
+  logInfo("link_content", { event: "done", ms: String(Date.now() - t0), child_id: childId, parent_id: parentId });
   return result;
 }

@@ -3,14 +3,17 @@ import type { CreateContentResult } from "../types.js";
 import { createContent } from "./create-content.js";
 import { linkContent } from "./link-content.js";
 import { fetchFeatures } from "./_helpers.js";
+import { logInfo } from "../log/logger.js";
 
 export async function deriveContent(
   db: Database.Database,
-  parentId: number,
+  parentId: string,
   type: string,
   body: string,
   title?: string,
-): Promise<CreateContentResult & { parent_id: number }> {
+): Promise<CreateContentResult & { parent_id: string }> {
+  const t0 = Date.now();
+  logInfo("derive_content", { event: "start", parent_id: parentId, type });
   const parent = db
     .prepare(
       `SELECT c.id, w.name AS workspace
@@ -21,7 +24,7 @@ export async function deriveContent(
        WHERE c.id = ?
        LIMIT 1`,
     )
-    .get(parentId) as { id: number; workspace: string } | undefined;
+    .get(parentId) as { id: string; workspace: string } | undefined;
 
   if (!parent) throw new Error(`Content not found: id=${parentId}`);
 
@@ -30,5 +33,6 @@ export async function deriveContent(
 
   linkContent(db, created.id, parentId);
 
+  logInfo("derive_content", { event: "done", ms: String(Date.now() - t0), content_id: created.id });
   return { ...created, parent_id: parentId };
 }

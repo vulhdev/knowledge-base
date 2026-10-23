@@ -10,7 +10,7 @@ import { updateContent } from "../tools/update-content.js";
 import { showAtCommit } from "./git.js";
 import type { PlanCard } from "./plan.js";
 
-export type SotOutcome = { status: "created" | "updated" | "unchanged"; id: number; pointers: number; filled: number };
+export type SotOutcome = { status: "created" | "updated" | "unchanged"; id: string; pointers: number; filled: number };
 
 function sectionText(lines: string[], s: Section): string {
   return lines.slice(s.start_line - 1, s.end_line).join("\n");
@@ -38,7 +38,7 @@ async function pointersFor(card: PlanCard): Promise<{ sections: Section[]; lines
 export async function importSotCard(db: Database.Database, card: PlanCard): Promise<SotOutcome> {
   const existing = db
     .prepare("SELECT id, source_sha FROM contents WHERE source_key = ?")
-    .get(card.source_key) as { id: number; source_sha: string } | undefined;
+    .get(card.source_key) as { id: string; source_sha: string } | undefined;
 
   if (existing && existing.source_sha === card.source_sha) {
     // Unchanged file: only fill pointer vectors a previous run could not compute.
@@ -79,14 +79,14 @@ export async function importSotCard(db: Database.Database, card: PlanCard): Prom
 
   db.exec("BEGIN");
   try {
-    let id: number;
+    let id: string;
     if (existing) {
-      await updateContent(db, existing.id, card.body, card.type, card.title, undefined, provenance);
+      await updateContent(db, existing.id, card.body, card.type, card.title, undefined, undefined, provenance);
       id = existing.id;
       // replace, never patch: old pointers (and, via trigger, their vectors and FTS rows) go first
       db.prepare("DELETE FROM content_chunks WHERE content_id = ? AND kind = 'sot'").run(id);
     } else {
-      id = (await createContent(db, card.workspace, card.features, card.type, card.body, card.title, undefined, provenance)).id;
+      id = (await createContent(db, card.workspace, card.features, card.type, card.body, card.title, undefined, undefined, provenance)).id;
     }
     sections.forEach((s, i) => {
       const { lastInsertRowid } = insertPointer.run(

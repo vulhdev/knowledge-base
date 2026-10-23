@@ -2,9 +2,11 @@
 const [, , command] = process.argv;
 
 switch (command) {
-  case "init":
-    await import("./init.js");
+  case "init": {
+    const { main } = await import("./init.js");
+    await main();
     break;
+  }
   case "gui":
     await import("./gui.js");
     break;
@@ -14,8 +16,23 @@ switch (command) {
   case "link-code":
     await import("./link-code.js");
     break;
+  case "status":
+    await import("./status.js");
+    break;
+  case "team":
+    await import("./team.js");
+    break;
+  case "upgrade":
+    await import("./upgrade.js");
+    break;
   case "import-sources":
     await import("./import-sources.js");
+    break;
+  case "workspace":
+    await import("./workspace.js");
+    break;
+  case "log":
+    await import("./log.js");
     break;
   case undefined:
     // No subcommand — start the MCP server (stdio transport, called by Claude Code)
@@ -23,6 +40,6 @@ switch (command) {
     break;
   default:
     console.error(`Unknown command: ${command}`);
-    console.error("Usage: knowledge-base [init|gui|update|link-code|import-sources]");
+    console.error("Usage: knowledge-base [init|gui|update|upgrade|status|team|workspace|link-code|import-sources|log]");
     process.exit(1);
 }

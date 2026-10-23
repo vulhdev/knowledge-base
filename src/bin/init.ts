@@ -6,12 +6,20 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, cpSync, existsSync
 import * as p from "@clack/prompts";
 import { openDb } from "../db/client.js";
 import { listWorkspaces, createWorkspace } from "../db/workspaces.js";
+import { getTeamByName, insertTeam, updateTeamKeypair } from "../db/team.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
+import { isCrsqliteReady, downloadCrsqlite } from "../team/crsqlite.js";
+import { generateSecret, generateNoiseKeypair } from "../team/generate.js";
+import { startDeviceFlow, pollForToken, getGitHubUsername } from "../team/github.js";
+import { loadSettings, writeSettings } from "../config.js";
+import { writeWorkspaceToClaude } from "../sync/claude-md.js";
+import { logInfo, logWarn, logError } from "../log/logger.js";
 
 const CREATE_NEW = "__new__";
 const SKIP = "__skip__";
-const BLOCK_START = "<!-- knowledge-base:start -->";
-const BLOCK_END = "<!-- knowledge-base:end -->";
+// 32-byte seed-only Ed25519 key, encoded as hex = 64 characters.
+// Used to detect stale keypairs that need auto-migration to a full 64-byte keypair.
+const STALE_KEY_HEX_LEN = 64;
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SKILLS_SRC = join(PACKAGE_ROOT, "skills");
@@ -19,77 +27,6 @@ const AGENTS_SRC = join(PACKAGE_ROOT, "agents");
 const VERSION = (JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")) as { version: string }).version;
 const VERSION_MARKER = ".knowledge-base-version";
 
-function buildBlock(workspace: string): string {
-  return `${BLOCK_START}
-# Knowledge Base
-
-This project is linked to workspace **${workspace}**. Use the \`knowledge-base\` MCP tools to persist and retrieve documents across sessions.
-
-> Run \`npx @vulhdev/knowledge-base init\` to re-configure.
-
-## Always Do
-
-- **After writing a spec** — when you've just produced a structured specification document (Problem, Solution, Scope sections, or output of \`/spec\` skill), ask: *"Save this spec to knowledge-base?"* then invoke \`/knowledge-base-create\`.
-- **After writing a plan** — when you've just produced a numbered implementation plan or roadmap (output of \`/plan\` skill or similar), ask: *"Save this plan to knowledge-base?"* then invoke \`/knowledge-base-create\`.
-- **After writing an idea one-pager** — when you've just produced an ideation document with assumptions and MVP scope (output of \`/agent-skills:idea-refine\`), ask: *"Save this idea to knowledge-base?"* then invoke \`/knowledge-base-create\`.
-- **After creating a git commit** — if the current session has an active plan doc, call \`attach_code_ref\` to link the commit to that plan. Read the session context to find the plan's \`content_id\` and the matching \`task_ref\` (e.g. the task description that was just implemented), then call \`attach_code_ref(content_id, commit_hash, file_paths, task_ref)\`. Skip silently if no plan doc is active in the session.
-- **Before starting a bug fix**, ask: *"Search knowledge-base for prior context first?"* If user agrees, call \`search_semantic(query="...", workspace="${workspace}")\`.
-- **Before starting a new feature**, silently call \`list_contents(workspace="${workspace}")\` and surface any relevant prior docs if found.
-- **When referencing a document by ID** — always include the \`gui_url\` from the tool result to make it Cmd+clickable. Format: \`type#id (gui_url)\`. Example: \`idea#123 (http://localhost:57891/content/123)\`.
-
-## Never Do
-
-- NEVER save without user confirmation (\`search_semantic\` and \`list_contents\` are always safe to call).
-- NEVER create a duplicate — if a doc on the same topic exists, use \`update_content\` instead.
-- NEVER call \`create_content\` directly for user-initiated saves — always invoke \`/knowledge-base-create\` so the full save flow runs (conflict detection, link suggestion).
-- NEVER include knowledge-base document IDs in git commit messages, PR descriptions, or code comments — these IDs are internal and meaningless outside the knowledge-base tool.
-
-## Skills & MCP Tools
-
-| Tool / Skill | Use for |
-|------|---------|
-| \`/knowledge-base-create\` (skill) | Save a new spec / plan / idea / doc — use for all user-initiated saves |
-| \`/knowledge-base-diff\` (skill) | Compare two versions of a doc — shows unified diff in chat + GUI URL |
-| \`create_content\` | Internal/programmatic saves only (e.g. derive, digest tools) |
-| \`get_content\` | Fetch a specific doc by ID |
-| \`list_contents\` | Browse all docs in a workspace; filter by feature and/or type |
-| \`search_semantic\` | Semantic search by vector similarity (multilingual, 50+ languages) |
-| \`update_content\` | Update body, type, or title of an existing doc by ID |
-| \`delete_content\` | Permanently delete a doc by ID (add \`cascade=true\` to delete all versions) |
-| \`create_version\` | Snapshot the current doc body as a new version |
-| \`list_versions\` | List all versions in a document's chain |
-| \`link_content\` | Link two docs as parent → child |
-| \`derive_content\` | Create a new doc linked to a parent in one step |
-| \`get_lineage\` | Get full ancestor/descendant chain for a doc |
-| \`attach_code_ref\` | Link a git commit to a plan at task granularity |
-| \`get_code_refs\` | List git commits linked to a doc, grouped by task |
-| \`kb-conflict-resolver\` (agent) | Deep conflict analysis when \`semantic_contradiction\` is detected |
-
-\`KNOWLEDGE_BASE_WORKSPACE=${workspace}\`
-${BLOCK_END}`;
-}
-
-function writeWorkspaceToClaude(name: string): void {
-  const claudeMdPath = join(process.cwd(), "CLAUDE.md");
-  const block = buildBlock(name);
-  const blockPattern = /<!--\s*knowledge-base:start\s*-->[\s\S]*?<!--\s*knowledge-base:end\s*-->/;
-
-  let content: string;
-  try {
-    content = readFileSync(claudeMdPath, "utf8");
-    if (blockPattern.test(content)) {
-      content = content.replace(blockPattern, block);
-    } else {
-      content = content.endsWith("\n")
-        ? content + "\n" + block + "\n"
-        : content + "\n\n" + block + "\n";
-    }
-  } catch {
-    content = block + "\n";
-  }
-
-  writeFileSync(claudeMdPath, content, "utf8");
-}
 
 function copySkills(destBase: string): string[] {
   const copied: string[] = [];
@@ -124,10 +61,31 @@ function copyAgents(destBase: string): string[] {
   return copied;
 }
 
-async function main(): Promise<void> {
+async function runGitHubAuth(): Promise<string> {
+  p.log.info("Authenticate with GitHub to verify your identity as team host.");
+  const flow = await startDeviceFlow();
+  p.log.info(`Open ${flow.verificationUri} and enter code: ${flow.userCode}`);
+  const spinner = p.spinner();
+  spinner.start("Waiting for GitHub authorization…");
+  try {
+    const token = await pollForToken(flow.deviceCode, flow.interval, flow.expiresIn);
+    const username = await getGitHubUsername(token);
+    spinner.stop(`Authenticated as @${username}`);
+    return username;
+  } catch (err) {
+    spinner.stop("GitHub authentication failed");
+    p.log.error(String(err));
+    process.exit(1);
+  }
+}
+
+export async function main(): Promise<void> {
+  const t0 = Date.now();
+  logInfo("init", { event: "start" });
   p.intro("knowledge-base init");
 
   const db = openDb();
+  logInfo("init", { event: "db_init" });
   const workspaces = listWorkspaces(db);
 
   const selected = await p.select<string>({
@@ -145,7 +103,7 @@ async function main(): Promise<void> {
 
   let workspaceName: string;
 
-  if ((selected as string) === CREATE_NEW) {
+  if ((selected) === CREATE_NEW) {
     const name = await p.text({
       message: "Workspace name:",
       placeholder: "my-project",
@@ -157,25 +115,138 @@ async function main(): Promise<void> {
       process.exit(0);
     }
 
-    createWorkspace(db, name as string);
-    workspaceName = name as string;
+    createWorkspace(db, name);
+    workspaceName = name;
   } else {
-    workspaceName = selected as string;
+    workspaceName = selected;
   }
 
   writeWorkspaceToClaude(workspaceName);
   p.log.success(`Written knowledge-base block to CLAUDE.md (workspace: ${workspaceName})`);
 
+  // Identity setup (global, stored once)
+  const settings = loadSettings();
+  if (!settings.identity) {
+    p.log.info("Set your identity (used to track who created/updated documents in team mode).");
+    const identityName = await p.text({
+      message: "Your name:",
+      placeholder: "Alice",
+      validate: (v) => (!v?.trim() ? "Name cannot be empty" : undefined),
+    });
+    if (p.isCancel(identityName)) { p.cancel("Cancelled."); process.exit(0); }
+
+    const identityEmail = await p.text({
+      message: "Your email:",
+      placeholder: "alice@example.com",
+      validate: (v) => (!v?.trim() ? "Email cannot be empty" : undefined),
+    });
+    if (p.isCancel(identityEmail)) { p.cancel("Cancelled."); process.exit(0); }
+
+    const updated = loadSettings();
+    updated.identity = { name: identityName, email: identityEmail };
+    writeSettings(updated);
+    p.log.success(`Identity saved: ${identityName} <${identityEmail}>`);
+  } else {
+    p.log.info(`Identity: ${settings.identity.name} <${settings.identity.email}>`);
+  }
+
+  // Team mode setup for this workspace
+  const ws = createWorkspace(db, workspaceName);
+  const hasTeam = getTeamByName(db, workspaceName);
+  if (!hasTeam) {
+    const teamMode = await p.select<string>({
+      message: `Enable team mode for workspace "${workspaceName}"?`,
+      options: [
+        { value: "create", label: "Create new team (you are the host)" },
+        { value: SKIP,    label: "Skip — solo mode" },
+      ],
+    });
+    if (p.isCancel(teamMode)) { p.cancel("Cancelled."); process.exit(0); }
+
+    if ((teamMode) === "create") {
+      const githubUsername = await runGitHubAuth();
+
+      const kp = generateNoiseKeypair();
+      insertTeam(db, ws.id, {
+        role: "host",
+        secret: generateSecret(),
+        noise_public_key: kp.publicKey,
+        noise_secret_key: kp.secretKey,
+        host_public_key: null,
+        last_synced_at: null,
+      });
+      const fresh = loadSettings();
+      fresh.identity = { ...(fresh.identity ?? { name: "", email: "" }), github_username: githubUsername };
+      writeSettings(fresh);
+      p.log.success(`Team created. Invite peers with:`);
+      p.log.info(`  knowledge-base team invite --workspace ${workspaceName} @<github-username>`);
+    }
+  } else if (hasTeam.noise_secret_key.length === STALE_KEY_HEX_LEN) {
+    // stale Ed25519 keypair (seed-only, 32 bytes) — auto-migrate
+    p.log.warn(`Outdated keypair detected for "${workspaceName}" — auto-migrating to Ed25519.`);
+    const kp = generateNoiseKeypair();
+    updateTeamKeypair(db, hasTeam.workspace_id, kp.publicKey, kp.secretKey);
+    p.log.success("Keypair migrated.");
+    p.log.warn(`Restart team server to apply the new keypair: knowledge-base team server --workspace ${workspaceName}`);
+  } else {
+    const reconfigureChoice = await p.select<string>({
+      message: `Team mode already configured for "${workspaceName}" (role: ${hasTeam.role}). What would you like to do?`,
+      options: [
+        { value: "keep",        label: "Keep existing configuration" },
+        { value: "reconfigure", label: "Reconfigure — generate new keypair (disconnects current peers)" },
+      ],
+    });
+    if (p.isCancel(reconfigureChoice)) { p.cancel("Cancelled."); process.exit(0); }
+
+    if ((reconfigureChoice) === "reconfigure") {
+      p.log.warn("All peers connected to this team will lose their connection. They will need to re-join.");
+      const confirmReconfig = await p.confirm({
+        message: "Continue with reconfiguration?",
+        initialValue: false,
+      });
+      if (p.isCancel(confirmReconfig) || !confirmReconfig) {
+        p.log.info("Reconfiguration cancelled. Existing configuration kept.");
+      } else {
+        const githubUsername = await runGitHubAuth();
+        const kp = generateNoiseKeypair();
+        updateTeamKeypair(db, hasTeam.workspace_id, kp.publicKey, kp.secretKey);
+        const fresh = loadSettings();
+        fresh.identity = { ...(fresh.identity ?? { name: "", email: "" }), github_username: githubUsername };
+        writeSettings(fresh);
+        p.log.success("Keypair reconfigured.");
+        p.log.warn(`Restart team server to apply the new keypair: knowledge-base team server --workspace ${workspaceName}`);
+      }
+    }
+  }
+
   if (isModelReady()) {
+    logInfo("init", { event: "model_check", ready: "true" });
     p.log.info("Embedding model already cached — skipping download.");
   } else {
+    logInfo("init", { event: "model_check", ready: "false" });
     const modelSpinner = p.spinner();
     modelSpinner.start("Downloading embedding model (~120 MB, first time only)…");
     try {
       await getEmbedding("warm-up");
       modelSpinner.stop("Embedding model downloaded.");
     } catch (err) {
+      logError("init", err instanceof Error ? err : new Error(String(err)));
+      logWarn("init", { event: "model_download_failed", reason: String(err) });
       modelSpinner.stop("Model download failed. Run `npx @vulhdev/knowledge-base init` again to retry.");
+      p.log.warn(String(err));
+    }
+  }
+
+  if (isCrsqliteReady()) {
+    p.log.info("cr-sqlite extension already cached — skipping download.");
+  } else {
+    const crsqliteSpinner = p.spinner();
+    crsqliteSpinner.start("Downloading cr-sqlite extension (~1 MB, first time only)…");
+    try {
+      await downloadCrsqlite();
+      crsqliteSpinner.stop("cr-sqlite extension downloaded.");
+    } catch (err) {
+      crsqliteSpinner.stop("cr-sqlite download failed. Run `npx @vulhdev/knowledge-base init` again to retry.");
       p.log.warn(String(err));
     }
   }
@@ -197,10 +268,10 @@ async function main(): Promise<void> {
     ],
   });
 
-  if (!p.isCancel(skillsDest) && (skillsDest as string) !== SKIP) {
-    const copied = copySkills(skillsDest as string);
+  if (!p.isCancel(skillsDest) && (skillsDest) !== SKIP) {
+    const copied = copySkills(skillsDest);
     if (copied.length > 0) {
-      writeFileSync(join(skillsDest as string, VERSION_MARKER), VERSION, "utf8");
+      writeFileSync(join(skillsDest, VERSION_MARKER), VERSION, "utf8");
       p.log.success(`Installed ${copied.length} skills to ${skillsDest}`);
       for (const skill of copied) p.log.info(`  /${skill}`);
     } else {
@@ -225,10 +296,10 @@ async function main(): Promise<void> {
     ],
   });
 
-  if (!p.isCancel(agentsDest) && (agentsDest as string) !== SKIP) {
-    const copied = copyAgents(agentsDest as string);
+  if (!p.isCancel(agentsDest) && (agentsDest) !== SKIP) {
+    const copied = copyAgents(agentsDest);
     if (copied.length > 0) {
-      writeFileSync(join(agentsDest as string, VERSION_MARKER), VERSION, "utf8");
+      writeFileSync(join(agentsDest, VERSION_MARKER), VERSION, "utf8");
       p.log.success(`Installed ${copied.length} agents to ${agentsDest}`);
       for (const agent of copied) p.log.info(`  ${agent}`);
     } else {
@@ -236,10 +307,13 @@ async function main(): Promise<void> {
     }
   }
 
+  logInfo("init", { event: "done", ms: String(Date.now() - t0) });
   p.outro("Done. Restart Claude Code to pick up the new skills and agents.");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

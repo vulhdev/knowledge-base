@@ -10,7 +10,7 @@ const pairKey = (parentType: string, childType: string) => `${parentType}\u0000$
 
 // Counts existing (parent.type, child.type) pairs in content_links, across all workspaces.
 // `excludeLink` drops one link from the count — used when the link being judged was just inserted.
-function loadPairCounts(db: Database.Database, excludeLink?: { parentId: number; childId: number }): PairCounts {
+function loadPairCounts(db: Database.Database, excludeLink?: { parentId: string; childId: string }): PairCounts {
   const rows = db
     .prepare(
       `SELECT p.type AS parent_type, c.type AS child_type, COUNT(*) AS n
@@ -20,7 +20,7 @@ function loadPairCounts(db: Database.Database, excludeLink?: { parentId: number;
        WHERE NOT (cl.parent_id = ? AND cl.child_id = ?)
        GROUP BY p.type, c.type`,
     )
-    .all(excludeLink?.parentId ?? -1, excludeLink?.childId ?? -1) as { parent_type: string; child_type: string; n: number }[];
+    .all(excludeLink?.parentId ?? "", excludeLink?.childId ?? "") as { parent_type: string; child_type: string; n: number }[];
 
   const counts: PairCounts = new Map();
   for (const r of rows) counts.set(pairKey(r.parent_type, r.child_type), r.n);
@@ -37,7 +37,7 @@ export function reverseDirectionReason(
   db: Database.Database,
   parentType: string,
   childType: string,
-  excludeLink?: { parentId: number; childId: number },
+  excludeLink?: { parentId: string; childId: string },
 ): string | null {
   const p = seedIndex(parentType);
   const c = seedIndex(childType);

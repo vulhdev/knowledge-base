@@ -8,7 +8,7 @@ const SIMILARITY_THRESHOLD = 0.5;
 const MAX_CANDIDATES = 3;
 
 type Candidate = {
-  id: number;
+  id: string;
   features: string[];
   type: string;
   body: string;
@@ -16,18 +16,18 @@ type Candidate = {
 
 export function findSimilarInWorkspace(
   db: Database.Database,
-  contentId: number,
+  contentId: string,
   workspace: string,
   embeddingBlob: Buffer,
 ): Candidate[] {
   try {
-    type RawRow = { id: number; type: string; body: string; distance: number };
+    type RawRow = { id: string; type: string; body: string; distance: number };
     const rows = db
       .prepare(
         `
         SELECT c.id, c.type, c.body, v.distance
         FROM vec_contents v
-        JOIN contents c ON v.rowid = c.id
+        JOIN contents c ON v.rowid = c.rowid
         JOIN content_features cf ON cf.content_id = c.id
         JOIN features f ON cf.feature_id = f.id
         JOIN workspaces w ON f.workspace_id = w.id
@@ -86,7 +86,7 @@ export function parseConflicts(raw: string, candidates: Candidate[]): ConflictRe
     return parsed
       .filter(
         (x) =>
-          typeof x.content_id === "number" &&
+          typeof x.content_id === "string" &&
           validIds.has(x.content_id) &&
           Array.isArray(x.features) &&
           (x.type === "semantic_contradiction" || x.type === "risk_shadow") &&
@@ -103,7 +103,7 @@ export function parseConflicts(raw: string, candidates: Candidate[]): ConflictRe
 
 export async function detectConflicts(
   db: Database.Database,
-  contentId: number,
+  contentId: string,
   workspace: string,
   features: string[],
   type: string,

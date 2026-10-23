@@ -3,6 +3,7 @@ import type { Content } from "../types.js";
 import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { fetchFeatures } from "./_helpers.js";
 import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
+import { logInfo } from "../log/logger.js";
 
 type RawRow = Omit<Content, "features" | "has_code_refs"> & { has_code_refs: number };
 
@@ -18,11 +19,13 @@ function countOccurrences(haystack: string, needle: string): number {
 
 export async function patchContent(
   db: Database.Database,
-  id: number,
+  id: string,
   oldString: string,
   newString: string,
   replaceAll = false,
 ): Promise<Content> {
+  const t0 = Date.now();
+  logInfo("patch_content", { event: "start", id, replace_all: replaceAll });
   const bodyRow = db
     .prepare("SELECT body FROM contents WHERE id = ?")
     .get(id) as { body: string } | undefined;
@@ -84,5 +87,7 @@ export async function patchContent(
     )
     .get(id) as RawRow;
 
-  return { ...row, features: fetchFeatures(db, id), has_code_refs: row.has_code_refs === 1 };
+  const result = { ...row, features: fetchFeatures(db, id), has_code_refs: row.has_code_refs === 1 };
+  logInfo("patch_content", { event: "done", ms: String(Date.now() - t0), id });
+  return result;
 }

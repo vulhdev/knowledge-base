@@ -7,19 +7,31 @@ import * as p from "@clack/prompts";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SKILLS_SRC = join(PACKAGE_ROOT, "skills");
+const AGENTS_SRC = join(PACKAGE_ROOT, "agents");
 const VERSION = (JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")) as { version: string }).version;
 const VERSION_MARKER = ".knowledge-base-version";
 
 function findInstalledSkillRoots(): string[] {
-  const candidates = [
+  return [
     join(homedir(), ".claude", "skills"),
     join(process.cwd(), ".claude", "skills"),
-  ];
-  return candidates.filter((dir) => {
+  ].filter((dir) => {
     if (!existsSync(dir)) return false;
     return readdirSync(dir, { withFileTypes: true }).some(
       (e) => e.isDirectory() && e.name.startsWith("knowledge-base-")
     );
+  });
+}
+
+function findInstalledAgentRoots(): string[] {
+  if (!existsSync(AGENTS_SRC)) return [];
+  const packagedAgents = new Set(readdirSync(AGENTS_SRC).filter((f) => f.endsWith(".md")));
+  return [
+    join(homedir(), ".claude", "agents"),
+    join(process.cwd(), ".claude", "agents"),
+  ].filter((dir) => {
+    if (!existsSync(dir)) return false;
+    return readdirSync(dir).some((f) => packagedAgents.has(f));
   });
 }
 
@@ -41,13 +53,22 @@ function copySkills(destBase: string): void {
   }
 }
 
+function copyAgents(destBase: string): void {
+  if (!existsSync(AGENTS_SRC)) return;
+  for (const agent of readdirSync(AGENTS_SRC).filter((f) => f.endsWith(".md"))) {
+    mkdirSync(destBase, { recursive: true });
+    cpSync(join(AGENTS_SRC, agent), join(destBase, agent));
+  }
+}
+
 async function main(): Promise<void> {
   p.intro("knowledge-base update");
 
   const skillRoots = findInstalledSkillRoots();
+  const agentRoots = findInstalledAgentRoots();
 
-  if (skillRoots.length === 0) {
-    p.log.warn("No installed skills found. Run `npx @vulhdev/knowledge-base init` first.");
+  if (skillRoots.length === 0 && agentRoots.length === 0) {
+    p.log.warn("No installed skills or agents found. Run `npx @vulhdev/knowledge-base init` first.");
     p.outro("Nothing to update.");
     return;
   }
@@ -65,7 +86,13 @@ async function main(): Promise<void> {
     updated++;
   }
 
-  p.outro(updated > 0 ? "Done." : "All skills already up to date.");
+  for (const root of agentRoots) {
+    copyAgents(root);
+    p.log.success(`Agents synced → ${root}`);
+    updated++;
+  }
+
+  p.outro(updated > 0 ? "Done." : "All skills and agents already up to date.");
 }
 
 main().catch((err) => {

@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { LinkedContent, LineageResult } from "../types.js";
+import { logInfo } from "../log/logger.js";
 
 // One statement for the whole lineage, so the number of queries no longer grows with it.
 // `up` follows only the smallest-rowid parent (the row the old per-node `.get()` returned);
@@ -35,8 +36,8 @@ const LINEAGE_SQL = `
 
 type LineageRow = {
   kind: number;
-  a: number;
-  b: number;
+  a: string;
+  b: string | number;
   k: number | string;
   workspace: string | null;
   type: string | null;
@@ -44,9 +45,9 @@ type LineageRow = {
 };
 
 type LineageGraph = {
-  parentOf: Map<number, number>;
-  childrenOf: Map<number, number[]>;
-  nodes: Map<number, LinkedContent>;
+  parentOf: Map<string, string>;
+  childrenOf: Map<string, string[]>;
+  nodes: Map<string, LinkedContent>;
 };
 
 // Prepared once per connection; a WeakMap never keeps a closed connection alive.
@@ -62,22 +63,23 @@ function lineageStatement(db: Database.Database): Database.Statement {
 }
 
 function buildGraph(rows: LineageRow[]): LineageGraph {
-  const parentOf = new Map<number, number>();
-  const childrenOf = new Map<number, number[]>();
-  const nodes = new Map<number, LinkedContent>();
-  const minFeatureId = new Map<number, number>();
+  const parentOf = new Map<string, string>();
+  const childrenOf = new Map<string, string[]>();
+  const nodes = new Map<string, LinkedContent>();
 
   for (const row of rows) {
     if (row.kind === 0) {
       // Rows arrive ordered by rowid — keep the first, as the old `.get()` did.
-      if (!parentOf.has(row.a)) parentOf.set(row.a, row.b);
+      if (!parentOf.has(row.a)) parentOf.set(row.a, row.b as string);
     } else if (row.kind === 1) {
       const children = childrenOf.get(row.a);
-      if (children) children.push(row.b);
-      else childrenOf.set(row.a, [row.b]);
+      if (children) children.push(row.b as string);
+      else childrenOf.set(row.a, [row.b as string]);
     } else {
       const node = nodes.get(row.a);
       if (!node) {
+        // Features arrive sorted by name (ORDER BY kind, a, k where k=f.name for kind=2).
+        // The first feature seen carries the workspace for this node.
         nodes.set(row.a, {
           id: row.a,
           workspace: row.workspace as string,
@@ -85,14 +87,8 @@ function buildGraph(rows: LineageRow[]): LineageGraph {
           title: row.title,
           features: [row.k as string],
         });
-        minFeatureId.set(row.a, row.b);
       } else {
         node.features.push(row.k as string);
-        // Workspace of the lowest feature id, matching the old un-ordered `LIMIT 1`.
-        if (row.b < minFeatureId.get(row.a)!) {
-          node.workspace = row.workspace as string;
-          minFeatureId.set(row.a, row.b);
-        }
       }
     }
   }
@@ -105,7 +101,9 @@ function copyNode(node: LinkedContent): LinkedContent {
   return { id: node.id, workspace: node.workspace, type: node.type, title: node.title, features: [...node.features] };
 }
 
-export function getLineage(db: Database.Database, contentId: number): LineageResult {
+export function getLineage(db: Database.Database, contentId: string): LineageResult {
+  const t0 = Date.now();
+  logInfo("get_lineage", { event: "start", id: contentId });
   const rows = lineageStatement(db).all(contentId, contentId) as LineageRow[];
   const graph = buildGraph(rows);
 
@@ -116,12 +114,13 @@ export function getLineage(db: Database.Database, contentId: number): LineageRes
   const ancestors = walkAncestors(graph, contentId);
   const descendants = walkDescendants(graph, contentId);
 
+  logInfo("get_lineage", { event: "done", ms: String(Date.now() - t0), ancestors: ancestors.length, descendants: descendants.length });
   return { root, ancestors, descendants };
 }
 
-function walkAncestors(graph: LineageGraph, startId: number): LinkedContent[] {
+function walkAncestors(graph: LineageGraph, startId: string): LinkedContent[] {
   const ancestors: LinkedContent[] = [];
-  const visited = new Set<number>();
+  const visited = new Set<string>();
   let currentId = startId;
 
   while (true) {
@@ -139,10 +138,10 @@ function walkAncestors(graph: LineageGraph, startId: number): LinkedContent[] {
   return ancestors;
 }
 
-function walkDescendants(graph: LineageGraph, startId: number): LinkedContent[] {
+function walkDescendants(graph: LineageGraph, startId: string): LinkedContent[] {
   const descendants: LinkedContent[] = [];
-  const visited = new Set<number>([startId]);
-  const queue: number[] = [startId];
+  const visited = new Set<string>([startId]);
+  const queue: string[] = [startId];
 
   while (queue.length > 0) {
     const parentId = queue.shift()!;

@@ -4,8 +4,10 @@ import { isModelReady, getEmbedding } from "../embedding/model.js";
 import { detectConflicts, type RequestSampling } from "./conflict-detection.js";
 import { fetchFeatures } from "./_helpers.js";
 import { typesAfter } from "./_type-order.js";
+import { loadSettings } from "../config.js";
 import { buildFtsQuery } from "../text/cjk-bigram.js";
 import { prepareSections, writeDocSections, embedDocSections } from "./_chunks.js";
+import { logInfo } from "../log/logger.js";
 
 const SUGGEST_LIMIT = 3;
 const SCORE_THRESHOLD = 0.25;
@@ -13,7 +15,7 @@ const SCORE_THRESHOLD = 0.25;
 async function suggestParents(
   db: Database.Database,
   workspace: string,
-  contentId: number,
+  contentId: string,
   type: string,
   body: string,
   embeddingBlob: Buffer | null,
@@ -28,12 +30,12 @@ async function suggestParents(
 
   if (embeddingBlob) {
     try {
-      type VecRow = { id: number; type: string; title: string | null; score: number };
+      type VecRow = { id: string; type: string; title: string | null; score: number };
       const rows = db
         .prepare(
           `SELECT c.id, c.type, c.title, v.distance AS score
            FROM vec_contents v
-           JOIN contents c ON v.rowid = c.id
+           JOIN contents c ON v.rowid = c.rowid
            JOIN content_features cf ON cf.content_id = c.id
            JOIN features f ON cf.feature_id = f.id
            JOIN workspaces w ON f.workspace_id = w.id
@@ -58,18 +60,19 @@ async function suggestParents(
   try {
     // Same tokenization as contents_fts: CJK runs become bigram phrases instead of being stripped
     const words = buildFtsQuery(body.trim().split(/\s+/).slice(0, 8).join(" "))
+      // eslint-disable-next-line no-control-regex
       .tokens.filter((w) => w.startsWith('"') && (/[^\x00-\x7F]/.test(w) || w.length - 2 > 2));
 
     if (words.length === 0) return [];
 
     const ftsQuery = words.join(" OR ");
 
-    type FtsRow = { id: number; type: string; title: string | null };
+    type FtsRow = { id: string; type: string; title: string | null };
     const rows = db
       .prepare(
         `SELECT c.id, c.type, c.title
          FROM contents_fts fts
-         JOIN contents c ON fts.rowid = c.id
+         JOIN contents c ON fts.rowid = c.rowid
          JOIN content_features cf ON cf.content_id = c.id
          JOIN features f ON cf.feature_id = f.id
          JOIN workspaces w ON f.workspace_id = w.id
@@ -95,8 +98,11 @@ export async function createContent(
   body: string,
   title?: string,
   requestSampling?: RequestSampling,
+  createdBy?: string,
   provenance?: Provenance,
 ): Promise<CreateContentResult> {
+  const t0 = Date.now();
+  logInfo("create_content", { event: "start", workspace, type, features: Array.isArray(features) ? features.join(",") : String(features) });
   if (!body.trim()) {
     throw new Error("body must not be empty");
   }
@@ -131,21 +137,24 @@ export async function createContent(
     }
   }
 
+  const identity = loadSettings().identity;
+  const resolvedCreatedBy = createdBy ?? (identity ? `${identity.name} <${identity.email}>` : null);
+
   // Sections are computed before the transaction (the token counter is async); the row, its
   // features and its sections are then written atomically.
+  logInfo("create_content", { event: "sections_prepare" });
   const sections = await prepareSections(body);
 
   const contentId = db.transaction(() => {
-    // provenance is written in the same INSERT, so an interrupted import never leaves a keyless copy
     const { lastInsertRowid } = provenance
       ? db
-          .prepare("INSERT INTO contents (type, title, body, source_key, source_sha) VALUES (?, ?, ?, ?, ?)")
-          .run(type, title ?? null, body, provenance.source_key, provenance.source_sha)
+          .prepare("INSERT INTO contents (type, title, body, created_by, updated_by, source_key, source_sha) VALUES (?, ?, ?, ?, ?, ?, ?)")
+          .run(type, title ?? null, body, resolvedCreatedBy, resolvedCreatedBy, provenance.source_key, provenance.source_sha)
       : db
-          .prepare("INSERT INTO contents (type, title, body) VALUES (?, ?, ?)")
-          .run(type, title ?? null, body);
+          .prepare("INSERT INTO contents (type, title, body, created_by, updated_by) VALUES (?, ?, ?, ?, ?)")
+          .run(type, title ?? null, body, resolvedCreatedBy, resolvedCreatedBy);
 
-    const id = Number(lastInsertRowid);
+    const { id } = db.prepare("SELECT id FROM contents WHERE rowid = ?").get(lastInsertRowid) as { id: string };
 
     for (const featureId of featureIds) {
       db.prepare("INSERT INTO content_features (content_id, feature_id) VALUES (?, ?)").run(id, featureId);
@@ -154,19 +163,27 @@ export async function createContent(
     writeDocSections(db, id, sections);
     return id;
   })();
+  logInfo("create_content", { event: "db_insert", id: contentId });
 
   let embeddingBlob: Buffer | null = null;
+  const modelReady = isModelReady();
 
-  if (isModelReady()) {
+  if (modelReady) {
+    let embedOk = false;
     try {
       const embedding = await getEmbedding(body);
       embeddingBlob = Buffer.from(embedding.buffer);
       db.prepare("UPDATE contents SET embedding = ? WHERE id = ?").run(embeddingBlob, contentId);
+      embedOk = true;
     } catch {
       // embedding failure must not prevent content creation
     }
+    logInfo("create_content", { event: "embed", model_ready: true, ok: embedOk });
+  } else {
+    logInfo("create_content", { event: "embed", model_ready: false });
   }
 
+  logInfo("create_content", { event: "embed_sections" });
   await embedDocSections(db, contentId);
 
   const featureNamesSorted = fetchFeatures(db, contentId);
@@ -179,12 +196,14 @@ export async function createContent(
       // conflict detection failure must not prevent content creation
     }
   }
+  logInfo("create_content", { event: "conflict_check", found: conflicts.length });
 
   const row = db
     .prepare("SELECT id, title, created_at FROM contents WHERE id = ?")
-    .get(contentId) as { id: number; title: string | null; created_at: string };
+    .get(contentId) as { id: string; title: string | null; created_at: string };
 
   const suggested_parents = await suggestParents(db, workspace, contentId, type, body, embeddingBlob);
 
+  logInfo("create_content", { event: "done", ms: String(Date.now() - t0), id: contentId });
   return { id: row.id, workspace, features: featureNamesSorted, type, title: row.title, created_at: row.created_at, conflicts, suggested_parents };
 }
