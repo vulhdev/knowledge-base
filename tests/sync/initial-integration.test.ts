@@ -359,5 +359,80 @@ describe.skipIf(!isCrsqliteReady())(
       ).n;
       expect(countAfterSecond).toBe(1);
     });
+
+    // Bug: peer's local db_version (own clock) is unrelated to the host's db_version.
+    // If peer's localDbVersion >= host's db_version for a doc's initial columns (type/title),
+    // but < the db_version of a later body edit, the peer would receive the body-only update
+    // and never see the type/title — leaving type='' and title=NULL on the peer.
+    // Fix: performInitialSync always sends dbVersion=0 (fullSync) to request ALL host data.
+    it("peer receives correct type and title even when peer dbVersion > doc's initial db_version (split-version doc)", async () => {
+      const WS = "split-version-ws";
+
+      const hostDb = createCrsqlDb();
+      createWorkspace(hostDb, WS);
+
+      // Create a doc at a low db_version, then update its body at a higher db_version.
+      // On the host: type+title land at db_version=N, body lands at db_version=N+K.
+      hostDb.prepare("INSERT INTO contents (id, type, title, body) VALUES (?, ?, ?, ?)").run(
+        "aabbccddeeff00112233445566778899",
+        "spec",
+        "The Real Title",
+        "initial body",
+      );
+      const docVersion = (
+        hostDb.prepare("SELECT MAX(db_version) AS v FROM crsql_changes").get() as { v: number }
+      ).v;
+
+      // Peer starts with its own CRDT data so that localDbVersion > docVersion.
+      // This simulates the re-join scenario where a previous join landed some content.
+      const peerDb = createCrsqlDb();
+      seedPeerTeam(peerDb, WS);
+      // Write content to the PEER db to bump its own localDbVersion above the host's docVersion.
+      for (let i = 0; i <= docVersion; i++) {
+        peerDb.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("idea", "peer local doc " + i);
+      }
+      const peerDbVersion = (
+        peerDb.prepare("SELECT MAX(db_version) AS v FROM crsql_changes").get() as { v: number }
+      ).v;
+      expect(peerDbVersion).toBeGreaterThan(docVersion); // confirm peer clock is ahead
+
+      // Now update only body on the host — type/title stay at the OLD db_version.
+      hostDb.prepare("UPDATE contents SET body = ? WHERE id = ?").run("updated body text", "aabbccddeeff00112233445566778899");
+      const bodyVersion = (
+        hostDb.prepare("SELECT MAX(db_version) AS v FROM crsql_changes").get() as { v: number }
+      ).v;
+      expect(bodyVersion).toBeGreaterThan(docVersion); // body is at a newer version than type/title
+
+      // Without the fix (fullSync=false): host sends only db_version > peerDbVersion.
+      // Since peerDbVersion > docVersion >= typeVersion, type+title would be skipped.
+      // With the fix (fullSync=true): host sends ALL changes from db_version=0.
+
+      const { performInitialSync } = await import("../../src/sync/initial.js");
+      const syncPromise = performInitialSync(peerDb, WS, 5_000);
+
+      await new Promise((r) => setTimeout(r, 20));
+      expect(connectionHandler).not.toBeNull();
+
+      const { clientSocket, serverSocket } = await makeTcpPair();
+      handleSyncConnection(hostDb, WS, serverSocket as unknown as NodeJS.ReadWriteStream);
+      connectionHandler!(clientSocket as unknown as NodeJS.ReadWriteStream);
+
+      await new Promise((r) => setTimeout(r, 300));
+      serverSocket.end();
+      await syncPromise;
+
+      // The peer should have received the host's doc with correct type and title.
+      const synced = peerDb
+        .prepare("SELECT type, title, body FROM contents WHERE id = ?")
+        .get("aabbccddeeff00112233445566778899") as { type: string | null; title: string | null; body: string } | undefined;
+
+      expect(synced).toBeDefined();
+      expect(synced?.type).toBe("spec");       // must NOT be null/empty
+      expect(synced?.title).toBe("The Real Title"); // must NOT be null
+      expect(synced?.body).toBe("updated body text");
+
+      clientSocket.destroy();
+      serverSocket.destroy();
+    });
   },
 );

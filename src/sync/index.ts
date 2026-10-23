@@ -82,6 +82,7 @@ export function handleSyncConnection(
   workspaceName: string,
   socket: NodeJS.ReadWriteStream,
   callbacks?: SyncCallbacks,
+  options?: { fullSync?: boolean },
 ): { pushDelta: () => void } {
   let localDbVersion: number;
   try {
@@ -93,7 +94,12 @@ export function handleSyncConnection(
     return { pushDelta: () => undefined };
   }
 
-  const handshake: HandshakeMsg = { v: PROTOCOL_VERSION, dbVersion: localDbVersion };
+  // fullSync=true forces dbVersion=0 in the handshake so the host sends ALL its changes,
+  // not just those newer than the peer's local clock. Required for initial join: peer's
+  // own clock is independent from the host's clock, so using localDbVersion as a cursor
+  // into host's crsql_changes would skip content the peer has never actually received.
+  const advertisedDbVersion = options?.fullSync ? 0 : localDbVersion;
+  const handshake: HandshakeMsg = { v: PROTOCOL_VERSION, dbVersion: advertisedDbVersion };
   let buf = Buffer.alloc(0);
   let peerVersion: number | null = null;
   // Always expect a bootstrap frame first — features are not CRDT-tracked so the only way

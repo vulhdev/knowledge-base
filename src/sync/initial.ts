@@ -40,7 +40,7 @@ export async function performInitialSyncOnSocket(
     handleSyncConnection(db, workspaceName, socket, {
       onChangesReceived: (rows) => { rowsReceived += rows.length; },
       onFeaturesBootstrapped: (count) => { featuresBootstrapped += count; },
-    });
+    }, { fullSync: true });
     // Re-emit bytes already read from the socket (sync handshake that arrived together
     // with the join_result in the same segment) so the data handler processes them.
     if (remainder && remainder.length > 0) {
@@ -95,7 +95,7 @@ export async function performInitialSync(
       handleSyncConnection(db, workspaceName, socket, {
         onChangesReceived: (rows) => { rowsReceived += rows.length; },
         onFeaturesBootstrapped: (count) => { featuresBootstrapped += count; },
-      });
+      }, { fullSync: true });
       // Attach error handler before "close" so an ECONNRESET does not leak the promise.
       (socket as NodeJS.EventEmitter).on("error", () => {
         settle({ ok: false, reason: "timeout" });
