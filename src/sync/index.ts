@@ -7,7 +7,7 @@ import type { ActivityLogger } from "./activity.js";
 import { rebuildFts } from "./rebuild.js";
 import { getTeamByName, updateLastSynced } from "../db/team.js";
 import { acquireSyncLock } from "./lock.js";
-import { registerPusher } from "./push.js";
+import { registerPusher, pushToAllWorkspaces } from "./push.js";
 import { logWarn } from "../log/logger.js";
 
 const MAX_HANDSHAKE_BYTES = 4 * 1024;   // generous for {"v":1,"dbVersion":9999999}
@@ -311,6 +311,16 @@ export function startSync(
     swarm.join(joinTopic);
   }
 
+  // Periodically push new changes to connected peers. This handles the cross-process case
+  // where the MCP server writes a document but cannot push because the sync lock is held by
+  // this process (GUI server or team server). The pusher registry is process-local, so only
+  // the process that called startSync can drive the push; the timer flushes any writes from
+  // other processes by polling crsql_changes via each registered pushDelta.
+  const PERIODIC_PUSH_MS = 5_000;
+  const periodicPush = setInterval(() => {
+    try { pushToAllWorkspaces(); } catch { /* per-socket errors are handled by socket error events */ }
+  }, PERIODIC_PUSH_MS);
+
   swarm.on("connection", (socket: NodeJS.ReadWriteStream, info: { publicKey: Buffer; topics: Buffer[] }) => {
     (socket as NodeJS.EventEmitter).on("error", () => { /* ECONNRESET and other connection errors are expected */ });
     const publicKey = info.publicKey.toString("hex");
@@ -366,6 +376,7 @@ export function startSync(
 
   return {
     destroy: async () => {
+      clearInterval(periodicPush);
       await destroySwarm();
       release();
     },
