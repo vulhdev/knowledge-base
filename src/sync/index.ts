@@ -299,6 +299,8 @@ export function startSync(
     throw new Error(`No team config for workspace "${workspaceName}"`);
   }
 
+  db.prepare("UPDATE team_peers SET last_seen_at = NULL").run();
+
   const { swarm, destroy: destroySwarm } = createSwarm(db, workspaceName);
   swarm.on("error", () => { /* swarm-level errors (e.g. DHT timeouts) are expected */ });
 
@@ -352,8 +354,10 @@ export function startSync(
     }
 
     const username = peerRow?.github_username ?? null;
+    db.prepare("UPDATE team_peers SET last_seen_at = datetime('now') WHERE public_key = ?").run(publicKey);
     logger?.onPeerConnect(workspaceName, username, publicKey);
     (socket as NodeJS.EventEmitter).once("close", () => {
+      db.prepare("UPDATE team_peers SET last_seen_at = NULL WHERE public_key = ?").run(publicKey);
       logger?.onPeerDisconnect(workspaceName, username, publicKey);
     });
     const { pushDelta } = handleSyncConnection(db, workspaceName, socket, {
