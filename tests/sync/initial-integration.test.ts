@@ -171,12 +171,135 @@ describe.skipIf(!isCrsqliteReady())(
 
       const result = await syncPromise;
 
-      expect(result).toEqual({ ok: true, rowsReceived: 0 });
+      expect(result).toEqual({ ok: true, rowsReceived: 0, featuresBootstrapped: 0 });
 
       const count = (
         peerDb.prepare("SELECT count(*) AS n FROM contents").get() as { n: number }
       ).n;
       expect(count).toBe(0);
+
+      clientSocket.destroy();
+      serverSocket.destroy();
+    });
+
+    // Bug: host only sent bootstrap when peerVersion === 0, so re-joining peers
+    // (with CRDT data from a prior partial sync) never received features.
+    it("peer receives features from host bootstrap even when peer already has CRDT data (non-zero dbVersion)", async () => {
+      const WS = "feat-rejoin-ws";
+
+      const hostDb = createCrsqlDb();
+      createWorkspace(hostDb, WS);
+      hostDb.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("spec", "host doc");
+      const wsId = (hostDb.prepare("SELECT id FROM workspaces WHERE name = ?").get(WS) as { id: number }).id;
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "alpha");
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "beta");
+
+      // Peer has prior CRDT data — simulates a previous partial join attempt.
+      const peerDb = createCrsqlDb();
+      seedPeerTeam(peerDb, WS);
+      // Insert a content row so peerDb has non-zero localDbVersion in crsql_changes.
+      peerDb.prepare("INSERT INTO contents (type, body) VALUES (?, ?)").run("idea", "pre-existing");
+      const { v: peerDbVersion } = peerDb
+        .prepare("SELECT MAX(db_version) AS v FROM crsql_changes")
+        .get() as { v: number | null };
+      expect(peerDbVersion).toBeGreaterThan(0); // confirm peer is in "re-join" state
+
+      const { performInitialSync } = await import("../../src/sync/initial.js");
+      const syncPromise = performInitialSync(peerDb, WS, 5_000);
+
+      await new Promise((r) => setTimeout(r, 20));
+      expect(connectionHandler).not.toBeNull();
+
+      const { clientSocket, serverSocket } = await makeTcpPair();
+      handleSyncConnection(hostDb, WS, serverSocket as unknown as NodeJS.ReadWriteStream);
+      connectionHandler!(clientSocket as unknown as NodeJS.ReadWriteStream);
+
+      await new Promise((r) => setTimeout(r, 200));
+      serverSocket.end();
+      await syncPromise;
+
+      // Bug manifests here: features table is empty on the peer because bootstrap was never sent.
+      const peerWsId = (peerDb.prepare("SELECT id FROM workspaces WHERE name = ?").get(WS) as { id: number }).id;
+      const peerFeatures = peerDb
+        .prepare("SELECT name FROM features WHERE workspace_id = ?")
+        .all(peerWsId) as { name: string }[];
+      const featureNames = peerFeatures.map((f) => f.name);
+      expect(featureNames).toContain("alpha");
+      expect(featureNames).toContain("beta");
+
+      clientSocket.destroy();
+      serverSocket.destroy();
+    });
+
+    it("features bootstrap is idempotent — re-syncing does not duplicate features on peer", async () => {
+      const WS = "feat-idem-ws";
+
+      const hostDb = createCrsqlDb();
+      createWorkspace(hostDb, WS);
+      const wsId = (hostDb.prepare("SELECT id FROM workspaces WHERE name = ?").get(WS) as { id: number }).id;
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "gamma");
+
+      const peerDb = createCrsqlDb();
+      seedPeerTeam(peerDb, WS);
+
+      const { performInitialSync } = await import("../../src/sync/initial.js");
+
+      const runSync = async () => {
+        const syncPromise = performInitialSync(peerDb, WS, 5_000);
+        await new Promise((r) => setTimeout(r, 20));
+        const { clientSocket, serverSocket } = await makeTcpPair();
+        handleSyncConnection(hostDb, WS, serverSocket as unknown as NodeJS.ReadWriteStream);
+        connectionHandler!(clientSocket as unknown as NodeJS.ReadWriteStream);
+        await new Promise((r) => setTimeout(r, 200));
+        serverSocket.end();
+        const result = await syncPromise;
+        clientSocket.destroy();
+        serverSocket.destroy();
+        connectionHandler = null;
+        vi.clearAllMocks();
+        return result;
+      };
+
+      await runSync();
+      await runSync(); // second sync — must not duplicate features
+
+      const peerWsId = (peerDb.prepare("SELECT id FROM workspaces WHERE name = ?").get(WS) as { id: number }).id;
+      const count = (
+        peerDb.prepare("SELECT count(*) AS n FROM features WHERE workspace_id = ?").get(peerWsId) as { n: number }
+      ).n;
+      expect(count).toBe(1); // exactly one, not two
+    });
+
+    it("featuresBootstrapped count is reported in sync result", async () => {
+      const WS = "feat-count-ws";
+
+      const hostDb = createCrsqlDb();
+      createWorkspace(hostDb, WS);
+      const wsId = (hostDb.prepare("SELECT id FROM workspaces WHERE name = ?").get(WS) as { id: number }).id;
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "f1");
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "f2");
+      hostDb.prepare("INSERT INTO features (workspace_id, name) VALUES (?, ?)").run(wsId, "f3");
+
+      const peerDb = createCrsqlDb();
+      seedPeerTeam(peerDb, WS);
+
+      const { performInitialSync } = await import("../../src/sync/initial.js");
+      const syncPromise = performInitialSync(peerDb, WS, 5_000);
+
+      await new Promise((r) => setTimeout(r, 20));
+      const { clientSocket, serverSocket } = await makeTcpPair();
+      handleSyncConnection(hostDb, WS, serverSocket as unknown as NodeJS.ReadWriteStream);
+      connectionHandler!(clientSocket as unknown as NodeJS.ReadWriteStream);
+      await new Promise((r) => setTimeout(r, 200));
+      serverSocket.end();
+
+      const result = await syncPromise;
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // featuresBootstrapped tracks how many feature names arrived via the bootstrap frame.
+        expect(result.featuresBootstrapped).toBe(3);
+      }
 
       clientSocket.destroy();
       serverSocket.destroy();

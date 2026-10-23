@@ -85,7 +85,7 @@ describe("performInitialSyncOnSocket", () => {
     const syncPromise = performInitialSyncOnSocket(db, "myws", socket as unknown as NodeJS.ReadWriteStream);
     socket.emit("close");
     const result = await syncPromise;
-    expect(result).toEqual({ ok: true, rowsReceived: 3 });
+    expect(result).toEqual({ ok: true, rowsReceived: 3, featuresBootstrapped: 0 });
   });
 
   it("re-emits remainder bytes as a data event so handleSyncConnection processes pre-buffered sync handshake", async () => {
@@ -247,6 +247,6 @@ describe("performInitialSync", () => {
     socket.emit("close");
 
     const result = await syncPromise;
-    expect(result).toEqual({ ok: true, rowsReceived: 3 });
+    expect(result).toEqual({ ok: true, rowsReceived: 3, featuresBootstrapped: 0 });
   });
 });

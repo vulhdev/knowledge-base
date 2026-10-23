@@ -5,7 +5,7 @@ import { deriveTopicBuffer } from "./peer.js";
 import { handleSyncConnection } from "./index.js";
 
 export type InitialSyncResult =
-  | { ok: true; rowsReceived: number }
+  | { ok: true; rowsReceived: number; featuresBootstrapped: number }
   | { ok: false; reason: "timeout" | "crsql_unavailable" };
 
 // Run the sync protocol on an already-open socket (the join socket) instead of
@@ -30,6 +30,7 @@ export async function performInitialSyncOnSocket(
 
   return new Promise((resolve) => {
     let rowsReceived = 0;
+    let featuresBootstrapped = 0;
     let settled = false;
     const settle = (result: InitialSyncResult) => {
       if (settled) return;
@@ -38,6 +39,7 @@ export async function performInitialSyncOnSocket(
     };
     handleSyncConnection(db, workspaceName, socket, {
       onChangesReceived: (rows) => { rowsReceived += rows.length; },
+      onFeaturesBootstrapped: (count) => { featuresBootstrapped += count; },
     });
     // Re-emit bytes already read from the socket (sync handshake that arrived together
     // with the join_result in the same segment) so the data handler processes them.
@@ -48,7 +50,7 @@ export async function performInitialSyncOnSocket(
       settle({ ok: false, reason: "timeout" });
     });
     (socket as NodeJS.EventEmitter).once("close", () => {
-      settle({ ok: true, rowsReceived });
+      settle({ ok: true, rowsReceived, featuresBootstrapped });
     });
   });
 }
@@ -83,6 +85,7 @@ export async function performInitialSync(
     (swarm as NodeJS.EventEmitter).on("connection", (socket: NodeJS.ReadWriteStream) => {
       clearTimeout(timer);
       let rowsReceived = 0;
+      let featuresBootstrapped = 0;
       let settled = false;
       const settle = (result: InitialSyncResult) => {
         if (settled) return;
@@ -91,13 +94,14 @@ export async function performInitialSync(
       };
       handleSyncConnection(db, workspaceName, socket, {
         onChangesReceived: (rows) => { rowsReceived += rows.length; },
+        onFeaturesBootstrapped: (count) => { featuresBootstrapped += count; },
       });
       // Attach error handler before "close" so an ECONNRESET does not leak the promise.
       (socket as NodeJS.EventEmitter).on("error", () => {
         settle({ ok: false, reason: "timeout" });
       });
       (socket as NodeJS.EventEmitter).once("close", () => {
-        settle({ ok: true, rowsReceived });
+        settle({ ok: true, rowsReceived, featuresBootstrapped });
       });
     });
   });
