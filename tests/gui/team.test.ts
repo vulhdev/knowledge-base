@@ -45,28 +45,41 @@ describe("renderTeamPage", () => {
     expect(html).toContain("knowledge-base team invite");
   });
 
-  it("renders active peer with bullet and Remove button", async () => {
+  it("renders online peer with ONLINE badge and Remove button", async () => {
     const { renderTeamPage } = await import("../../src/gui/render/team.js");
     const peers = [{
       public_key: "pk1", display_name: "@alice", github_username: "alice",
-      is_active: 1, joined_at: "2026-10-01 00:00:00",
+      is_active: 1, joined_at: "2026-10-01 00:00:00", last_seen_at: "2026-10-23 05:00:00",
     }];
     const html = renderTeamPage("my-ws", peers);
-    expect(html).toContain("●");
+    expect(html).toContain("peer-badge-online");
+    expect(html).toContain("ONLINE");
     expect(html).toContain("@alice");
     expect(html).toContain(`method="post"`);
     expect(html).toContain("Remove");
   });
 
-  it("renders kicked peer with circle and no Remove button", async () => {
+  it("renders offline peer with OFFLINE badge and Remove button", async () => {
+    const { renderTeamPage } = await import("../../src/gui/render/team.js");
+    const peers = [{
+      public_key: "pk1", display_name: "@alice", github_username: "alice",
+      is_active: 1, joined_at: "2026-10-01 00:00:00", last_seen_at: null,
+    }];
+    const html = renderTeamPage("my-ws", peers);
+    expect(html).toContain("peer-badge-offline");
+    expect(html).toContain("OFFLINE");
+    expect(html).toContain("Remove");
+  });
+
+  it("renders kicked peer with KICKED badge and Delete button, no Remove button", async () => {
     const { renderTeamPage } = await import("../../src/gui/render/team.js");
     const peers = [{
       public_key: "pk1", display_name: "@bob", github_username: "bob",
-      is_active: 0, joined_at: "2026-09-20 00:00:00",
+      is_active: 0, joined_at: "2026-09-20 00:00:00", last_seen_at: null,
     }];
     const html = renderTeamPage("my-ws", peers);
-    expect(html).toContain("○");
-    expect(html).toContain("kicked");
+    expect(html).toContain("peer-badge-kicked");
+    expect(html).toContain("KICKED");
     expect(html).not.toContain(`/team/kick`);
     expect(html).toContain(`/team/delete`);
   });
@@ -75,7 +88,7 @@ describe("renderTeamPage", () => {
     const { renderTeamPage } = await import("../../src/gui/render/team.js");
     const peers = [{
       public_key: "pk1", display_name: "<script>", github_username: "<script>alert(1)</script>",
-      is_active: 1, joined_at: "2026-10-01 00:00:00",
+      is_active: 1, joined_at: "2026-10-01 00:00:00", last_seen_at: null,
     }];
     const html = renderTeamPage("my-ws", peers);
     expect(html).not.toContain("<script>alert");
@@ -93,7 +106,7 @@ describe("esc() helper", () => {
     const { renderTeamPage } = await import("../../src/gui/render/team.js");
     const peers = [{
       public_key: "pk1", display_name: "@alice", github_username: "alice",
-      is_active: 1, joined_at: "2026-10-01 00:00:00",
+      is_active: 1, joined_at: "2026-10-01 00:00:00", last_seen_at: null,
     }];
     const html = renderTeamPage("my-ws", peers);
     expect(html).toContain("Remove @alice from team?");
