@@ -7,7 +7,7 @@ import type { ActivityLogger } from "./activity.js";
 import { rebuildFts } from "./rebuild.js";
 import { getTeamByName, updateLastSynced } from "../db/team.js";
 import { acquireSyncLock } from "./lock.js";
-import { registerPusher } from "./push.js";
+import { registerPusher, pushToAllWorkspaces } from "./push.js";
 import { logWarn } from "../log/logger.js";
 
 const MAX_HANDSHAKE_BYTES = 4 * 1024;   // generous for {"v":1,"dbVersion":9999999}
@@ -364,8 +364,14 @@ export function startSync(
     (socket as NodeJS.EventEmitter).once("close", unregister);
   });
 
+  const PERIODIC_PUSH_MS = 5_000;
+  const periodicPush = setInterval(() => {
+    try { pushToAllWorkspaces(); } catch { /* swallowed — push errors are non-fatal */ }
+  }, PERIODIC_PUSH_MS);
+
   return {
     destroy: async () => {
+      clearInterval(periodicPush);
       await destroySwarm();
       release();
     },

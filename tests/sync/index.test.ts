@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
 import { createTestDb } from "../setup.js";
 import { insertTeam } from "../../src/db/team.js";
@@ -619,5 +619,64 @@ describe("handleSyncConnection — bootstrap protocol", () => {
 
     const count = (peerDb.prepare("SELECT COUNT(*) AS n FROM features").get() as { n: number }).n;
     expect(count).toBe(0);
+  });
+});
+
+// ── Periodic push timer ───────────────────────────────────────────────────────
+
+describe("startSync — periodic push timer", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("calls pushToAllWorkspaces automatically at a regular interval", async () => {
+    vi.useFakeTimers();
+
+    const pushModule = await import("../../src/sync/push.js");
+    const pushSpy = vi.spyOn(pushModule, "pushToAllWorkspaces");
+
+    const { startSync } = await import("../../src/sync/index.js");
+    const db = createTestDb();
+    // Unique name — avoids file lock held by other "myws" startSync tests
+    const ws = createWorkspace(db, "push-timer-1");
+    insertTeam(db, ws.id, {
+      role: "host", secret: "a".repeat(64),
+      noise_public_key: "b".repeat(64), noise_secret_key: "c".repeat(64),
+      host_public_key: null, last_synced_at: null,
+    });
+    const handle = startSync(db, "push-timer-1");
+    expect(handle).not.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(5_001);
+    expect(pushSpy).toHaveBeenCalled();
+
+    await handle!.destroy();
+    pushSpy.mockRestore();
+  });
+
+  it("stops periodic push after handle is destroyed", async () => {
+    vi.useFakeTimers();
+
+    const pushModule = await import("../../src/sync/push.js");
+    const pushSpy = vi.spyOn(pushModule, "pushToAllWorkspaces");
+
+    const { startSync } = await import("../../src/sync/index.js");
+    const db = createTestDb();
+    const ws = createWorkspace(db, "push-timer-2");
+    insertTeam(db, ws.id, {
+      role: "host", secret: "a".repeat(64),
+      noise_public_key: "b".repeat(64), noise_secret_key: "c".repeat(64),
+      host_public_key: null, last_synced_at: null,
+    });
+    const handle = startSync(db, "push-timer-2");
+    expect(handle).not.toBeNull();
+
+    await handle!.destroy();
+    pushSpy.mockClear();
+
+    // Advance well past interval — must NOT fire after destroy
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(pushSpy).not.toHaveBeenCalled();
+    pushSpy.mockRestore();
   });
 });
