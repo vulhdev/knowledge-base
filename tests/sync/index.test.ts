@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
 import { createTestDb } from "../setup.js";
 import { insertTeam } from "../../src/db/team.js";
@@ -619,5 +619,90 @@ describe("handleSyncConnection — bootstrap protocol", () => {
 
     const count = (peerDb.prepare("SELECT COUNT(*) AS n FROM features").get() as { n: number }).n;
     expect(count).toBe(0);
+  });
+});
+
+// ── Periodic push timer ───────────────────────────────────────────────────────
+// Bug: pushToAllWorkspaces() in the MCP server process is a no-op when the GUI
+// or team server holds the sync lock (pusher registry is process-local state).
+// Fix: startSync must fire pushToAllWorkspaces() on a periodic timer so that
+// writes from OTHER PROCESSES (e.g. MCP) are forwarded to connected peers by
+// whichever process actually holds the sync lock.
+
+describe("startSync periodic push", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("calls pushToAllWorkspaces automatically at a regular interval", async () => {
+    vi.useFakeTimers();
+
+    const db = createTestDb();
+    const ws = createWorkspace(db, "periodic-push-ws");
+    insertTeam(db, ws.id, {
+      role: "host",
+      secret: "a".repeat(64),
+      noise_public_key: "b".repeat(64),
+      noise_secret_key: "c".repeat(64),
+      host_public_key: null,
+      last_synced_at: null,
+    });
+
+    // Register a mock pusher to observe calls from pushToAllWorkspaces()
+    const { registerPusher } = await import("../../src/sync/push.js");
+    const pushFn = vi.fn();
+    const unregister = registerPusher("periodic-push-ws", pushFn);
+
+    const { startSync } = await import("../../src/sync/index.js");
+    const handle = startSync(db, "periodic-push-ws");
+    expect(handle).not.toBeNull();
+
+    expect(pushFn).not.toHaveBeenCalled();
+
+    // Advance past the periodic push interval (5 000 ms)
+    vi.advanceTimersByTime(5001);
+
+    // The timer inside startSync must have triggered pushToAllWorkspaces()
+    expect(pushFn).toHaveBeenCalled();
+
+    unregister();
+    vi.useRealTimers();
+    await handle!.destroy();
+  });
+
+  it("stops periodic push after handle is destroyed", async () => {
+    vi.useFakeTimers();
+
+    const db = createTestDb();
+    const ws = createWorkspace(db, "periodic-stop-ws");
+    insertTeam(db, ws.id, {
+      role: "host",
+      secret: "a".repeat(64),
+      noise_public_key: "b".repeat(64),
+      noise_secret_key: "c".repeat(64),
+      host_public_key: null,
+      last_synced_at: null,
+    });
+
+    const { registerPusher } = await import("../../src/sync/push.js");
+    const pushFn = vi.fn();
+    const unregister = registerPusher("periodic-stop-ws", pushFn);
+
+    const { startSync } = await import("../../src/sync/index.js");
+    const handle = startSync(db, "periodic-stop-ws");
+
+    // Destroy before the first timer fires
+    vi.useRealTimers();
+    await handle!.destroy();
+
+    vi.useFakeTimers();
+    pushFn.mockClear();
+
+    // Advance well past the interval — no push should fire because the interval was cleared
+    vi.advanceTimersByTime(15000);
+
+    expect(pushFn).not.toHaveBeenCalled();
+
+    unregister();
   });
 });
