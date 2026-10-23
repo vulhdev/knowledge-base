@@ -92,3 +92,11 @@ tr:hover td { background: #141c24; }
 .diff-version-bar select { background: #0b141c; border: 1px solid #2d363e; border-radius: 6px; padding: 4px 8px; color: #dae3ee; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
 .diff-version-bar button { background: #7c3aed; color: #fff; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: inherit; }
 .diff-version-bar button:hover { background: #6d28d9; }
+.btn-remove { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; background: #0d2615; border: 1px solid #3fb950; border-radius: 6px; color: #3fb950; font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; white-space: nowrap; }
+.btn-remove:hover { background: #0f3018; }
+.btn-delete { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; background: #2d0f0f; border: 1px solid #f85149; border-radius: 6px; color: #f85149; font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; white-space: nowrap; }
+.btn-delete:hover { background: #350f0f; }
+.peer-badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; }
+.peer-badge-online  { background: #0d2615; color: #3fb950; border: 1px solid #3fb950; }
+.peer-badge-offline { background: #182028; color: #8b949e; border: 1px solid #2d363e; }
+.peer-badge-kicked  { background: #2d0f0f; color: #f85149; border: 1px solid #f85149; opacity: 0.6; }
