@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { filterLines, levelAtLeast, afterSince, readLogLines, parseSince } from "../../src/bin/log.js";
+import { filterLines, levelAtLeast, afterSince, readLogLines, parseSince } from "../../src/log/reader.js";
 
 const SAMPLE_LINES = [
   "[2026-10-22 10:00:00] INFO  create_content event=start id=abc",
