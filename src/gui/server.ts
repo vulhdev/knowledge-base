@@ -27,7 +27,7 @@ import {
 } from "./render.js";
 import { listPeers, findPeerByUsername, kickPeer, deletePeer } from "../team/kick.js";
 import { addComment, commitReview } from "../db/reviews.js";
-import { listErrorLogs } from "../db/error-log.js";
+import { readLogLines, filterLines, getLogDir } from "../log/reader.js";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -319,8 +319,8 @@ export function createApp(db: Database.Database, port?: number) {
   });
 
   app.get("/errors", (_req, res) => {
-    const errors = listErrorLogs(db);
-    res.send(renderErrorList(errors));
+    const lines = filterLines(readLogLines(getLogDir()), { tail: 500 });
+    res.send(renderErrorList(lines));
   });
 
   app.get("/search", async (req, res) => {
