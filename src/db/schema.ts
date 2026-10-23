@@ -351,19 +351,6 @@ function migrateContentsToUuid(db: Database.Database): void {
 }
 
 function runMigrations(db: Database.Database): void {
-  // Migration 21: track Hyperswarm connection state per peer for GUI online indicator
-  const hasLastSeenAt = (
-    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('team_peers') WHERE name = 'last_seen_at'").get() as { cnt: number }
-  ).cnt > 0;
-  if (!hasLastSeenAt) {
-    const hasPeersTable = (
-      db.prepare("SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type='table' AND name='team_peers'").get() as { cnt: number }
-    ).cnt > 0;
-    if (hasPeersTable) {
-      db.exec("ALTER TABLE team_peers ADD COLUMN last_seen_at TEXT");
-    }
-  }
-
   // Migration 1: add title column if missing (existing DBs pre-dating this change)
   const hasTitle = (
     db
@@ -557,6 +544,19 @@ function runMigrations(db: Database.Database): void {
     ).cnt > 0;
     if (hasPeersTable) {
       db.exec("ALTER TABLE team_peers ADD COLUMN github_username TEXT");
+    }
+  }
+
+  // Migration 21: track Hyperswarm connection state per peer for GUI online indicator
+  const hasLastSeenAt = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM pragma_table_info('team_peers') WHERE name = 'last_seen_at'").get() as { cnt: number }
+  ).cnt > 0;
+  if (!hasLastSeenAt) {
+    const hasPeersTable21 = (
+      db.prepare("SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type='table' AND name='team_peers'").get() as { cnt: number }
+    ).cnt > 0;
+    if (hasPeersTable21) {
+      db.exec("ALTER TABLE team_peers ADD COLUMN last_seen_at TEXT");
     }
   }
 

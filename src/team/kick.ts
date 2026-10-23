@@ -10,6 +10,7 @@ export type PeerRow = {
   github_username: string | null;
   is_active: number;
   joined_at: string;
+  last_seen_at: string | null;
 };
 
 export function kickPeer(db: Database.Database, publicKey: string): void {
@@ -23,7 +24,7 @@ export function kickPeer(db: Database.Database, publicKey: string): void {
 
 export function listPeers(db: Database.Database): PeerRow[] {
   return db
-    .prepare("SELECT public_key, display_name, github_username, is_active, joined_at FROM team_peers ORDER BY joined_at ASC")
+    .prepare("SELECT public_key, display_name, github_username, is_active, joined_at, last_seen_at FROM team_peers ORDER BY joined_at ASC")
     .all() as PeerRow[];
 }
 
